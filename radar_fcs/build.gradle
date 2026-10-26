@@ -1,0 +1,159 @@
+plugins {
+    id 'java-library'
+    id 'idea'
+    id 'net.neoforged.moddev' version '2.0.141'
+}
+
+version = mod_version
+group = mod_group_id
+
+base { archivesName = mod_id }
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+repositories {
+    // Modrinth Maven: моды по номеру версии с Modrinth
+    exclusiveContent {
+        forRepository { maven { name = 'Modrinth'; url = 'https://api.modrinth.com/maven' } }
+        filter { includeGroup 'maven.modrinth' }
+    }
+    maven { name = 'CreateMod'; url = 'https://maven.createmod.net' }
+}
+
+sourceSets {
+    // игровые тесты: участвуют только в dev-запуске, в итоговый jar не попадают
+    gametest {
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+configurations {
+    // jar'ы чужих модов только для компиляции (без транзитивных зависимостей)
+    modCompile { transitive = false }
+    compileOnly.extendsFrom modCompile
+    gametestCompileOnly.extendsFrom modCompile
+    gametestImplementation.extendsFrom implementation
+    // моды для dev-сервера: копируются в run/mods
+    devMods { transitive = false }
+    radarsJar { transitive = false }
+}
+
+dependencies {
+    modCompile "maven.modrinth:create:${create_version}"
+    modCompile "net.createmod.ponder:ponder-neoforge:${ponder_version}"
+    modCompile "maven.modrinth:create-big-cannons:${cbc_version}"
+    modCompile "maven.modrinth:create-radars:${radars_compile_version}"
+    radarsJar "maven.modrinth:create-radars:${radars_compile_version}"
+
+    devMods "maven.modrinth:create:${create_version}"
+    devMods "maven.modrinth:create-big-cannons:${cbc_version}"
+    devMods "maven.modrinth:rpl:${rpl_version}"
+    devMods "maven.modrinth:create-radars:${radars_runtime_version}"
+    devMods "maven.modrinth:sable:${sable_version}"
+    devMods "maven.modrinth:create-aeronautics:${aeronautics_version}"
+    devMods "maven.modrinth:create-big-cannons-advanced-technologies:${cbcat_version}"
+}
+
+// Sable companion (MIT) встроен в Create Radars как jar-in-jar: достаём его для компиляции
+def extractSableCompanion = tasks.register('extractSableCompanion', Sync) {
+    from({ zipTree(configurations.radarsJar.singleFile) }) {
+        include 'META-INF/jarjar/sable-companion-common-*.jar'
+        eachFile { path = name }
+    }
+    includeEmptyDirs = false
+    into layout.buildDirectory.dir('sable-companion')
+}
+def sableCompanion = files({ extractSableCompanion.get().destinationDir.listFiles() }).builtBy(extractSableCompanion)
+dependencies {
+    compileOnly sableCompanion
+    gametestCompileOnly sableCompanion
+}
+
+def prepareRunMods = tasks.register('prepareRunMods', Sync) {
+    from configurations.devMods
+    into file('run/mods')
+}
+
+neoForge {
+    version = project.neo_version
+
+    runs {
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.INFO
+            gameDirectory = project.file('run')
+        }
+        client {
+            client()
+            sourceSet = sourceSets.gametest
+        }
+        server {
+            server()
+            programArgument '--nogui'
+            sourceSet = sourceSets.gametest
+        }
+        gameTestServer {
+            type = 'gameTestServer'
+            sourceSet = sourceSets.gametest
+            systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+            sourceSet(sourceSets.gametest)
+        }
+    }
+}
+
+neoForge.addModdingDependenciesTo(sourceSets.gametest)
+
+tasks.matching { it.name in ['runClient', 'runServer', 'runGameTestServer'] }.configureEach {
+    dependsOn prepareRunMods
+}
+
+tasks.withType(ProcessResources).configureEach {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            neo_version_range      : neo_version_range,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/neoforge.mods.toml']) { expand replaceProperties }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-Xlint:deprecation'
+}
+
+// офлайн-тест баллистики и треков (без Minecraft): ./gradlew coreTest
+tasks.register('coreTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs the offline ballistic/track self-test (core package only).'
+    dependsOn tasks.named('compileJava')
+    def devtools = layout.projectDirectory.dir('devtools')
+    def outDir = layout.buildDirectory.dir('devtools')
+    doFirst {
+        def out = outDir.get().asFile
+        out.mkdirs()
+        def javac = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(21) }.get().executablePath.asFile
+        def coreClasses = sourceSets.main.output.classesDirs.asPath
+        def proc = [javac.absolutePath, '-d', out.absolutePath, '-cp', coreClasses,
+                    devtools.file('SolverTest.java').asFile.absolutePath].execute()
+        proc.waitForProcessOutput(System.out, System.err)
+        if (proc.exitValue() != 0) throw new GradleException('devtools compilation failed')
+    }
+    classpath = files(outDir, sourceSets.main.output.classesDirs)
+    mainClass = 'SolverTest'
+}

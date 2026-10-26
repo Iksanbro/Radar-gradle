@@ -1,0 +1,26 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " P ",
+    "CBC",
+    " R "
+  ],
+  "key": {
+    "P": {
+      "item": "create:precision_mechanism"
+    },
+    "C": {
+      "item": "minecraft:comparator"
+    },
+    "B": {
+      "item": "create:brass_casing"
+    },
+    "R": {
+      "item": "minecraft:redstone_block"
+    }
+  },
+  "result": {
+    "id": "radar_fcs:fire_control_computer",
+    "count": 1
+  }
+}

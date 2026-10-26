@@ -1,0 +1,160 @@
+package dev.radarfcs.core;
+
+/**
+ * Трек цели. Оценка движения - взвешенный МНК по скользящему окну замеров:
+ * свежие замеры весят больше, при достаточной истории оценивается и ускорение.
+ * Работает с нерегулярными замерами (радар обновляет цели при проходе луча).
+ */
+public final class Track {
+    public enum Kind { MOB, PLAYER, CONTRAPTION, SHIP, PROJECTILE, EXTERNAL }
+
+    private static final int CAP = 16;
+
+    public final String id;
+    public final Kind kind;
+    public String name;
+    /** Оценка позиции на момент последнего замера. */
+    public Vec pos;
+    /** Блоков/тик. */
+    public Vec vel = Vec.ZERO;
+    /** Блоков/тик². */
+    public Vec acc = Vec.ZERO;
+    public long lastTick;
+    public long firstTick;
+    public int samples;
+    public double hitRadius = 1;
+    public boolean grounded;
+    public boolean hostile;
+    public boolean moving;
+    public boolean friendly;
+    public boolean active;
+    /** Точная скорость от источника (например, физика Sable), иначе null. */
+    public Vec knownVel;
+    /** Произвольная ссылка для слоя совместимости (сущность, корабль...). */
+    public Object handle;
+
+    private final long[] ht = new long[CAP];
+    private final double[] hx = new double[CAP], hy = new double[CAP], hz = new double[CAP];
+    private int head, size;
+
+    Track(String id, Kind kind, String name, Vec pos, long tick) {
+        this.id = id;
+        this.kind = kind;
+        this.name = name;
+        this.pos = pos;
+        this.lastTick = tick;
+        this.firstTick = tick;
+    }
+
+    public double speedPerTick() {
+        return grounded ? vel.horizontalLength() : vel.length();
+    }
+
+    public long observedSpan() { return lastTick - firstTick; }
+
+    public TargetMotion motion(double accelHorizon) {
+        Vec v = grounded ? new Vec(vel.x(), 0, vel.z()) : vel;
+        Vec a = grounded ? new Vec(acc.x(), 0, acc.z()) : acc;
+        return new TargetMotion(pos, v, a, grounded, accelHorizon);
+    }
+
+    void reset(Vec p, long tick) {
+        size = 0;
+        head = 0;
+        samples = 0;
+        vel = Vec.ZERO;
+        acc = Vec.ZERO;
+        firstTick = tick;
+        add(p, tick);
+    }
+
+    void add(Vec p, long tick) {
+        ht[head] = tick;
+        hx[head] = p.x();
+        hy[head] = p.y();
+        hz[head] = p.z();
+        head = (head + 1) % CAP;
+        if (size < CAP) size++;
+        samples++;
+        lastTick = tick;
+        pos = p;
+    }
+
+    /** Пересчитать оценку по окну последних windowTicks тиков. */
+    void fit(int windowTicks, double maxAccel) {
+        int last = (head - 1 + CAP) % CAP;
+        long t0 = ht[last];
+        double bx = hx[last], by = hy[last], bz = hz[last];
+        double tau = Math.max(2.0, windowTicks * 0.5);
+        double s0 = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0;
+        double rx0 = 0, rx1 = 0, rx2 = 0, ry0 = 0, ry1 = 0, ry2 = 0, rz0 = 0, rz1 = 0, rz2 = 0;
+        int n = 0;
+        long minT = t0;
+        for (int k = 0; k < size; k++) {
+            int i = (last - k + CAP) % CAP;
+            double dt = ht[i] - t0;                     // <= 0
+            if (-dt > windowTicks && n >= 2) break;
+            double w = Math.exp(dt / tau);
+            double dx = hx[i] - bx, dy = hy[i] - by, dz = hz[i] - bz;
+            s0 += w; s1 += w * dt; s2 += w * dt * dt; s3 += w * dt * dt * dt; s4 += w * dt * dt * dt * dt;
+            rx0 += w * dx; rx1 += w * dx * dt; rx2 += w * dx * dt * dt;
+            ry0 += w * dy; ry1 += w * dy * dt; ry2 += w * dy * dt * dt;
+            rz0 += w * dz; rz1 += w * dz * dt; rz2 += w * dz * dt * dt;
+            minT = ht[i];
+            n++;
+        }
+        long span = t0 - minT;
+        if (n < 2 || span <= 0) {
+            vel = knownVel != null ? knownVel : Vec.ZERO;
+            acc = Vec.ZERO;
+            return;
+        }
+        if (n >= 5 && span >= 6) {
+            // базис (1, t, t²/2): решаем 3x3 систему нормальных уравнений
+            double[][] m = {
+                    {s0, s1, s2 / 2},
+                    {s1, s2, s3 / 2},
+                    {s2 / 2, s3 / 2, s4 / 4}};
+            double[] px = solve3(m, rx0, rx1, rx2 / 2);
+            double[] py = solve3(m, ry0, ry1, ry2 / 2);
+            double[] pz = solve3(m, rz0, rz1, rz2 / 2);
+            if (px != null && py != null && pz != null) {
+                pos = new Vec(bx + px[0], by + py[0], bz + pz[0]);
+                vel = new Vec(px[1], py[1], pz[1]);
+                Vec a = new Vec(px[2], py[2], pz[2]);
+                double al = a.length();
+                acc = al > maxAccel ? a.scale(maxAccel / al) : a;
+                if (knownVel != null) vel = knownVel;
+                return;
+            }
+        }
+        double det = s0 * s2 - s1 * s1;
+        if (Math.abs(det) < 1e-12) {
+            vel = knownVel != null ? knownVel : Vec.ZERO;
+            acc = Vec.ZERO;
+            return;
+        }
+        double vx = (s0 * rx1 - s1 * rx0) / det, vy = (s0 * ry1 - s1 * ry0) / det, vz = (s0 * rz1 - s1 * rz0) / det;
+        double px = (rx0 - vx * s1) / s0, py = (ry0 - vy * s1) / s0, pz = (rz0 - vz * s1) / s0;
+        pos = new Vec(bx + px, by + py, bz + pz);
+        vel = knownVel != null ? knownVel : new Vec(vx, vy, vz);
+        acc = Vec.ZERO;
+    }
+
+    private static double[] solve3(double[][] a, double b0, double b1, double b2) {
+        double det = a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
+                - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+                + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+        if (Math.abs(det) < 1e-9) return null;
+        double d0 = b0 * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
+                - a[0][1] * (b1 * a[2][2] - a[1][2] * b2)
+                + a[0][2] * (b1 * a[2][1] - a[1][1] * b2);
+        double d1 = a[0][0] * (b1 * a[2][2] - a[1][2] * b2)
+                - b0 * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+                + a[0][2] * (a[1][0] * b2 - b1 * a[2][0]);
+        double d2 = a[0][0] * (a[1][1] * b2 - b1 * a[2][1])
+                - a[0][1] * (a[1][0] * b2 - b1 * a[2][0])
+                + b0 * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+        return new double[]{d0 / det, d1 / det, d2 / det};
+    }
+}

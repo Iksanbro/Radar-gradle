@@ -1,0 +1,139 @@
+{
+  "parent": "minecraft:block/block",
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "particle": "create:block/copper_casing",
+    "casing": "create:block/copper_casing",
+    "band": "radar_fcs:block/iff_band",
+    "antenna": "radar_fcs:block/iff_antenna"
+  },
+  "elements": [
+    {
+      "from": [
+        0,
+        0,
+        0
+      ],
+      "to": [
+        16,
+        16,
+        16
+      ],
+      "faces": {
+        "down": {
+          "texture": "#casing",
+          "cullface": "down"
+        },
+        "up": {
+          "texture": "#casing",
+          "cullface": "up"
+        },
+        "north": {
+          "texture": "#casing",
+          "cullface": "north"
+        },
+        "south": {
+          "texture": "#casing",
+          "cullface": "south"
+        },
+        "west": {
+          "texture": "#casing",
+          "cullface": "west"
+        },
+        "east": {
+          "texture": "#casing",
+          "cullface": "east"
+        }
+      }
+    },
+    {
+      "from": [
+        -0.01,
+        0,
+        -0.01
+      ],
+      "to": [
+        16.01,
+        16,
+        16.01
+      ],
+      "faces": {
+        "north": {
+          "texture": "#band",
+          "tintindex": 0
+        },
+        "south": {
+          "texture": "#band",
+          "tintindex": 0
+        },
+        "west": {
+          "texture": "#band",
+          "tintindex": 0
+        },
+        "east": {
+          "texture": "#band",
+          "tintindex": 0
+        }
+      }
+    },
+    {
+      "from": [
+        7.5,
+        16,
+        7.5
+      ],
+      "to": [
+        8.5,
+        22,
+        8.5
+      ],
+      "faces": {
+        "north": {
+          "texture": "#antenna",
+          "uv": [
+            7,
+            0,
+            9,
+            12
+          ]
+        },
+        "south": {
+          "texture": "#antenna",
+          "uv": [
+            7,
+            0,
+            9,
+            12
+          ]
+        },
+        "west": {
+          "texture": "#antenna",
+          "uv": [
+            7,
+            0,
+            9,
+            12
+          ]
+        },
+        "east": {
+          "texture": "#antenna",
+          "uv": [
+            7,
+            0,
+            9,
+            12
+          ]
+        },
+        "up": {
+          "texture": "#antenna",
+          "uv": [
+            6,
+            0,
+            10,
+            2
+          ]
+        }
+      }
+    }
+  ]
+}
