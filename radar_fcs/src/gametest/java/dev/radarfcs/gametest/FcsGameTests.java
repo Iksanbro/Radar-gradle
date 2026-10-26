@@ -30,6 +30,10 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import dev.ryanhcode.sable.api.SubLevelAssemblyHelper;
+import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
+import dev.ryanhcode.sable.companion.math.BoundingBox3i;
+import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import rbasamoyai.createbigcannons.cannons.autocannon.breech.AbstractAutocannonBreechBlockEntity;
@@ -97,6 +101,14 @@ public class FcsGameTests {
     @AfterBatch(batch = "iff") public static void a3(ServerLevel l) { cleanup(l); }
     @BeforeBatch(batch = "auto") public static void b4(ServerLevel l) { direct(l); }
     @AfterBatch(batch = "auto") public static void a4(ServerLevel l) { cleanup(l); }
+
+    @BeforeBatch(batch = "rocket") public static void b6(ServerLevel l) { direct(l); }
+    @AfterBatch(batch = "rocket") public static void a6(ServerLevel l) { cleanup(l); }
+
+    @BeforeBatch(batch = "ship") public static void b7(ServerLevel l) { direct(l); }
+    @AfterBatch(batch = "ship") public static void a7(ServerLevel l) { cleanup(l); }
+    @BeforeBatch(batch = "shipiff") public static void b8(ServerLevel l) { direct(l); }
+    @AfterBatch(batch = "shipiff") public static void a8(ServerLevel l) { cleanup(l); }
 
     @BeforeBatch(batch = "radar")
     public static void beforeRadar(ServerLevel level) {
@@ -197,6 +209,41 @@ public class FcsGameTests {
         } else {
             throw new GameTestAssertException("no autocannon breech at " + pivot.relative(dir, -1));
         }
+    }
+
+    /** Ракетная установка CBC Advanced Technologies: казённик позади оси, направляющие дальше. */
+    private static boolean rocketPod(GameTestHelper h, BlockPos mount, Direction dir, int rails, String rocketItem, int rockets) {
+        Block breechBlock = block("cbc_at:cast_iron_rocket_pod_breech");
+        if (breechBlock == Blocks.AIR) return false;                       // CBC-AT не установлен
+        try {
+            // CBC-AT 0.1.4c вызывает onRecoil(Vec3, AbstractContraptionEntity), которого нет в CBC 5.11.4+
+            rbasamoyai.createbigcannons.cannon_control.ControlPitchContraption.class.getMethod("onRecoil",
+                    Vec3.class, com.simibubi.create.content.contraptions.AbstractContraptionEntity.class);
+        } catch (NoSuchMethodException e) {
+            FcsMod.LOG.warn("[radar_fcs test] rocket: CBC-AT 0.1.4c is binary-incompatible with this CBC version, test skipped");
+            return false;
+        }
+        h.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState()
+                .setValue(BlockStateProperties.HORIZONTAL_FACING, dir));
+        BlockPos pivot = mount.above(2);
+        h.setBlock(pivot.relative(dir, -1), breechBlock.defaultBlockState().trySetValue(BlockStateProperties.FACING, dir));
+        for (int i = 0; i < rails; i++) {
+            h.setBlock(pivot.relative(dir, i), block("cbc_at:cast_iron_rocket_pod_rail").defaultBlockState()
+                    .trySetValue(BlockStateProperties.FACING, dir));
+        }
+        connect(h, pivot.relative(dir, -1), dir, rails + 1);
+        var be = h.getLevel().getBlockEntity(h.absolutePos(pivot.relative(dir, -1)));
+        try {
+            @SuppressWarnings("unchecked")
+            java.util.Deque<net.minecraft.world.item.ItemStack> q = (java.util.Deque<net.minecraft.world.item.ItemStack>)
+                    be.getClass().getMethod("getInputBuffer").invoke(be);
+            var item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(rocketItem));
+            for (int i = 0; i < rockets; i++) q.add(new net.minecraft.world.item.ItemStack(item));
+            be.setChanged();
+        } catch (ReflectiveOperationException e) {
+            throw new GameTestAssertException("cannot load rocket pod: " + e);
+        }
+        return true;
     }
 
     private static FireControlBlockEntity fcs(GameTestHelper h, BlockPos rel) {
@@ -357,6 +404,30 @@ public class FcsGameTests {
         });
     }
 
+    /**
+     * Ракеты CBC-AT летят с тягой: до первого пуска модель их не знает. Вычислитель следит за ракетами,
+     * учит поправки полёта и после этого попадает.
+     */
+    @GameTest(template = ARENA, batch = "rocket", timeoutTicks = 900)
+    public static void rocketPodLearnsAndHits(GameTestHelper h) {
+        floor(h);
+        if (!rocketPod(h, new BlockPos(10, 1, 32), Direction.EAST, 3, "cbc_at:ap_rocket_item", 96)) {
+            h.succeed();                                                       // без CBC-AT тест не применим
+            return;
+        }
+        FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 28));
+        Mob husk = movingTarget(h, EntityType.HUSK, new Vec3(46.5, 1, 24.5), 0.1, 14);
+        float max = husk.getMaxHealth();
+        logEvery(h, be, "rocket", 20);
+        h.succeedWhen(() -> {
+            if (husk.isAlive() && husk.getHealth() >= max) throw new GameTestAssertException("target not hit yet");
+            MountState m = be.mountStates().isEmpty() ? null : be.mountStates().get(0);
+            FcsMod.LOG.info("[radar_fcs test] rocket: HIT, health {} -> {}, learned shots {}, learned ticks {}, speed x{}",
+                    max, husk.getHealth(), m == null ? -1 : m.correction.shots(), m == null ? -1 : m.correction.learnedTicks(),
+                    m == null ? -1 : m.correction.speedRatio());
+        });
+    }
+
     /** Цели берутся с плоского радара Create Radars: без радара - статус «нет радара», с радаром - попадание. */
     @GameTest(template = ARENA, batch = "radar", timeoutTicks = 700)
     public static void radarDesignatedTarget(GameTestHelper h) {
@@ -379,6 +450,92 @@ public class FcsGameTests {
             if (husk.isAlive() && husk.getHealth() >= max) throw new GameTestAssertException("target not hit yet");
             FcsMod.LOG.info("[radar_fcs test] radar: HIT via Create Radars tracks, radar used={}", be.sensor().usedRadar());
             if (!be.sensor().usedRadar()) throw new GameTestAssertException("radar tracks were not used");
+        });
+    }
+    // ----------------------------------------------------------------- корабли Sable
+
+    /**
+     * Корабль Sable из куба железных блоков. Летит физически: каждый тик ему досыпается скорость до заданной
+     * (компенсация гравитации), направление меняется каждые span блоков. Так Sable сообщает честную скорость.
+     */
+    private static ServerSubLevel ship(GameTestHelper h, BlockPos minRel, int size, Vec3 velPerTick, double span,
+                                       boolean transponder) {
+        for (int x = 0; x < size; x++) for (int y = 0; y < size; y++) for (int z = 0; z < size; z++)
+            h.setBlock(minRel.offset(x, y, z), Blocks.IRON_BLOCK.defaultBlockState());
+        if (transponder) h.setBlock(minRel.offset(size / 2, size - 1, size / 2), FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState());
+        BlockPos min = h.absolutePos(minRel), max = min.offset(size - 1, size - 1, size - 1);
+        ServerSubLevel sub = SubLevelAssemblyHelper.assembleBlocks(h.getLevel(), min, BlockPos.betweenClosed(min, max),
+                new BoundingBox3i(min.getX(), min.getY(), min.getZ(), max.getX(), max.getY(), max.getZ()));
+        double period = velPerTick.length() < 1e-9 ? Double.MAX_VALUE : span / velPerTick.length();
+        AtomicInteger tick = new AtomicInteger();
+        h.onEachTick(() -> {
+            if (sub.isRemoved()) return;
+            int t = tick.getAndIncrement();
+            double sign = ((int) (t / period)) % 2 == 0 ? 1 : -1;
+            RigidBodyHandle body = RigidBodyHandle.of(sub);
+            if (body == null || !body.isValid()) return;
+            org.joml.Vector3d cur = body.getLinearVelocity(new org.joml.Vector3d());
+            org.joml.Vector3d ang = body.getAngularVelocity(new org.joml.Vector3d());
+            org.joml.Vector3d want = new org.joml.Vector3d(velPerTick.x * sign, velPerTick.y * sign, velPerTick.z * sign).mul(20.0);
+            body.addLinearAndAngularVelocity(want.sub(cur), ang.negate());
+        });
+        return sub;
+    }
+
+    /** Снаряд CBC прошёл через габарит корабля. */
+    private static AtomicInteger watchShipHits(GameTestHelper h, ServerSubLevel sub, String name) {
+        AtomicInteger hits = new AtomicInteger();
+        java.util.Map<Integer, Vec3> last = new java.util.HashMap<>();
+        java.util.Set<Integer> counted = new java.util.HashSet<>();
+        h.onEachTick(() -> {
+            if (sub.isRemoved()) return;
+            var b = sub.boundingBox();
+            AABB box = new AABB(b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ()).inflate(0.3);
+            for (AbstractCannonProjectile p : h.getLevel().getEntitiesOfClass(AbstractCannonProjectile.class, box.inflate(80))) {
+                Vec3 prev = last.getOrDefault(p.getId(), p.position()), cur = p.position();
+                last.put(p.getId(), cur);
+                if (counted.contains(p.getId())) continue;
+                if (box.contains(cur) || box.clip(prev, cur).isPresent()) {
+                    counted.add(p.getId());
+                    hits.incrementAndGet();
+                    FcsMod.LOG.info("[radar_fcs test] {}: projectile #{} hit ship box {}", name, p.getId(), box);
+                }
+            }
+        });
+        return hits;
+    }
+
+    /** Корабль Create Aeronautics / Sable - цель: вычислитель стреляет и попадает по движущемуся кораблю. */
+    @GameTest(template = ARENA, batch = "ship", timeoutTicks = 600)
+    public static void shipIsEngaged(GameTestHelper h) {
+        floor(h);
+        bigCannon(h, new BlockPos(10, 1, 32), Direction.EAST, 2, 4, true);
+        FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 28));
+        ServerSubLevel sub = ship(h, new BlockPos(46, 9, 22), 3, new Vec3(0, 0, 0.12), 14, false);
+        logEvery(h, be, "ship", 20);
+        AtomicInteger hits = watchShipHits(h, sub, "ship");
+        h.succeedWhen(() -> {
+            if (hits.get() == 0) throw new GameTestAssertException("ship not hit yet");
+            FcsMod.LOG.info("[radar_fcs test] ship: HIT, tracks={}", be.sensor().all().size());
+        });
+    }
+
+    /** Транспондер на корабле: весь корабль свой, огня нет. */
+    @GameTest(template = ARENA, batch = "shipiff", timeoutTicks = 260)
+    public static void shipWithTransponderIsFriendly(GameTestHelper h) {
+        floor(h);
+        bigCannon(h, new BlockPos(10, 1, 32), Direction.EAST, 2, 4, true);
+        FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 28));
+        ServerSubLevel sub = ship(h, new BlockPos(46, 9, 22), 3, new Vec3(0, 0, 0.12), 14, true);
+        logEvery(h, be, "shipiff", 40);
+        AtomicInteger hits = watchShipHits(h, sub, "shipiff");
+        h.runAtTickTime(220, () -> {
+            if (hits.get() > 0) h.fail("friendly ship was shot");
+            boolean seen = false;
+            for (var t : be.sensor().all()) if (t.kind == dev.radarfcs.core.Track.Kind.SHIP) seen = true;
+            if (!seen) h.fail("ship was not detected at all");
+            if (!be.sensor().active().isEmpty()) h.fail("friendly ship is active");
+            h.succeed();
         });
     }
 }

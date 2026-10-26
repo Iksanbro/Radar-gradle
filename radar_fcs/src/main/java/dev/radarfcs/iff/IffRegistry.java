@@ -10,29 +10,26 @@ import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Загруженные транспондеры «свой» по измерениям.
  * Транспондер в обычном мире защищает сферу iffRadius вокруг себя (база).
- * Транспондер на корабле Sable делает своим весь корабль.
+ * Транспондер на корабле Sable / Create Aeronautics делает своим весь корабль.
  * Транспондеры в контрапшенах Create проверяются по блокам контрапшена (ContraptionCompat).
+ * Принадлежность кораблю определяется при каждом запросе: при сборке корабля блок может загрузиться
+ * в плоте раньше, чем Sable зарегистрирует сам корабль.
  */
 public final class IffRegistry {
-    public record Beacon(BlockPos pos, int channel, @Nullable UUID ship) {}
-
-    private static final Map<ResourceKey<Level>, Map<BlockPos, Beacon>> MAP = new ConcurrentHashMap<>();
+    private static final Map<ResourceKey<Level>, Map<BlockPos, Integer>> MAP = new ConcurrentHashMap<>();
 
     private IffRegistry() {}
 
     public static void put(Level level, BlockPos pos, int channel) {
-        UUID ship = SableCompat.containingId(level, pos);
-        MAP.computeIfAbsent(level.dimension(), k -> new ConcurrentHashMap<>())
-                .put(pos.immutable(), new Beacon(pos.immutable(), channel, ship));
+        MAP.computeIfAbsent(level.dimension(), k -> new ConcurrentHashMap<>()).put(pos.immutable(), channel);
     }
 
     public static void remove(Level level, BlockPos pos) {
-        Map<BlockPos, Beacon> m = MAP.get(level.dimension());
+        Map<BlockPos, Integer> m = MAP.get(level.dimension());
         if (m != null) m.remove(pos);
     }
 
@@ -41,11 +38,12 @@ public final class IffRegistry {
     /** Центры наземных транспондеров канала. */
     public static List<Vec> groundBeacons(Level level, int channel) {
         List<Vec> out = new ArrayList<>();
-        Map<BlockPos, Beacon> m = MAP.get(level.dimension());
+        Map<BlockPos, Integer> m = MAP.get(level.dimension());
         if (m == null) return out;
-        for (Beacon b : m.values()) {
-            if (b.ship() == null && b.channel() == channel)
-                out.add(new Vec(b.pos().getX() + 0.5, b.pos().getY() + 0.5, b.pos().getZ() + 0.5));
+        for (Map.Entry<BlockPos, Integer> e : m.entrySet()) {
+            if (e.getValue() != channel) continue;
+            BlockPos p = e.getKey();
+            if (SableCompat.containingId(level, p) == null) out.add(new Vec(p.getX() + 0.5, p.getY() + 0.5, p.getZ() + 0.5));
         }
         return out;
     }
@@ -59,14 +57,16 @@ public final class IffRegistry {
 
     /** На корабле стоит транспондер этого канала. */
     public static boolean shipFriendly(Level level, UUID ship, int channel) {
-        Map<BlockPos, Beacon> m = MAP.get(level.dimension());
+        Map<BlockPos, Integer> m = MAP.get(level.dimension());
         if (m == null) return false;
-        for (Beacon b : m.values()) if (ship.equals(b.ship()) && b.channel() == channel) return true;
+        for (Map.Entry<BlockPos, Integer> e : m.entrySet()) {
+            if (e.getValue() == channel && ship.equals(SableCompat.containingId(level, e.getKey()))) return true;
+        }
         return false;
     }
 
     public static int count(Level level) {
-        Map<BlockPos, Beacon> m = MAP.get(level.dimension());
+        Map<BlockPos, Integer> m = MAP.get(level.dimension());
         return m == null ? 0 : m.size();
     }
 }

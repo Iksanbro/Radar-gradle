@@ -37,6 +37,8 @@ configurations {
     // моды для dev-сервера: копируются в run/mods
     devMods { transitive = false }
     radarsJar { transitive = false }
+    gametestSable { transitive = false }
+    gametestCompileOnly.extendsFrom gametestSable
 }
 
 dependencies {
@@ -45,6 +47,9 @@ dependencies {
     modCompile "maven.modrinth:create-big-cannons:${cbc_version}"
     modCompile "maven.modrinth:create-radars:${radars_compile_version}"
     radarsJar "maven.modrinth:create-radars:${radars_compile_version}"
+
+    // API Sable для игровых тестов (сборка корабля); в основной код не попадает
+    gametestSable "maven.modrinth:sable:${sable_version}"
 
     devMods "maven.modrinth:create:${create_version}"
     devMods "maven.modrinth:create-big-cannons:${cbc_version}"
