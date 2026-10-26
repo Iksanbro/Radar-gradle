@@ -11,6 +11,10 @@ base { archivesName = mod_id }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
+// библиотеки, которые чужие моды встраивают jar-in-jar: Sable companion (MIT) и Flywheel (из Create)
+def embeddedDir = layout.buildDirectory.dir('embedded').get().asFile
+def companionVersion = '1.6.0'
+
 repositories {
     // Modrinth Maven: моды по номеру версии с Modrinth
     exclusiveContent {
@@ -18,6 +22,10 @@ repositories {
         filter { includeGroup 'maven.modrinth' }
     }
     maven { name = 'CreateMod'; url = 'https://maven.createmod.net' }
+    exclusiveContent {
+        forRepository { flatDir { name = 'EmbeddedLibs'; dirs embeddedDir } }
+        filter { includeGroup 'dev.ryanhcode.sable-companion' }
+    }
 }
 
 sourceSets {
@@ -36,8 +44,8 @@ configurations {
     gametestImplementation.extendsFrom implementation
     // моды для dev-сервера: копируются в run/mods
     devMods { transitive = false }
-    radarsJar { transitive = false }
     gametestSable { transitive = false }
+    embeddedSources { transitive = false }
     gametestCompileOnly.extendsFrom gametestSable
 }
 
@@ -45,38 +53,55 @@ dependencies {
     modCompile "maven.modrinth:create:${create_version}"
     modCompile "net.createmod.ponder:ponder-neoforge:${ponder_version}"
     modCompile "maven.modrinth:create-big-cannons:${cbc_version}"
+    // Create Radars - необязательная интеграция (компиляция против минимального API)
     modCompile "maven.modrinth:create-radars:${radars_compile_version}"
-    radarsJar "maven.modrinth:create-radars:${radars_compile_version}"
+    embeddedSources "maven.modrinth:sable:${sable_version}"
+    embeddedSources "maven.modrinth:create:${create_version}"
 
     // API Sable для игровых тестов (сборка корабля); в основной код не попадает
     gametestSable "maven.modrinth:sable:${sable_version}"
 
+    // -PfcsMinimal: только Create + CBC (проверка без Create Radars и Sable); -PfcsNoRadars: без Create Radars
     devMods "maven.modrinth:create:${create_version}"
     devMods "maven.modrinth:create-big-cannons:${cbc_version}"
     devMods "maven.modrinth:rpl:${rpl_version}"
-    devMods "maven.modrinth:create-radars:${radars_runtime_version}"
-    devMods "maven.modrinth:sable:${sable_version}"
-    devMods "maven.modrinth:create-aeronautics:${aeronautics_version}"
-    devMods "maven.modrinth:create-big-cannons-advanced-technologies:${cbcat_version}"
+    if (!project.hasProperty('fcsMinimal')) {
+        if (!project.hasProperty('fcsNoRadars')) devMods "maven.modrinth:create-radars:${radars_runtime_version}"
+        devMods "maven.modrinth:sable:${sable_version}"
+        devMods "maven.modrinth:create-aeronautics:${aeronautics_version}"
+        devMods "maven.modrinth:create-big-cannons-advanced-technologies:${cbcat_version}"
+    }
 }
 
-// Sable companion (MIT) встроен в Create Radars как jar-in-jar: достаём его для компиляции
-def extractSableCompanion = tasks.register('extractSableCompanion', Sync) {
-    from({ zipTree(configurations.radarsJar.singleFile) }) {
-        include 'META-INF/jarjar/sable-companion-common-*.jar'
-        eachFile { path = name }
+// достаём встроенные библиотеки при конфигурации (один раз): companion - в локальный репозиторий для jarJar
+def companionJar = new File(embeddedDir, "sable-companion-common-1.21.1-${companionVersion}.jar")
+def flywheelJar = new File(embeddedDir, 'flywheel-neoforge-1.21.1.jar')
+if (!companionJar.exists() || !flywheelJar.exists()) {
+    configurations.embeddedSources.resolvedConfiguration.resolvedArtifacts.each { art ->
+        copy {
+            from(zipTree(art.file)) {
+                include "META-INF/jarjar/sable-companion-common-1.21.1-${companionVersion}.jar"
+                include 'META-INF/jarjar/flywheel-neoforge-1.21.1-*.jar'
+                eachFile { path = name.startsWith('flywheel') ? 'flywheel-neoforge-1.21.1.jar' : name }
+            }
+            includeEmptyDirs = false
+            into embeddedDir
+        }
     }
-    includeEmptyDirs = false
-    into layout.buildDirectory.dir('sable-companion')
 }
-def sableCompanion = files({ extractSableCompanion.get().destinationDir.listFiles() }).builtBy(extractSableCompanion)
 dependencies {
-    compileOnly sableCompanion
-    gametestCompileOnly sableCompanion
+    // Sable companion: без Sable отдаёт пустые результаты; встраиваем, чтобы мод работал без Create Radars и Sable
+    compileOnly "dev.ryanhcode.sable-companion:sable-companion-common-1.21.1:${companionVersion}"
+    gametestCompileOnly "dev.ryanhcode.sable-companion:sable-companion-common-1.21.1:${companionVersion}"
+    jarJar "dev.ryanhcode.sable-companion:sable-companion-common-1.21.1:${companionVersion}"
+    // Flywheel (визуал подшипника радара) - только компиляция, в рантайме его даёт Create
+    compileOnly files(flywheelJar)
 }
 
 def prepareRunMods = tasks.register('prepareRunMods', Sync) {
     from configurations.devMods
+    // без Sable и Create Radars companion в dev-запуске кладём отдельным модом (в jar он встроен)
+    if (project.hasProperty('fcsMinimal')) from(companionJar)
     into file('run/mods')
 }
 
@@ -95,7 +120,8 @@ neoForge {
             // ./gradlew runClient -PfcsScreenshot: зайти в мир fcs_test, построить сцену и сделать скриншоты
             if (project.hasProperty('fcsScreenshot')) {
                 systemProperty 'radar_fcs.screenshot', 'true'
-                programArguments.addAll('--quickPlaySingleplayer', 'fcs_test', '--width', '1280', '--height', '720')
+                programArguments.addAll('--quickPlaySingleplayer', project.findProperty('fcsWorld') ?: 'fcs_test',
+                        '--width', '1280', '--height', '720')
             }
         }
         server {

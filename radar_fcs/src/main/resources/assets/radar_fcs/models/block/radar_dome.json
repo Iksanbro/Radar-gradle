@@ -1,0 +1,138 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "base": "radar_fcs:block/radar_dome_base",
+    "dome": "radar_fcs:block/radar_dome",
+    "particle": "radar_fcs:block/radar_dome"
+  },
+  "elements": [
+    {
+      "from": [
+        0,
+        0,
+        0
+      ],
+      "to": [
+        16,
+        6,
+        16
+      ],
+      "faces": {
+        "north": {
+          "texture": "#base"
+        },
+        "south": {
+          "texture": "#base"
+        },
+        "east": {
+          "texture": "#base"
+        },
+        "west": {
+          "texture": "#base"
+        },
+        "up": {
+          "texture": "#base"
+        },
+        "down": {
+          "texture": "#base"
+        }
+      }
+    },
+    {
+      "from": [
+        2,
+        6,
+        2
+      ],
+      "to": [
+        14,
+        11,
+        14
+      ],
+      "faces": {
+        "north": {
+          "texture": "#dome"
+        },
+        "south": {
+          "texture": "#dome"
+        },
+        "east": {
+          "texture": "#dome"
+        },
+        "west": {
+          "texture": "#dome"
+        },
+        "up": {
+          "texture": "#dome"
+        },
+        "down": {
+          "texture": "#dome"
+        }
+      }
+    },
+    {
+      "from": [
+        3,
+        11,
+        3
+      ],
+      "to": [
+        13,
+        13,
+        13
+      ],
+      "faces": {
+        "north": {
+          "texture": "#dome"
+        },
+        "south": {
+          "texture": "#dome"
+        },
+        "east": {
+          "texture": "#dome"
+        },
+        "west": {
+          "texture": "#dome"
+        },
+        "up": {
+          "texture": "#dome"
+        },
+        "down": {
+          "texture": "#dome"
+        }
+      }
+    },
+    {
+      "from": [
+        5,
+        13,
+        5
+      ],
+      "to": [
+        11,
+        15,
+        11
+      ],
+      "faces": {
+        "north": {
+          "texture": "#dome"
+        },
+        "south": {
+          "texture": "#dome"
+        },
+        "east": {
+          "texture": "#dome"
+        },
+        "west": {
+          "texture": "#dome"
+        },
+        "up": {
+          "texture": "#dome"
+        },
+        "down": {
+          "texture": "#dome"
+        }
+      }
+    }
+  ]
+}

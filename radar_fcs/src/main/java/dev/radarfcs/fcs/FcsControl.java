@@ -28,6 +28,7 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3f;
 
 /** Наведение и огонь одной пушки. */
@@ -38,8 +39,11 @@ public final class FcsControl {
 
     private FcsControl() {}
 
+    /**
+     * @param designated id цели, назначенной с радарного монитора канала (или null)
+     */
     public static void control(ServerLevel level, FireControlBlockEntity fcs, MountState m, TargetSensor sensor, long now,
-                               boolean hold, int channel, Set<UUID> platform) {
+                               boolean hold, int channel, Set<UUID> platform, @Nullable String designated) {
         CbcMount d = m.mount;
         if (d == null || !d.isValid()) {
             m.status = Status.LOST;
@@ -125,6 +129,11 @@ public final class FcsControl {
                 cands.remove(cur);
                 cands.add(0, cur);
             }
+        }
+        // цель, назначенная с монитора, - в приоритете, если по ней есть решение
+        if (designated != null) {
+            Track des = sensor.get(designated);
+            if (des != null && des.active && cands.remove(des)) cands.add(0, des);
         }
         BallisticSolver.Solution sol = null;
         Track target = null;

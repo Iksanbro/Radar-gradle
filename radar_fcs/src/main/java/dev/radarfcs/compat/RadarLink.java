@@ -16,7 +16,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Связь с Create: Radars. Используются только методы, общие для версий 0.4.9.x и 5.x:
+ * Необязательная связь с Create: Radars (если он установлен). Используются только методы, общие для версий 0.4.9.x и 5.x:
  * IRadar.getTracks/getRange/isRunning/getWorldPos и RadarTrack.getId/getPosition/getVelocity/
  * getScannedTime/getTrackCategory/getEntityType. Любая несовместимость отключает интеграцию без падения игры.
  */
@@ -33,10 +33,11 @@ public final class RadarLink {
         apiBroken = true;
     }
 
-    public static boolean apiAvailable() { return !apiBroken; }
+    public static boolean apiAvailable() { return Mods.CREATE_RADARS && !apiBroken; }
 
     /** Блок-радар: реализует IRadar или его ID указан в конфиге. */
     public static boolean isRadar(BlockEntity be) {
+        if (!Mods.CREATE_RADARS) return false;
         if (!apiBroken) {
             try {
                 if (be instanceof IRadar) return true;
@@ -49,6 +50,7 @@ public final class RadarLink {
     }
 
     public static boolean isRunning(BlockEntity be) {
+        if (!Mods.CREATE_RADARS) return false;
         if (apiBroken) return true;
         try {
             return !(be instanceof IRadar r) || r.isRunning();
@@ -59,7 +61,7 @@ public final class RadarLink {
     }
 
     public static float range(BlockEntity be) {
-        if (apiBroken) return 0;
+        if (!apiAvailable()) return 0;
         try {
             return be instanceof IRadar r ? r.getRange() : 0;
         } catch (Throwable t) {
@@ -70,7 +72,7 @@ public final class RadarLink {
 
     /** Позиция радара, которую он сам сообщает (у радара на корабле - мировая). */
     public static BlockPos worldPos(BlockEntity be) {
-        if (!apiBroken) {
+        if (apiAvailable()) {
             try {
                 if (be instanceof IRadar r && r.getWorldPos() != null) return r.getWorldPos();
             } catch (Throwable t) {
@@ -83,7 +85,7 @@ public final class RadarLink {
     /** Цели радара; null, если API недоступно. */
     @Nullable
     public static List<Contact> contacts(BlockEntity be) {
-        if (apiBroken || !(be instanceof IRadar)) return null;
+        if (!apiAvailable() || !(be instanceof IRadar)) return null;
         try {
             IRadar r = (IRadar) be;
             Collection<RadarTrack> tracks = r.getTracks();
@@ -107,7 +109,7 @@ public final class RadarLink {
      * Пустой список - функция отключена.
      */
     public static boolean shipHasFriendlyRadarId(UUID ship, List<? extends String> friendlyIds) {
-        if (friendlyIds.isEmpty() || apiBroken) return false;
+        if (friendlyIds.isEmpty() || !apiAvailable()) return false;
         try {
             IDManager.IDRecord rec = IDManager.getIDRecordByShipId(ship);
             return rec != null && friendlyIds.contains(rec.secretID());

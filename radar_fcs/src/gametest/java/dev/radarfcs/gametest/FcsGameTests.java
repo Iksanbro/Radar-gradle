@@ -22,7 +22,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.projectile.Projectile;
-import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -30,10 +29,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import dev.ryanhcode.sable.api.SubLevelAssemblyHelper;
-import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
-import dev.ryanhcode.sable.companion.math.BoundingBox3i;
-import dev.ryanhcode.sable.sublevel.ServerSubLevel;
+import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import rbasamoyai.createbigcannons.cannons.autocannon.breech.AbstractAutocannonBreechBlockEntity;
@@ -55,7 +51,7 @@ public class FcsGameTests {
 
     // ----------------------------------------------------------------- настройка
 
-    private static void commonConfig() {
+    static void commonConfig() {
         FcsConfig.MIN_RANGE.set(4.0);
         FcsConfig.LINK_RADIUS.set(16);
         FcsConfig.GLOW_TARGETS.set(true);
@@ -71,11 +67,14 @@ public class FcsGameTests {
     }
 
     /** Вычислители, созданные тестами: после партии их убираем, чтобы они не стреляли по соседним тестам. */
-    private static final java.util.List<BlockPos> CREATED = new java.util.ArrayList<>();
+    static final java.util.List<BlockPos> CREATED = new java.util.ArrayList<>();
 
-    private static void cleanup(ServerLevel level) {
+    static void cleanup(ServerLevel level) {
+        // блоки мода (вычислители, радары, мониторы): иначе они работают и в соседних тестах
         for (BlockPos p : CREATED) {
-            if (level.getBlockEntity(p) instanceof FireControlBlockEntity) level.setBlock(p, Blocks.AIR.defaultBlockState(), 3);
+            if (FcsMod.MODID.equals(BuiltInRegistries.BLOCK.getKey(level.getBlockState(p).getBlock()).getNamespace())) {
+                level.setBlock(p, Blocks.AIR.defaultBlockState(), 3);
+            }
         }
         CREATED.clear();
         java.util.List<net.minecraft.world.entity.Entity> doomed = new java.util.ArrayList<>();
@@ -122,11 +121,11 @@ public class FcsGameTests {
 
     // ------------------------------------------------------------------ строители
 
-    private static Block block(String id) {
+    static Block block(String id) {
         return BuiltInRegistries.BLOCK.get(ResourceLocation.parse(id));
     }
 
-    private static void floor(GameTestHelper h) {
+    static void floor(GameTestHelper h) {
         BlockState stone = Blocks.SMOOTH_STONE.defaultBlockState();
         for (int x = 0; x < 64; x++) for (int z = 0; z < 64; z++) h.setBlock(new BlockPos(x, 0, z), stone);
     }
@@ -135,7 +134,7 @@ public class FcsGameTests {
      * Большая чугунная пушка на станке: казённик, chambers каморы с порохом, barrels стволов, ядро в первом стволе.
      * Пушка смотрит в сторону dir. Станок в mount, ось вращения на 2 блока выше.
      */
-    private static void bigCannon(GameTestHelper h, BlockPos mount, Direction dir, int chambers, int barrels, boolean load) {
+    static void bigCannon(GameTestHelper h, BlockPos mount, Direction dir, int chambers, int barrels, boolean load) {
         h.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState()
                 .setValue(BlockStateProperties.HORIZONTAL_FACING, dir));
         BlockPos pivot = mount.above(2);
@@ -246,7 +245,7 @@ public class FcsGameTests {
         return true;
     }
 
-    private static FireControlBlockEntity fcs(GameTestHelper h, BlockPos rel) {
+    static FireControlBlockEntity fcs(GameTestHelper h, BlockPos rel) {
         h.setBlock(rel, FcsRegistry.FIRE_CONTROL.get().defaultBlockState());
         if (h.getLevel().getBlockEntity(h.absolutePos(rel)) instanceof FireControlBlockEntity be) {
             CREATED.add(h.absolutePos(rel));
@@ -256,7 +255,7 @@ public class FcsGameTests {
     }
 
     /** Цель без ИИ, которую тест двигает сам: туда-обратно вдоль оси Z с заданной скоростью. */
-    private static Mob movingTarget(GameTestHelper h, EntityType<? extends Mob> type, Vec3 startRel, double speedPerTick,
+    static Mob movingTarget(GameTestHelper h, EntityType<? extends Mob> type, Vec3 startRel, double speedPerTick,
                                     double span) {
         Mob mob = h.spawn(type, startRel);
         mob.setNoAi(true);
@@ -275,7 +274,7 @@ public class FcsGameTests {
         return mob;
     }
 
-    private static void logEvery(GameTestHelper h, FireControlBlockEntity be, String name, int period) {
+    static void logEvery(GameTestHelper h, FireControlBlockEntity be, String name, int period) {
         AtomicInteger tick = new AtomicInteger();
         h.onEachTick(() -> {
             int t = tick.getAndIncrement();
@@ -294,7 +293,7 @@ public class FcsGameTests {
     }
 
     /** Следит за снарядами CBC и пишет в лог минимальный промах каждого по цели (расстояние до её габарита). */
-    private static void trackMiss(GameTestHelper h, Mob target, String name) {
+    static void trackMiss(GameTestHelper h, Mob target, String name) {
         java.util.Map<Integer, double[]> best = new java.util.HashMap<>();
         java.util.Map<Integer, Vec3> lastPos = new java.util.HashMap<>();
         AtomicInteger tick = new AtomicInteger();
@@ -431,6 +430,10 @@ public class FcsGameTests {
     /** Цели берутся с плоского радара Create Radars: без радара - статус «нет радара», с радаром - попадание. */
     @GameTest(template = ARENA, batch = "radar", timeoutTicks = 700)
     public static void radarDesignatedTarget(GameTestHelper h) {
+        if (!ModList.get().isLoaded("create_radar")) {
+            h.succeed();                                                       // Create Radars не установлен
+            return;
+        }
         floor(h);
         bigCannon(h, new BlockPos(10, 1, 32), Direction.EAST, 2, 4, true);
         FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 28));
@@ -452,68 +455,19 @@ public class FcsGameTests {
             if (!be.sensor().usedRadar()) throw new GameTestAssertException("radar tracks were not used");
         });
     }
-    // ----------------------------------------------------------------- корабли Sable
-
-    /**
-     * Корабль Sable из куба железных блоков. Летит физически: каждый тик ему досыпается скорость до заданной
-     * (компенсация гравитации), направление меняется каждые span блоков. Так Sable сообщает честную скорость.
-     */
-    private static ServerSubLevel ship(GameTestHelper h, BlockPos minRel, int size, Vec3 velPerTick, double span,
-                                       boolean transponder) {
-        for (int x = 0; x < size; x++) for (int y = 0; y < size; y++) for (int z = 0; z < size; z++)
-            h.setBlock(minRel.offset(x, y, z), Blocks.IRON_BLOCK.defaultBlockState());
-        if (transponder) h.setBlock(minRel.offset(size / 2, size - 1, size / 2), FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState());
-        BlockPos min = h.absolutePos(minRel), max = min.offset(size - 1, size - 1, size - 1);
-        ServerSubLevel sub = SubLevelAssemblyHelper.assembleBlocks(h.getLevel(), min, BlockPos.betweenClosed(min, max),
-                new BoundingBox3i(min.getX(), min.getY(), min.getZ(), max.getX(), max.getY(), max.getZ()));
-        double period = velPerTick.length() < 1e-9 ? Double.MAX_VALUE : span / velPerTick.length();
-        AtomicInteger tick = new AtomicInteger();
-        h.onEachTick(() -> {
-            if (sub.isRemoved()) return;
-            int t = tick.getAndIncrement();
-            double sign = ((int) (t / period)) % 2 == 0 ? 1 : -1;
-            RigidBodyHandle body = RigidBodyHandle.of(sub);
-            if (body == null || !body.isValid()) return;
-            org.joml.Vector3d cur = body.getLinearVelocity(new org.joml.Vector3d());
-            org.joml.Vector3d ang = body.getAngularVelocity(new org.joml.Vector3d());
-            org.joml.Vector3d want = new org.joml.Vector3d(velPerTick.x * sign, velPerTick.y * sign, velPerTick.z * sign).mul(20.0);
-            body.addLinearAndAngularVelocity(want.sub(cur), ang.negate());
-        });
-        return sub;
-    }
-
-    /** Снаряд CBC прошёл через габарит корабля. */
-    private static AtomicInteger watchShipHits(GameTestHelper h, ServerSubLevel sub, String name) {
-        AtomicInteger hits = new AtomicInteger();
-        java.util.Map<Integer, Vec3> last = new java.util.HashMap<>();
-        java.util.Set<Integer> counted = new java.util.HashSet<>();
-        h.onEachTick(() -> {
-            if (sub.isRemoved()) return;
-            var b = sub.boundingBox();
-            AABB box = new AABB(b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ()).inflate(0.3);
-            for (AbstractCannonProjectile p : h.getLevel().getEntitiesOfClass(AbstractCannonProjectile.class, box.inflate(80))) {
-                Vec3 prev = last.getOrDefault(p.getId(), p.position()), cur = p.position();
-                last.put(p.getId(), cur);
-                if (counted.contains(p.getId())) continue;
-                if (box.contains(cur) || box.clip(prev, cur).isPresent()) {
-                    counted.add(p.getId());
-                    hits.incrementAndGet();
-                    FcsMod.LOG.info("[radar_fcs test] {}: projectile #{} hit ship box {}", name, p.getId(), box);
-                }
-            }
-        });
-        return hits;
-    }
-
     /** Корабль Create Aeronautics / Sable - цель: вычислитель стреляет и попадает по движущемуся кораблю. */
     @GameTest(template = ARENA, batch = "ship", timeoutTicks = 600)
     public static void shipIsEngaged(GameTestHelper h) {
+        if (!ModList.get().isLoaded("sable")) {
+            h.succeed();                                                       // без Sable тест не применим
+            return;
+        }
         floor(h);
         bigCannon(h, new BlockPos(10, 1, 32), Direction.EAST, 2, 4, true);
         FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 28));
-        ServerSubLevel sub = ship(h, new BlockPos(46, 9, 22), 3, new Vec3(0, 0, 0.12), 14, false);
+        Object sub = SableTestSupport.ship(h, new BlockPos(46, 9, 22), 3, new Vec3(0, 0, 0.12), 14, false);
         logEvery(h, be, "ship", 20);
-        AtomicInteger hits = watchShipHits(h, sub, "ship");
+        AtomicInteger hits = SableTestSupport.watchShipHits(h, sub, "ship");
         h.succeedWhen(() -> {
             if (hits.get() == 0) throw new GameTestAssertException("ship not hit yet");
             FcsMod.LOG.info("[radar_fcs test] ship: HIT, tracks={}", be.sensor().all().size());
@@ -523,12 +477,16 @@ public class FcsGameTests {
     /** Транспондер на корабле: весь корабль свой, огня нет. */
     @GameTest(template = ARENA, batch = "shipiff", timeoutTicks = 260)
     public static void shipWithTransponderIsFriendly(GameTestHelper h) {
+        if (!ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
         floor(h);
         bigCannon(h, new BlockPos(10, 1, 32), Direction.EAST, 2, 4, true);
         FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 28));
-        ServerSubLevel sub = ship(h, new BlockPos(46, 9, 22), 3, new Vec3(0, 0, 0.12), 14, true);
+        Object sub = SableTestSupport.ship(h, new BlockPos(46, 9, 22), 3, new Vec3(0, 0, 0.12), 14, true);
         logEvery(h, be, "shipiff", 40);
-        AtomicInteger hits = watchShipHits(h, sub, "shipiff");
+        AtomicInteger hits = SableTestSupport.watchShipHits(h, sub, "shipiff");
         h.runAtTickTime(220, () -> {
             if (hits.get() > 0) h.fail("friendly ship was shot");
             boolean seen = false;

@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "radar_fcs:block/radar_monitor"
+    },
+    "facing=east": {
+      "model": "radar_fcs:block/radar_monitor",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "radar_fcs:block/radar_monitor",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "radar_fcs:block/radar_monitor",
+      "y": 270
+    }
+  }
+}

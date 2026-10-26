@@ -11,6 +11,8 @@ import dev.radarfcs.fcs.FcsControl;
 import dev.radarfcs.fcs.MountState;
 import dev.radarfcs.fcs.Status;
 import dev.radarfcs.fcs.TargetSensor;
+import dev.radarfcs.radar.RadarEmitter;
+import dev.radarfcs.radar.RadarNetwork;
 import dev.radarfcs.registry.FcsRegistry;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -54,6 +56,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     private final TargetSensor sensor = new TargetSensor();
     private final Map<BlockPos, MountState> mounts = new LinkedHashMap<>();
     private final List<BlockEntity> radars = new ArrayList<>();
+    private List<RadarEmitter> ownRadars = List.of();
     private int runningRadars;
     private long lastDiscover = Long.MIN_VALUE / 2;
     private boolean hold;
@@ -83,7 +86,11 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             lastDiscover = now;
             discover(level, now);
         }
-        runningRadars = 0;
+        Vec origin = origin(level);
+        // свои радары канала (сеть) и радары Create Radars рядом
+        ownRadars = RadarNetwork.linked(level, new Vec3(origin.x(), origin.y(), origin.z()), channel.getId(),
+                FcsConfig.NETWORK_RANGE.get());
+        runningRadars = ownRadars.size();
         for (BlockEntity r : radars) if (!r.isRemoved() && RadarLink.isRunning(r)) runningRadars++;
         if (FcsConfig.REQUIRE_RADAR.get() && runningRadars == 0) {
             sensor.clear();
@@ -92,15 +99,31 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             if (now % FcsConfig.SCAN_INTERVAL.get() == 0) {
                 List<BlockEntity> live = new ArrayList<>();
                 for (BlockEntity r : radars) if (!r.isRemoved() && RadarLink.isRunning(r)) live.add(r);
-                sensor.sense(level, live, context(level), now);
+                sensor.sense(level, live, ownRadars, context(level), now);
             }
-            Vec origin = origin(level);
-            for (MountState m : mounts.values()) FcsControl.control(level, this, m, sensor, now, hold, channel.getId(), platformShips);
+            UUID designated = RadarNetwork.designated(level, channel.getId(), now);
+            String des = designated == null ? null : designated.toString();
+            for (MountState m : mounts.values()) {
+                FcsControl.control(level, this, m, sensor, now, hold, channel.getId(), platformShips, des);
+                if (m.targetId != null && (m.status == Status.FIRE || m.status == Status.AIMING)) {
+                    UUID tid = uuidOrNull(m.targetId);
+                    if (tid != null) RadarNetwork.markEngaged(level, channel.getId(), tid, now + 30);
+                }
+            }
             if (now % 10 == 0) FcsControl.visuals(level, sensor, mounts.values(), origin);
         }
         if (now - lastSummary >= 20) {
             lastSummary = now;
             updateSummary(level);
+        }
+    }
+
+    @Nullable
+    private static UUID uuidOrNull(String s) {
+        try {
+            return UUID.fromString(s);
+        } catch (IllegalArgumentException e) {
+            return null;
         }
     }
 
@@ -216,7 +239,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     private void updateSummary(ServerLevel level) {
         CompoundTag tag = new CompoundTag();
         tag.putInt("Radars", runningRadars);
-        tag.putInt("RadarBlocks", radars.size());
+        tag.putInt("RadarBlocks", radars.size() + ownRadars.size());
         tag.putBoolean("RadarOk", !FcsConfig.REQUIRE_RADAR.get() || runningRadars > 0);
         tag.putBoolean("Hold", hold);
         tag.putInt("Channel", channel.getId());
@@ -329,6 +352,14 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
 
     public TargetSensor sensor() {
         return sensor;
+    }
+
+    public List<RadarEmitter> linkedRadars() {
+        return ownRadars;
+    }
+
+    public DyeColor channel() {
+        return channel;
     }
 
     @Override

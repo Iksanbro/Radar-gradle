@@ -21,13 +21,14 @@ public final class FcsMod {
     public FcsMod(IEventBus modBus, ModContainer container) {
         FcsRegistry.register(modBus);
         container.registerConfig(ModConfig.Type.SERVER, FcsConfig.SPEC);
-        modBus.addListener(FMLCommonSetupEvent.class, e -> e.enqueueWork(FcsRegistry::bindDisplaySource));
+        modBus.addListener(FMLCommonSetupEvent.class, e -> e.enqueueWork(FcsRegistry::bindCreate));
         NeoForge.EVENT_BUS.addListener(ShotObserver::onEntityJoin);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onLevelTick);
         NeoForge.EVENT_BUS.addListener(ServerStoppedEvent.class, e -> {
             ShotObserver.clear();
             IffRegistry.clear();
             dev.radarfcs.fcs.FcsControl.clearClaims();
+            dev.radarfcs.radar.RadarNetwork.clear();
         });
     }
 }

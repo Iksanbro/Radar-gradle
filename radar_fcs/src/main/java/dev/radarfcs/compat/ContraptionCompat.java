@@ -3,6 +3,7 @@ package dev.radarfcs.compat;
 import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.simibubi.create.content.contraptions.Contraption;
 import dev.radarfcs.FcsConfig;
+import dev.radarfcs.block.AntennaBlock;
 import dev.radarfcs.block.IffTransponderBlock;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -15,7 +16,9 @@ import rbasamoyai.createbigcannons.cannon_control.contraption.PitchOrientedContr
 /** Контрапшены Create: опознание и поиск транспондера «свой» среди их блоков. */
 public final class ContraptionCompat {
     private static final long CACHE_TICKS = 100;
-    /** Сущность -> {битовая маска каналов транспондеров, тик}. */
+    /** Бит маски: в контрапшене есть антенна радара. */
+    private static final long ANTENNA_BIT = 1L << 62;
+    /** Сущность -> {битовая маска каналов транспондеров и антенны, тик}. */
     private static final Map<Entity, long[]> IFF_CACHE = new WeakHashMap<>();
 
     private ContraptionCompat() {}
@@ -29,22 +32,27 @@ public final class ContraptionCompat {
         return e instanceof PitchOrientedContraptionEntity;
     }
 
+    /** Не цель: пушка на станке, вращающаяся антенна радара, поезда и т.п. (ignoredContraptionHints). */
     public static boolean isIgnored(Entity e) {
-        return isMountedCannon(e) || Reflect.nameMatches(e.getClass(), FcsConfig.IGNORED_CONTRAPTION_HINTS.get());
+        return isMountedCannon(e) || Reflect.nameMatches(e.getClass(), FcsConfig.IGNORED_CONTRAPTION_HINTS.get())
+                || (mask(e, e.level().getGameTime()) & ANTENNA_BIT) != 0;
     }
 
     /** Есть ли в контрапшене транспондер этого канала. Результат кэшируется на 5 секунд. */
     public static boolean hasTransponder(Entity e, int channel, long now) {
-        long mask;
+        return (mask(e, now) & (1L << channel)) != 0;
+    }
+
+    private static long mask(Entity e, long now) {
         synchronized (IFF_CACHE) {
             long[] c = IFF_CACHE.get(e);
-            if (c != null && now - c[1] < CACHE_TICKS) return (c[0] & (1L << channel)) != 0;
+            if (c != null && now - c[1] < CACHE_TICKS && now >= c[1]) return c[0];
         }
-        mask = scan(e);
+        long mask = scan(e);
         synchronized (IFF_CACHE) {
             IFF_CACHE.put(e, new long[]{mask, now});
         }
-        return (mask & (1L << channel)) != 0;
+        return mask;
     }
 
     private static long scan(Entity e) {
@@ -55,6 +63,7 @@ public final class ContraptionCompat {
         for (Map.Entry<BlockPos, StructureBlockInfo> en : c.getBlocks().entrySet()) {
             BlockState s = en.getValue().state();
             if (s.getBlock() instanceof IffTransponderBlock) mask |= 1L << IffTransponderBlock.channelOf(s);
+            else if (s.getBlock() instanceof AntennaBlock) mask |= ANTENNA_BIT;
         }
         return mask;
     }

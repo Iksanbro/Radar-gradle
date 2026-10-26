@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "radar_fcs:block/radar_dish"
+    }
+  }
+}

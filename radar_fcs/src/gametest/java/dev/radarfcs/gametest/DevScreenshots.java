@@ -19,7 +19,6 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo;
 import net.minecraft.nbt.CompoundTag;
@@ -39,6 +38,8 @@ public final class DevScreenshots {
     private static int tick = -1;
     private static Mob husk;
     private static BlockPos base;
+    private static BlockPos rbase;
+    private static final java.util.List<Mob> radarTargets = new java.util.ArrayList<>();
 
     private DevScreenshots() {}
 
@@ -53,6 +54,11 @@ public final class DevScreenshots {
         if (mc.level == null || mc.player == null || mc.getSingleplayerServer() == null) return;
         tick++;
         var server = mc.getSingleplayerServer();
+        // каждый запуск - на новом месте плоского мира, чтобы сцены прошлых запусков не попадали в кадр
+        if (tick == 2) server.execute(() -> {
+            ServerPlayer p = server.getPlayerList().getPlayers().get(0);
+            p.teleportTo(server.overworld(), p.getX() + 640, p.getY(), p.getZ(), p.getYRot(), p.getXRot());
+        });
         if (tick == 20) server.execute(() -> build(server.overworld(), server.getPlayerList().getPlayers().get(0)));
         if (husk != null && tick > 20) {
             final int t = tick;
@@ -75,7 +81,67 @@ public final class DevScreenshots {
             p.teleportTo(server.overworld(), base.getX() + 12.5, base.getY() + 1.0, base.getZ() - 1.5, 140f, 14f);
         });
         if (tick == 330) shot(mc, "fcs_transponders");
-        if (tick == 360) mc.stop();
+        // вторая сцена: радары мода и монитор
+        if (tick == 340) server.execute(() -> buildRadars(server.overworld(), server.getPlayerList().getPlayers().get(0)));
+        if (!radarTargets.isEmpty() && tick > 340) {
+            final int t = tick;
+            server.execute(() -> {
+                for (int i = 0; i < radarTargets.size(); i++) {
+                    Mob m = radarTargets.get(i);
+                    int ph = (t + i * 37) % 120;
+                    double off = ph < 60 ? ph * 0.1 : (120 - ph) * 0.1;
+                    if (m.isAlive()) m.setPos(rbase.getX() + 34.5 + i * 6, rbase.getY(), rbase.getZ() - 8 + i * 7 + off);
+                }
+            });
+        }
+        if (tick == 470) shot(mc, "radar_overview");
+        if (tick == 480) server.execute(() -> server.getPlayerList().getPlayers().get(0).teleportTo(server.overworld(),
+                rbase.getX() - 2.4, rbase.getY(), rbase.getZ() + 1.5, -90f, 12f));
+        if (tick == 540) shot(mc, "radar_monitor");
+        if (tick == 550) server.execute(() -> server.getPlayerList().getPlayers().get(0).teleportTo(server.overworld(),
+                rbase.getX() + 5.5, rbase.getY(), rbase.getZ() - 3.0, -130f, 4f));
+        if (tick == 600) shot(mc, "radar_goggles");
+        if (tick == 610) server.execute(() -> server.getPlayerList().getPlayers().get(0).teleportTo(server.overworld(),
+                rbase.getX() + 3.5, rbase.getY() + 2, rbase.getZ() + 14.5, -150f, 18f));
+        if (tick == 660) shot(mc, "radar_array");
+        if (tick == 680) mc.stop();
+    }
+
+    private static void buildRadars(ServerLevel level, ServerPlayer player) {
+        rbase = base.offset(0, 0, 32);
+        int y = rbase.getY();
+        // монитор 3x2 экраном на запад
+        var mon = FcsRegistry.RADAR_MONITOR.get().defaultBlockState().setValue(dev.radarfcs.block.RadarMonitorBlock.FACING, Direction.WEST);
+        for (int z = 0; z < 3; z++) for (int dy = 0; dy < 2; dy++) level.setBlock(rbase.offset(0, dy, z), mon, 3);
+        // радарный подшипник: мотор, подшипник, облучатель на восток перед отражателем 3x3
+        BlockPos b = rbase.offset(8, 1, -6);
+        level.setBlock(b.above(), FcsRegistry.RADAR_RECEIVER.get().defaultBlockState()
+                .setValue(dev.radarfcs.block.RadarReceiverBlock.FACING, Direction.EAST), 3);
+        for (int dy = 0; dy <= 2; dy++) for (int dz = -1; dz <= 1; dz++)
+            level.setBlock(b.above().offset(-1, dy, dz), FcsRegistry.RADAR_DISH.get().defaultBlockState(), 3);
+        level.setBlock(b, FcsRegistry.RADAR_BEARING.get().defaultBlockState().setValue(BlockStateProperties.FACING, Direction.UP), 3);
+        level.setBlock(b.below(), block("create:creative_motor").defaultBlockState().setValue(BlockStateProperties.FACING, Direction.UP), 3);
+        // фазированная решётка 3x3 лицом на юг, мотор сзади
+        BlockPos c = rbase.offset(5, 2, 10);
+        var panel = FcsRegistry.PHASED_ARRAY_PANEL.get().defaultBlockState().setValue(dev.radarfcs.block.PhasedArrayPanelBlock.FACING, Direction.SOUTH);
+        for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) if (dx != 0 || dy != 0) level.setBlock(c.offset(dx, dy, 0), panel, 3);
+        level.setBlock(c, FcsRegistry.PHASED_ARRAY_CONTROLLER.get().defaultBlockState()
+                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.SOUTH), 3);
+        level.setBlock(c.north(), block("create:creative_motor").defaultBlockState().setValue(BlockStateProperties.FACING, Direction.SOUTH), 3);
+        // купол
+        level.setBlock(rbase.offset(2, 0, -6), FcsRegistry.RADAR_DOME.get().defaultBlockState(), 3);
+        // цели
+        for (int i = 0; i < 3; i++) {
+            Mob m = EntityType.HUSK.create(level);
+            if (m == null) continue;
+            m.setNoAi(true);
+            m.setPersistenceRequired();
+            m.setPos(rbase.getX() + 34.5 + i * 6, y, rbase.getZ() - 8 + i * 7);
+            level.addFreshEntity(m);
+            radarTargets.add(m);
+        }
+        player.teleportTo(level, rbase.getX() - 8.5, y + 2, rbase.getZ() + 6.5, -118f, 14f);
+        FcsMod.LOG.info("[radar_fcs dev] radar scene built at {}", rbase);
     }
 
     private static void shot(Minecraft mc, String name) {

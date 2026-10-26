@@ -39,7 +39,7 @@ side = "BOTH"
 
 [[dependencies.${mod_id}]]
 modId = "create_radar"
-type = "required"
+type = "optional"
 versionRange = "[0.4.9,)"
 ordering = "AFTER"
 side = "BOTH"

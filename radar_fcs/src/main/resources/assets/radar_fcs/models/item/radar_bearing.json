@@ -1,0 +1,8 @@
+{
+  "parent": "create:block/bearing/item",
+  "textures": {
+    "top": "create:block/bearing_top",
+    "side": "radar_fcs:block/radar_bearing_side",
+    "back": "create:block/gearbox"
+  }
+}

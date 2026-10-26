@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "north": "radar_fcs:block/phased_array_controller_front",
+    "south": "radar_fcs:block/phased_array_controller_back",
+    "east": "radar_fcs:block/phased_array_side",
+    "west": "radar_fcs:block/phased_array_side",
+    "up": "radar_fcs:block/phased_array_controller_top",
+    "down": "radar_fcs:block/phased_array_side",
+    "particle": "radar_fcs:block/phased_array_side"
+  }
+}

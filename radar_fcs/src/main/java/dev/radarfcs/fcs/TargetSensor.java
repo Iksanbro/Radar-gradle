@@ -8,17 +8,18 @@ import dev.radarfcs.core.Track;
 import dev.radarfcs.core.TrackTable;
 import dev.radarfcs.core.Vec;
 import dev.radarfcs.iff.IffRegistry;
+import dev.radarfcs.radar.RadarContact;
+import dev.radarfcs.radar.RadarEmitter;
+import dev.radarfcs.radar.RadarScanner;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.OwnableEntity;
 import net.minecraft.world.entity.animal.FlyingAnimal;
 import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
@@ -37,9 +38,9 @@ import net.minecraft.world.scores.Team;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Сенсор вычислителя. Радар Create Radars обнаруживает и назначает цели, вычислитель сопровождает их
- * по живой сущности (точная позиция каждые scanInterval тиков), а корабли Sable - по их физике.
- * Без радарного API (или в режиме DIRECT) используется собственный сенсор.
+ * Сенсор вычислителя. Радары (свои радары мода по каналу и Create Radars рядом) обнаруживают цели,
+ * вычислитель сопровождает их по живой сущности (точная позиция каждые scanInterval тиков),
+ * а корабли Sable - по их физике. Без радаров (или в режиме DIRECT) используется собственный сенсор.
  */
 public final class TargetSensor {
 
@@ -71,19 +72,31 @@ public final class TargetSensor {
         contacts = 0;
     }
 
-    public void sense(ServerLevel level, List<BlockEntity> radars, Context ctx, long now) {
+    public void sense(ServerLevel level, List<BlockEntity> radars, List<RadarEmitter> own, Context ctx, long now) {
         TrackTable.Settings s = new TrackTable.Settings(FcsConfig.TRACK_WINDOW.get(), 0.12);
         FcsConfig.SensorMode mode = FcsConfig.SENSOR_MODE.get();
         Set<String> seen = new HashSet<>();
         contacts = 0;
         usedRadar = false;
         double radarRange = 0;
-        if (mode != FcsConfig.SensorMode.DIRECT && RadarLink.apiAvailable() && !radars.isEmpty()) {
+        if (mode != FcsConfig.SensorMode.DIRECT && !own.isEmpty()) {
             usedRadar = true;
+            for (RadarEmitter r : own) {
+                radarRange = Math.max(radarRange, r.radarRange());
+                for (RadarContact c : r.radarContacts().all()) {
+                    String id = c.id.toString();
+                    if (!seen.add(id)) continue;
+                    contacts++;
+                    observeOwnContact(level, c, id, now, s);
+                }
+            }
+        }
+        if (mode != FcsConfig.SensorMode.DIRECT && RadarLink.apiAvailable() && !radars.isEmpty()) {
+            boolean ok = true;
             for (BlockEntity r : radars) {
                 List<RadarLink.Contact> list = RadarLink.contacts(r);
                 if (list == null) {
-                    usedRadar = false;
+                    ok = false;
                     break;
                 }
                 radarRange = Math.max(radarRange, RadarLink.range(r));
@@ -93,6 +106,7 @@ public final class TargetSensor {
                     observeContact(level, c, ctx, now, s);
                 }
             }
+            usedRadar |= ok;
         }
         if (!usedRadar && mode != FcsConfig.SensorMode.RADAR) {
             double range = radarRange > 0 ? radarRange : FcsConfig.SENSOR_RANGE.get();
@@ -106,7 +120,34 @@ public final class TargetSensor {
         active = TrackTable.sortedByDistance(table.active(), ctx.origin());
     }
 
-    // ---------------------------------------------------------------- радар
+    // ------------------------------------------------------------ свои радары
+
+    private void observeOwnContact(ServerLevel level, RadarContact c, String id, long now, TrackTable.Settings s) {
+        if (c.isShip()) {
+            SableCompat.Ship ship = SableCompat.find(level, c.id, c.pos, 64);
+            if (ship != null) {
+                observeShip(level, ship, now, s);
+            } else {
+                Track t = table.observe(id, Track.Kind.SHIP, c.name, new Vec(c.pos.x, c.pos.y, c.pos.z), c.size, c.lastSeen,
+                        false, new Vec(c.vel.x, c.vel.y, c.vel.z), s);
+                t.hostile = true;
+                t.handle = null;
+            }
+            return;
+        }
+        Entity e = c.entity != null && !c.entity.isRemoved() ? c.entity : level.getEntity(c.id);
+        if (e != null && e.isAlive()) {
+            if (RadarScanner.isIgnoredEntity(e)) return;
+            observeEntity(e, id, now, s);
+            liveSeen.add(id);
+            return;
+        }
+        // сущность была и исчезла: уничтожена или выгружена
+        table.remove(id);
+        liveSeen.remove(id);
+    }
+
+    // ------------------------------------------------------ радар Create Radars
 
     private void observeContact(ServerLevel level, RadarLink.Contact c, Context ctx, long now, TrackTable.Settings s) {
         String cat = c.category();
@@ -130,7 +171,7 @@ public final class TargetSensor {
                 liveSeen.remove(c.id());
                 return;
             }
-            if (isIgnoredEntity(e)) return;
+            if (RadarScanner.isIgnoredEntity(e)) return;
             observeEntity(e, c.id(), now, s);
             liveSeen.add(c.id());
             return;
@@ -165,7 +206,7 @@ public final class TargetSensor {
         Vec o = ctx.origin();
         AABB box = new AABB(o.x() - range, o.y() - range, o.z() - range, o.x() + range, o.y() + range, o.z() + range);
         double r2 = range * range;
-        for (Entity e : level.getEntities((Entity) null, box, this::isCandidateEntity)) {
+        for (Entity e : level.getEntities((Entity) null, box, TargetSensor::isCandidateEntity)) {
             Vec3 c = e.getBoundingBox().getCenter();
             if (c.distanceToSqr(o.x(), o.y(), o.z()) > r2) continue;
             String id = e.getUUID().toString();
@@ -181,18 +222,8 @@ public final class TargetSensor {
         for (SableCompat.Ship ship : SableCompat.shipsIn(level, box)) observeShip(level, ship, now, s);
     }
 
-    private boolean isCandidateEntity(Entity e) {
-        if (!e.isAlive() || e.isSpectator()) return false;
-        if (e instanceof Player) return true;                                   // игроки нужны и для проверки безопасности
-        if (ContraptionCompat.isContraption(e)) return !ContraptionCompat.isIgnored(e);
-        if (e instanceof Projectile) return FcsConfig.TARGET_PROJECTILES.get();
-        return e instanceof Mob && !isIgnoredEntity(e);
-    }
-
-    private boolean isIgnoredEntity(Entity e) {
-        if (ContraptionCompat.isContraption(e)) return ContraptionCompat.isIgnored(e);
-        String id = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
-        return FcsConfig.IGNORED_ENTITIES.get().contains(id);
+    private static boolean isCandidateEntity(Entity e) {
+        return RadarScanner.detectable(e);
     }
 
     // ------------------------------------------------------------- замеры
@@ -200,9 +231,7 @@ public final class TargetSensor {
     private void observeEntity(Entity e, String id, long now, TrackTable.Settings s) {
         AABB bb = e.getBoundingBox();
         Vec3 c = bb.getCenter();
-        Track.Kind kind = e instanceof Player ? Track.Kind.PLAYER
-                : ContraptionCompat.isContraption(e) ? Track.Kind.CONTRAPTION
-                : e instanceof Projectile ? Track.Kind.PROJECTILE : Track.Kind.MOB;
+        Track.Kind kind = RadarScanner.kindOf(e);
         double hr = kind == Track.Kind.CONTRAPTION
                 ? Math.min(6.0, Math.max(1.0, Math.min(bb.getXsize(), bb.getZsize()) * 0.5))
                 : Math.max(0.35, Math.min(bb.getXsize(), bb.getYsize()) * 0.5);
@@ -234,17 +263,27 @@ public final class TargetSensor {
     // ----------------------------------------------------------- свой-чужой
 
     private boolean isFriendly(ServerLevel level, Track t, Context ctx, long now) {
+        return isFriendly(level, t.handle, t.kind, t.id, t.pos, ctx, now);
+    }
+
+    /**
+     * Свой ли объект для вычислителя (или монитора) с этим контекстом.
+     * @param handle сущность, корабль Sable ({@link SableCompat.Ship}) или null
+     */
+    public static boolean isFriendly(ServerLevel level, @Nullable Object handle, Track.Kind kind, String id, Vec pos,
+                                     Context ctx, long now) {
         int ch = ctx.channel();
-        if (t.handle instanceof SableCompat.Ship ship) {
-            UUID id = ship.id();
-            if (ctx.platformShips().contains(id)) return true;
-            if (IffRegistry.shipFriendly(level, id, ch)) return true;
-            if (RadarLink.shipHasFriendlyRadarId(id, FcsConfig.FRIENDLY_RADAR_IDS.get())) return true;
-        } else if (t.kind == Track.Kind.SHIP) {
-            UUID id = uuid(t.id);
-            if (id != null && (ctx.platformShips().contains(id) || IffRegistry.shipFriendly(level, id, ch))) return true;
+        if (handle instanceof SableCompat.Ship ship) {
+            UUID sid = ship.id();
+            if (ctx.platformShips().contains(sid)) return true;
+            if (IffRegistry.shipFriendly(level, sid, ch)) return true;
+            if (RadarLink.shipHasFriendlyRadarId(sid, FcsConfig.FRIENDLY_RADAR_IDS.get())) return true;
+        } else if (kind == Track.Kind.SHIP) {
+            UUID sid = uuid(id);
+            if (sid != null && (ctx.platformShips().contains(sid) || IffRegistry.shipFriendly(level, sid, ch))) return true;
+            if (sid != null && RadarLink.shipHasFriendlyRadarId(sid, FcsConfig.FRIENDLY_RADAR_IDS.get())) return true;
         }
-        if (t.handle instanceof Entity e) {
+        if (handle instanceof Entity e) {
             if (e instanceof Player p && isFriendlyPlayer(p, ctx)) return true;
             if (e instanceof OwnableEntity own && own.getOwnerUUID() != null) {
                 if (own.getOwnerUUID().equals(ctx.owner())) return true;
@@ -257,10 +296,10 @@ public final class TargetSensor {
             UUID onShip = SableCompat.trackingShipId(e);
             if (onShip != null && (ctx.platformShips().contains(onShip) || IffRegistry.shipFriendly(level, onShip, ch)))
                 return true;
-        } else if (t.kind == Track.Kind.PLAYER && !FcsConfig.TARGET_PLAYERS.get()) {
+        } else if (kind == Track.Kind.PLAYER && !FcsConfig.TARGET_PLAYERS.get()) {
             return true;
         }
-        return IffRegistry.protectsPoint(level, t.pos, ch, FcsConfig.IFF_RADIUS.get());
+        return IffRegistry.protectsPoint(level, pos, ch, FcsConfig.IFF_RADIUS.get());
     }
 
     private static boolean isFriendlyPlayer(Player p, Context ctx) {
@@ -272,13 +311,18 @@ public final class TargetSensor {
     }
 
     private boolean isEligible(Track t, Context ctx) {
-        return switch (t.kind) {
-            case MOB -> FcsConfig.TARGET_MOBS.get() && (!FcsConfig.HOSTILE_ONLY.get() || t.hostile);
+        return isEligible(t.kind, t.hostile, t.pos, t.vel, ctx.origin());
+    }
+
+    /** Подходит ли объект как цель по настройкам (без проверки свой-чужой и скорости). */
+    public static boolean isEligible(Track.Kind kind, boolean hostile, Vec pos, Vec vel, Vec origin) {
+        return switch (kind) {
+            case MOB -> FcsConfig.TARGET_MOBS.get() && (!FcsConfig.HOSTILE_ONLY.get() || hostile);
             case PLAYER -> FcsConfig.TARGET_PLAYERS.get();
             case SHIP -> FcsConfig.TARGET_SHIPS.get();
             case CONTRAPTION -> FcsConfig.TARGET_CONTRAPTIONS.get();
             // только приближающиеся снаряды: свои уходящие снаряды не цели
-            case PROJECTILE -> FcsConfig.TARGET_PROJECTILES.get() && t.vel.dot(ctx.origin().sub(t.pos)) > 0;
+            case PROJECTILE -> FcsConfig.TARGET_PROJECTILES.get() && vel.dot(origin.sub(pos)) > 0;
             case EXTERNAL -> true;
         };
     }
