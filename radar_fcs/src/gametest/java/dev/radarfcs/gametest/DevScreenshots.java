@@ -1,0 +1,139 @@
+package dev.radarfcs.gametest;
+
+import dev.radarfcs.FcsMod;
+import dev.radarfcs.block.FireControlBlock;
+import dev.radarfcs.block.IffTransponderBlock;
+import dev.radarfcs.registry.FcsRegistry;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo;
+import net.minecraft.nbt.CompoundTag;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+import rbasamoyai.createbigcannons.cannons.ICannonBlockEntity;
+import rbasamoyai.createbigcannons.cannons.big_cannons.IBigCannonBlockEntity;
+
+/**
+ * Dev-клиент: -Dradar_fcs.screenshot=true строит сцену в мире, ждёт наведения и делает скриншоты
+ * (общий вид, вид с очками инженера на вычислитель), затем закрывает игру.
+ */
+@EventBusSubscriber(modid = FcsMod.MODID, value = Dist.CLIENT)
+public final class DevScreenshots {
+    private static int tick = -1;
+    private static Mob husk;
+    private static BlockPos base;
+
+    private DevScreenshots() {}
+
+    private static Block block(String id) {
+        return BuiltInRegistries.BLOCK.get(ResourceLocation.parse(id));
+    }
+
+    @SubscribeEvent
+    public static void onTick(ClientTickEvent.Post event) {
+        if (!Boolean.getBoolean("radar_fcs.screenshot")) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null || mc.getSingleplayerServer() == null) return;
+        tick++;
+        var server = mc.getSingleplayerServer();
+        if (tick == 20) server.execute(() -> build(server.overworld(), server.getPlayerList().getPlayers().get(0)));
+        if (husk != null && tick > 20) {
+            final int t = tick;
+            server.execute(() -> {
+                int ph = t % 96;
+                double off = ph < 48 ? ph * 0.125 : (96 - ph) * 0.125;          // туда-обратно 6 блоков, 2.5 бл/с
+                if (husk.isAlive()) husk.setPos(base.getX() + 36.5, base.getY(), base.getZ() - 6 + off);
+            });
+        }
+        if (tick == 50) shot(mc, "fcs_aiming");
+        if (tick == 200) shot(mc, "fcs_overview");
+        if (tick == 240) server.execute(() -> {
+            ServerPlayer p = server.getPlayerList().getPlayers().get(0);
+            // встать перед вычислителем и посмотреть на него в очках инженера
+            p.teleportTo(server.overworld(), base.getX() - 2.5, base.getY(), base.getZ() + 3.0, -130f, 19f);
+        });
+        if (tick == 280) shot(mc, "fcs_goggles");
+        if (tick == 300) server.execute(() -> {
+            ServerPlayer p = server.getPlayerList().getPlayers().get(0);
+            p.teleportTo(server.overworld(), base.getX() + 12.5, base.getY() + 1.0, base.getZ() - 1.5, 140f, 14f);
+        });
+        if (tick == 330) shot(mc, "fcs_transponders");
+        if (tick == 360) mc.stop();
+    }
+
+    private static void shot(Minecraft mc, String name) {
+        Screenshot.grab(mc.gameDirectory, name + ".png", mc.getMainRenderTarget(),
+                c -> FcsMod.LOG.info("[radar_fcs dev] screenshot {}: {}", name, c.getString()));
+    }
+
+    private static void build(ServerLevel level, ServerPlayer player) {
+        player.setGameMode(GameType.CREATIVE);
+        level.setDayTime(6000);
+        level.getGameRules().getRule(net.minecraft.world.level.GameRules.RULE_DOMOBSPAWNING).set(false, level.getServer());
+        level.getGameRules().getRule(net.minecraft.world.level.GameRules.RULE_DAYLIGHT).set(false, level.getServer());
+        base = player.blockPosition().offset(4, 0, 0);
+        // слизни плоского мира - тоже цели; для снимков оставляем только свою цель
+        for (var e : level.getEntitiesOfClass(net.minecraft.world.entity.monster.Slime.class, player.getBoundingBox().inflate(160))) e.discard();
+        int y = base.getY();
+        BlockPos mount = base.offset(4, 0, 0);
+        level.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState()
+                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.EAST), 3);
+        BlockPos pivot = mount.above(2);
+        Direction dir = Direction.EAST, facing = Direction.WEST;
+        level.setBlock(pivot.relative(dir, -2), block("createbigcannons:cast_iron_cannon_end").defaultBlockState()
+                .setValue(BlockStateProperties.FACING, facing), 3);
+        for (int i = 0; i < 2; i++) level.setBlock(pivot.relative(dir, -i), block("createbigcannons:cast_iron_cannon_chamber")
+                .defaultBlockState().setValue(BlockStateProperties.FACING, facing), 3);
+        for (int i = 1; i <= 4; i++) level.setBlock(pivot.relative(dir, i), block("createbigcannons:cast_iron_cannon_barrel")
+                .defaultBlockState().setValue(BlockStateProperties.FACING, facing), 3);
+        for (int i = -2; i < 4; i++) {
+            if (level.getBlockEntity(pivot.relative(dir, i)) instanceof ICannonBlockEntity<?> a
+                    && level.getBlockEntity(pivot.relative(dir, i + 1)) instanceof ICannonBlockEntity<?> b) {
+                a.cannonBehavior().setConnectedFace(dir, true);
+                b.cannonBehavior().setConnectedFace(dir.getOpposite(), true);
+            }
+        }
+        var powder = block("createbigcannons:powder_charge").defaultBlockState().setValue(BlockStateProperties.AXIS, dir.getAxis());
+        for (int i = 0; i < 2; i++) if (level.getBlockEntity(pivot.relative(dir, -i)) instanceof IBigCannonBlockEntity c)
+            c.cannonBehavior().loadBlock(new StructureBlockInfo(pivot.relative(dir, -i), powder, new CompoundTag()));
+        if (level.getBlockEntity(pivot.relative(dir, 1)) instanceof IBigCannonBlockEntity c)
+            c.cannonBehavior().loadBlock(new StructureBlockInfo(pivot.relative(dir, 1), block("createbigcannons:solid_shot")
+                    .defaultBlockState().setValue(BlockStateProperties.FACING, dir), new CompoundTag()));
+        // вычислитель, радар, транспондеры разных каналов
+        level.setBlock(base, FcsRegistry.FIRE_CONTROL.get().defaultBlockState().setValue(FireControlBlock.FACING, Direction.WEST), 3);
+        level.setBlock(base.offset(0, 0, 3), block("create_radar:plane_radar").defaultBlockState()
+                .trySetValue(BlockStateProperties.HORIZONTAL_FACING, Direction.WEST), 3);
+        DyeColor[] colors = {DyeColor.WHITE, DyeColor.RED, DyeColor.LIME, DyeColor.BLUE};
+        for (int i = 0; i < colors.length; i++) {
+            level.setBlock(base.offset(8, 0, -3 - i * 2), FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState()
+                    .setValue(IffTransponderBlock.CHANNEL, colors[i]), 3);
+        }
+        husk = EntityType.HUSK.create(level);
+        if (husk != null) {
+            husk.setNoAi(true);
+            husk.setPersistenceRequired();
+            husk.setPos(base.getX() + 36.5, y, base.getZ() - 6);
+            level.addFreshEntity(husk);
+        }
+        player.setItemSlot(EquipmentSlot.HEAD, new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("create:goggles"))));
+        player.teleportTo(level, base.getX() - 6.5, y + 3, base.getZ() + 7.5, -120f, 15f);
+        FcsMod.LOG.info("[radar_fcs dev] scene built at {}", base);
+    }
+}

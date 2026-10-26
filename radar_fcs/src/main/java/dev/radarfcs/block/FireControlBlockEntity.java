@@ -2,25 +2,16 @@ package dev.radarfcs.block;
 
 import com.simibubi.create.api.equipment.goggles.IHaveGoggleInformation;
 import dev.radarfcs.FcsConfig;
-import dev.radarfcs.compat.CbcBallistics;
 import dev.radarfcs.compat.CbcMount;
 import dev.radarfcs.compat.RadarLink;
 import dev.radarfcs.compat.SableCompat;
-import dev.radarfcs.compat.ShotObserver;
-import dev.radarfcs.core.Aim;
-import dev.radarfcs.core.BallisticSolver;
-import dev.radarfcs.core.FlightModel;
-import dev.radarfcs.core.TargetMotion;
 import dev.radarfcs.core.Track;
-import dev.radarfcs.core.TrackTable;
 import dev.radarfcs.core.Vec;
 import dev.radarfcs.fcs.FcsControl;
-import dev.radarfcs.fcs.FireSafety;
 import dev.radarfcs.fcs.MountState;
 import dev.radarfcs.fcs.Status;
 import dev.radarfcs.fcs.TargetSensor;
 import dev.radarfcs.registry.FcsRegistry;
-import dev.ryanhcode.sable.companion.SubLevelAccess;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -290,10 +281,9 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                 .withStyle(s.getBoolean("Hold") ? ChatFormatting.GOLD : ChatFormatting.GREEN)
                 .append(Component.literal("  "))
                 .append(Component.translatable("radar_fcs.report.channel", Component.translatable("color.minecraft." + ch.getName()))
-                        .withStyle(ChatFormatting.GRAY))
-                .append(Component.literal("  "))
-                .append(Component.translatable(s.getBoolean("Direct") ? "radar_fcs.report.sensor_direct" : "radar_fcs.report.sensor_radar",
-                        s.getInt("Contacts")).withStyle(ChatFormatting.DARK_GRAY)));
+                        .withStyle(ChatFormatting.GRAY)));
+        if (full) out.add(Component.translatable(s.getBoolean("Direct") ? "radar_fcs.report.sensor_direct" : "radar_fcs.report.sensor_radar",
+                s.getInt("Contacts")).withStyle(ChatFormatting.DARK_GRAY));
         ListTag ml = s.getList("Mounts", Tag.TAG_COMPOUND);
         out.add(Component.translatable("radar_fcs.report.guns", ml.size()).withStyle(ChatFormatting.WHITE));
         for (int i = 0; i < ml.size(); i++) {
@@ -302,8 +292,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             MutableComponent line = Component.literal(" " + m.getString("N") + ": ").withStyle(ChatFormatting.GRAY)
                     .append(Component.translatable(st.key()).withStyle(st.color));
             if (m.contains("T")) {
-                line.append(Component.literal(String.format(Locale.ROOT, " → %s %.0fm", m.getString("T"), m.getFloat("D")))
-                        .withStyle(ChatFormatting.WHITE));
+                line.append(Component.translatable("radar_fcs.report.engaging", m.getString("T"),
+                        String.format(Locale.ROOT, "%.0f", m.getFloat("D"))).withStyle(ChatFormatting.WHITE));
                 if (full) line.append(Component.literal(String.format(Locale.ROOT, " (%.2f°)", m.getFloat("E")))
                         .withStyle(ChatFormatting.DARK_GRAY));
             }
@@ -320,8 +310,9 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             for (int i = 0; i < tl.size(); i++) {
                 CompoundTag t = tl.getCompound(i);
                 boolean e = t.getBoolean("E");
-                out.add(Component.literal(String.format(Locale.ROOT, " %s %s  %.0fm  %.1f b/s", e ? "◎" : "●",
-                        t.getString("N"), t.getFloat("D"), t.getFloat("V"))).withStyle(e ? ChatFormatting.RED : ChatFormatting.GOLD));
+                out.add(Component.translatable("radar_fcs.report.target", e ? "◎" : "●", t.getString("N"),
+                        String.format(Locale.ROOT, "%.0f", t.getFloat("D")), String.format(Locale.ROOT, "%.1f", t.getFloat("V")))
+                        .withStyle(e ? ChatFormatting.RED : ChatFormatting.GOLD));
             }
         }
         return out;

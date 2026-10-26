@@ -38,5 +38,8 @@
   "radar_fcs.status.lost": "потеряна",
   "radar_fcs.display_source.fire_control": "Цели СУО",
   "radar_fcs.display.header": "Целей %s, огонь %s/%s",
-  "radar_fcs.display.no_radar": "СУО: нет радара"
+  "radar_fcs.display.no_radar": "СУО: нет радара",
+  "radar_fcs.report.engaging": " → %s %s м",
+  "radar_fcs.report.target": " %s %s  %s м  %s бл/с",
+  "radar_fcs.display.target": "%s %s %s м"
 }

@@ -92,11 +92,17 @@ neoForge {
         client {
             client()
             sourceSet = sourceSets.gametest
+            // ./gradlew runClient -PfcsScreenshot: зайти в мир fcs_test, построить сцену и сделать скриншоты
+            if (project.hasProperty('fcsScreenshot')) {
+                systemProperty 'radar_fcs.screenshot', 'true'
+                programArguments.addAll('--quickPlaySingleplayer', 'fcs_test', '--width', '1280', '--height', '720')
+            }
         }
         server {
             server()
             programArgument '--nogui'
             sourceSet = sourceSets.gametest
+            if (project.hasProperty('fcsAutostop')) systemProperty 'radar_fcs.autostop', 'true'
         }
         gameTestServer {
             type = 'gameTestServer'

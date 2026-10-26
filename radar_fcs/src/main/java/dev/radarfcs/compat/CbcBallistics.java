@@ -65,7 +65,6 @@ public final class CbcBallistics {
         Direction o = big.initialOrientation();
         BlockPos cur = big.getStartPos();
         float charges = 0;
-        boolean gap = false;
         List<StructureBlockInfo> projBlocks = new ArrayList<>();
         AbstractBigCannonProjectile projectile = null;
         StringBuilder fp = new StringBuilder("big");
@@ -76,13 +75,11 @@ public final class CbcBallistics {
             Block b = st.getBlock();
             if (st.isAir()) {
                 if (projectile == null && projBlocks.isEmpty()) {
-                    gap = true;
                     charges = Math.max(0, charges - 1);         // каждый пустой блок до снаряда съедает заряд, как в CBC
                 }
             } else if (b instanceof BigCannonPropellantBlock p && !(b instanceof ProjectileBlock)) {
                 charges += Math.max(0, p.getChargePower(info));
                 fp.append('|').append(BuiltInRegistries.BLOCK.getKey(b).getPath());
-                gap = false;
             } else if (b instanceof ProjectileBlock<?> pb && projectile == null) {
                 projBlocks.add(info);
                 fp.append('|').append(BuiltInRegistries.BLOCK.getKey(b).getPath());
@@ -95,7 +92,6 @@ public final class CbcBallistics {
                     if (projectile != null) charges += projectile.addedChargePower();
                     if (projectile instanceof IntegratedPropellantProjectile ip) charges += Math.max(0, ip.getChargePower());
                 }
-                gap = false;
             }
             cur = cur.relative(o);
         }

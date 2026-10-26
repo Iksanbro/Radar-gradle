@@ -36,8 +36,8 @@ public class FcsDisplaySource extends DisplaySource {
         out.add(Component.translatable("radar_fcs.display.header", s.getInt("Targets"), firing, ml.size()));
         for (int i = 0; i < tl.size() && out.size() < Math.max(1, stats.maxRows()); i++) {
             CompoundTag t = tl.getCompound(i);
-            out.add(Component.literal(String.format(Locale.ROOT, "%s%s %.0fm", t.getBoolean("E") ? "> " : "  ",
-                    t.getString("N"), t.getFloat("D"))));
+            out.add(Component.translatable("radar_fcs.display.target", t.getBoolean("E") ? ">" : " ", t.getString("N"),
+                    String.format(Locale.ROOT, "%.0f", t.getFloat("D"))));
         }
         return out;
     }

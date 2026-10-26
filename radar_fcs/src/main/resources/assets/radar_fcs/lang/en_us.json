@@ -38,5 +38,8 @@
   "radar_fcs.status.lost": "lost",
   "radar_fcs.display_source.fire_control": "FCS Targets",
   "radar_fcs.display.header": "Targets %s, firing %s/%s",
-  "radar_fcs.display.no_radar": "FCS: no radar"
+  "radar_fcs.display.no_radar": "FCS: no radar",
+  "radar_fcs.report.engaging": " → %s %s m",
+  "radar_fcs.report.target": " %s %s  %s m  %s b/s",
+  "radar_fcs.display.target": "%s %s %s m"
 }
