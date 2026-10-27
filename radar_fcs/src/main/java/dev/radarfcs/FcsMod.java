@@ -36,7 +36,6 @@ public final class FcsMod {
             ShotObserver.clear();
             IffRegistry.clear();
             dev.radarfcs.fcs.FcsControl.clearClaims();
-            dev.radarfcs.radar.RadarNetwork.clear();
             dev.radarfcs.link.LinkRegistry.clear();
         });
     }

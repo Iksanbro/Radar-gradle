@@ -4,7 +4,6 @@ import dev.radarfcs.block.FireControlBlockEntity;
 import dev.radarfcs.block.RadarMonitorBlockEntity;
 import dev.radarfcs.compat.CbcMount;
 import dev.radarfcs.compat.RadarLink;
-import dev.radarfcs.radar.RadarEmitter;
 import java.util.Locale;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -18,10 +17,8 @@ public enum LinkKind {
     FCS,
     /** Станок CBC (пушка). */
     MOUNT,
-    /** Радар этого мода (подшипник, решётка, купол). */
-    RADAR,
     /** Радар Create Radars. */
-    CR_RADAR,
+    RADAR,
     /** Радарный монитор (любой блок стены). */
     MONITOR;
 
@@ -37,22 +34,18 @@ public enum LinkKind {
         if (be == null || be.isRemoved()) return null;
         if (be instanceof FireControlBlockEntity) return FCS;
         if (be instanceof RadarMonitorBlockEntity) return MONITOR;
-        if (be instanceof RadarEmitter) return RADAR;
         if (CbcMount.of(be) != null) return MOUNT;
         try {
-            if (RadarLink.isRadar(be)) return CR_RADAR;
+            if (RadarLink.isRadar(be)) return RADAR;
         } catch (Throwable ignored) {
             // конфиг сервера ещё не загружен (клиент в меню) - не радар
         }
         return null;
     }
 
-    /**
-     * Что с чем можно связать: вычислитель - со станком, радаром, монитором; монитор - с радаром этого мода
-     * (картинку монитора дают только свои радары).
-     */
+    /** Что с чем можно связать: вычислитель - со станком, радаром, монитором; монитор - с радаром. */
     public static boolean canLink(LinkKind a, LinkKind b) {
-        if (a == FCS) return b == MOUNT || b == RADAR || b == CR_RADAR || b == MONITOR;
+        if (a == FCS) return b == MOUNT || b == RADAR || b == MONITOR;
         if (b == FCS) return canLink(b, a);
         return (a == MONITOR && b == RADAR) || (a == RADAR && b == MONITOR);
     }

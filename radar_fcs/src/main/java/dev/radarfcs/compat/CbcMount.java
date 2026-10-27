@@ -126,10 +126,6 @@ public final class CbcMount {
     }
 
     /** Скорость поворота от валов, градусов/тик (по формуле CBC). */
-    public double shaftYawRate() { return Math.abs(be.getAngularSpeed(-be.getYawSpeed(), 0.0F)); }
-
-    public double shaftPitchRate() { return Math.abs(be.getAngularSpeed(be.getPitchSpeed(), 0.0F)); }
-
     /**
      * Углы станка. Сразу переносятся и на контрапшен (как это делает станок в своём тике): тогда задержка
      * от команды до выстрела не зависит от порядка тиков блоков - автопушка следующим тиком стреляет

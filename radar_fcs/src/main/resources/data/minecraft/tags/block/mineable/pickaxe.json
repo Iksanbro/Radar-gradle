@@ -3,13 +3,9 @@
   "values": [
     "radar_fcs:fire_control_computer",
     "radar_fcs:iff_transponder",
-    "radar_fcs:radar_bearing",
-    "radar_fcs:radar_receiver",
-    "radar_fcs:radar_dish",
-    "radar_fcs:phased_array_controller",
-    "radar_fcs:phased_array_panel",
-    "radar_fcs:radar_dome",
     "radar_fcs:radar_monitor",
-    "radar_fcs:radar_link"
+    "radar_fcs:radar_link",
+    "radar_fcs:yaw_controller",
+    "radar_fcs:pitch_controller"
   ]
 }

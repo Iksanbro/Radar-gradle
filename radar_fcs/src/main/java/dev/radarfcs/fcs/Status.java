@@ -20,10 +20,12 @@ public enum Status {
     UNSUPPORTED(ChatFormatting.DARK_GRAY),
     NO_RADAR(ChatFormatting.DARK_RED),
     LOST(ChatFormatting.DARK_GRAY),
-    /** Наведение требует вращения, а на валы станка оно не подано. */
+    /** Наведение требует вращения, а на контроллер наводки оно не подано. */
     NO_POWER(ChatFormatting.GOLD),
     /** Пауза между одиночными выстрелами или очередями (режим огня). */
-    PAUSE(ChatFormatting.YELLOW);
+    PAUSE(ChatFormatting.YELLOW),
+    /** У станка нет контроллера горизонтальной или вертикальной наводки. */
+    NO_CONTROLLER(ChatFormatting.GOLD);
 
     public final ChatFormatting color;
 

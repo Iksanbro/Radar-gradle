@@ -2,6 +2,7 @@ package dev.radarfcs.fcs;
 
 import dev.radarfcs.FcsConfig;
 import dev.radarfcs.FcsMod;
+import dev.radarfcs.block.AimControllerBlockEntity;
 import dev.radarfcs.block.FireControlBlockEntity;
 import dev.radarfcs.compat.CbcBallistics;
 import dev.radarfcs.compat.CbcMount;
@@ -189,12 +190,16 @@ public final class FcsControl {
         boolean outOfArc = wantPitch < lo - 0.5 || wantPitch > hi + 0.5;
         wantPitch = Aim.clamp(wantPitch, lo, hi);
 
-        // скорость поворота: от валов станка (как в CBC) или без кинетики
+        // скорость поворота: от контроллеров наводки (вращение на их валах, как у валов CBC) или без кинетики
         double slewYaw, slewPitch;
+        boolean noController = false;
         if (FcsConfig.REQUIRE_ROTATION.get()) {
             double k = FcsConfig.SHAFT_SPEED.get();
-            slewYaw = d.shaftYawRate() * k;
-            slewPitch = d.shaftPitchRate() * k;
+            AimControllerBlockEntity yc = AimControllerBlockEntity.find(level, d.pos(), false);
+            AimControllerBlockEntity pc = AimControllerBlockEntity.find(level, d.pos(), true);
+            noController = yc == null || pc == null;
+            slewYaw = yc == null ? 0 : yc.degPerTick() * k;
+            slewPitch = pc == null ? 0 : pc.degPerTick() * k;
         } else {
             slewYaw = slewPitch = FcsConfig.SLEW.get();
         }
@@ -299,7 +304,7 @@ public final class FcsControl {
         }
 
         if (outOfArc) m.status = Status.OUT_OF_ARC;
-        else if (noPower) m.status = Status.NO_POWER;
+        else if (noPower) m.status = noController ? Status.NO_CONTROLLER : Status.NO_POWER;
         else if (!aligned) m.status = Status.AIMING;
         else if (verdict == FireSafety.Verdict.FRIENDLY) m.status = Status.BLOCKED_FRIENDLY;
         else if (verdict == FireSafety.Verdict.TERRAIN) m.status = Status.BLOCKED_TERRAIN;

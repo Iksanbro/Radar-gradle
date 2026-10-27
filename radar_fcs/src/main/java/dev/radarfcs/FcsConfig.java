@@ -6,24 +6,14 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 
 /** Серверный конфиг: world/serverconfig/radar_fcs-server.toml */
 public final class FcsConfig {
-    public enum SensorMode {
-        /** Цели с радаров (своих и Create Radars); без радаров - собственный сенсор, если requireRadar = false. */
-        AUTO,
-        /** Только цели с радаров. */
-        RADAR,
-        /** Собственный сенсор в радиусе sensorRange (радар нужен только как разрешение работы). */
-        DIRECT
-    }
-
     public static final ModConfigSpec SPEC;
 
     // связи
-    public static final ModConfigSpec.IntValue LINK_RADIUS, DISCOVER_INTERVAL, LINK_RANGE;
-    public static final ModConfigSpec.BooleanValue REQUIRE_RADAR, AUTO_ASSEMBLE, YIELD_TO_RADAR_CONTROLLERS;
+    public static final ModConfigSpec.IntValue DISCOVER_INTERVAL, LINK_RANGE;
+    public static final ModConfigSpec.BooleanValue AUTO_ASSEMBLE, YIELD_TO_RADAR_CONTROLLERS;
     public static final ModConfigSpec.ConfigValue<List<? extends String>> RADAR_BLOCKS, RAPID_CLASS_HINTS;
     // сенсор и треки
-    public static final ModConfigSpec.EnumValue<SensorMode> SENSOR_MODE;
-    public static final ModConfigSpec.DoubleValue SENSOR_RANGE, MIN_RANGE, MIN_SPEED;
+    public static final ModConfigSpec.DoubleValue MIN_RANGE, MIN_SPEED;
     public static final ModConfigSpec.IntValue SCAN_INTERVAL, MIN_SAMPLES, TRACK_WINDOW, TRACK_TIMEOUT;
     // цели
     public static final ModConfigSpec.BooleanValue TARGET_MOBS, HOSTILE_ONLY, TARGET_PLAYERS, TARGET_SHIPS,
@@ -35,7 +25,7 @@ public final class FcsConfig {
     public static final ModConfigSpec.BooleanValue REQUIRE_LOS;
     // наведение
     public static final ModConfigSpec.DoubleValue FIRE_TOLERANCE, DEADBAND, SLEW, SHAFT_SPEED, LATENCY, ACCEL_HORIZON, YAW_OFFSET,
-            TARGET_SWITCH_RATIO, RAPID_SPREAD;
+            TARGET_SWITCH_RATIO, RAPID_SPREAD, CONTROLLER_STRESS;
     public static final ModConfigSpec.IntValue LEAD_ITERATIONS, FIRE_MIN_TRACK;
     public static final ModConfigSpec.BooleanValue REQUIRE_ROTATION, USE_ACCELERATION, HIGH_ARC, INVERT_PITCH,
             INHERIT_PLATFORM_VELOCITY, DISCRETE_INTERCEPT;
@@ -50,30 +40,17 @@ public final class FcsConfig {
     public static final ModConfigSpec.BooleanValue GLOW_TARGETS, MARK_TARGETS;
     public static final ModConfigSpec.DoubleValue MARKER_RANGE;
     public static final ModConfigSpec.BooleanValue LOG_SHOTS;
-    // радары мода
-    public static final ModConfigSpec.DoubleValue NETWORK_RANGE;
-    public static final ModConfigSpec.BooleanValue RADAR_LOS, RADAR_SIZE_AFFECTS_RANGE;
-    public static final ModConfigSpec.DoubleValue BEARING_BASE_RANGE, BEARING_RANGE_PER_DISH, BEARING_MAX_RANGE,
-            BEARING_BEAM_WIDTH, BEARING_MIN_EL, BEARING_MAX_EL;
-    public static final ModConfigSpec.DoubleValue ARRAY_BASE_RANGE, ARRAY_RANGE_PER_PANEL, ARRAY_MAX_RANGE, ARRAY_HALF_ANGLE,
-            ARRAY_MIN_EL, ARRAY_MAX_EL, ARRAY_STRESS;
-    public static final ModConfigSpec.IntValue ARRAY_MAX_PANELS;
-    public static final ModConfigSpec.DoubleValue DOME_RANGE, DOME_MIN_EL, DOME_MAX_EL;
-    public static final ModConfigSpec.IntValue DOME_INTERVAL, MONITOR_MAX_SIZE, DESIGNATION_TICKS;
+    // монитор
+    public static final ModConfigSpec.IntValue MONITOR_MAX_SIZE, DESIGNATION_TICKS;
 
     static {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
 
-        b.comment("Связь вычислителя с пушками и радарами (plug & play)").push("links");
-        LINK_RADIUS = b.comment("Радиус поиска станков CBC и радаров вокруг вычислителя, блоков")
-                .defineInRange("linkRadius", 16, 2, 64);
-        DISCOVER_INTERVAL = b.comment("Как часто пересканировать подключённые блоки, тиков")
+        b.comment("Связь вычислителя с пушками, радарами Create Radars и мониторами - только радарным линком").push("links");
+        DISCOVER_INTERVAL = b.comment("Как часто перепроверять аппаратуру на линках, тиков (поставленный или снятый линк - сразу)")
                 .defineInRange("discoverInterval", 40, 10, 1200);
-        LINK_RANGE = b.comment("Наибольшее расстояние между концами радарного линка, блоков. Вычислитель, к которому линком",
-                        "подключён хотя бы один станок, управляет только подключёнными станками (то же для радаров и мониторов)")
+        LINK_RANGE = b.comment("Наибольшее расстояние между концами радарного линка, блоков")
                 .defineInRange("radarLinkRange", 64, 4, 512);
-        REQUIRE_RADAR = b.comment("Вычислитель работает только при работающем радаре: своём (канал, networkRange) или Create Radars (linkRadius)")
-                .define("requireRadar", true);
         RADAR_BLOCKS = b.comment("Запасной список ID блоков-радаров Create Radars (если его API изменилось)")
                 .defineListAllowEmpty("radarBlocks", List.of("create_radar:radar_bearing", "create_radar:plane_radar",
                         "create_radar:sky_radar"), () -> "", o -> o instanceof String);
@@ -86,10 +63,6 @@ public final class FcsConfig {
         b.pop();
 
         b.comment("Обнаружение и сопровождение целей").push("sensor");
-        SENSOR_MODE = b.comment("AUTO: цели с радаров; RADAR: только с радаров; DIRECT: собственный сенсор (радар - только разрешение)")
-                .defineEnum("sensorMode", SensorMode.AUTO);
-        SENSOR_RANGE = b.comment("Дальность собственного сенсора (режим DIRECT), блоков")
-                .defineInRange("sensorRange", 192.0, 16.0, 1024.0);
         MIN_RANGE = b.comment("Ближе этой дистанции огонь не ведётся").defineInRange("minRange", 6.0, 0.0, 64.0);
         MIN_SPEED = b.comment("Минимальная скорость цели, блоков/сек. Медленнее - цель неактивна: нет огня и отметки")
                 .defineInRange("minSpeed", 0.6, 0.0, 50.0);
@@ -136,13 +109,16 @@ public final class FcsConfig {
                 .defineInRange("rapidFireMarginBlocks", 0.1, 0.0, 8.0);
         DEADBAND = b.comment("Изменения угла меньше этого не отрабатываются: нет дрожания и бесконечного доводения")
                 .defineInRange("deadband", 0.1, 0.0, 5.0);
-        REQUIRE_ROTATION = b.comment("Станок поворачивается только при поданном вращении: на вал поворота (снизу) и вал наклона (сбоку).",
-                        "Скорость поворота - как от валов CBC (256 об/мин = 9.6 град/тик) x shaftSpeedMultiplier.",
-                        "false - поворот без кинетики со скоростью slewDegPerTick")
+        REQUIRE_ROTATION = b.comment("Станок поворачивают контроллеры наводки: горизонтальной (под станком) и вертикальной (сбоку),",
+                        "в которые подано вращение. Скорость поворота - как от валов CBC (256 об/мин = 9.6 град/тик) x shaftSpeedMultiplier.",
+                        "false - поворот без контроллеров и кинетики со скоростью slewDegPerTick")
                 .define("requireRotation", true);
-        SHAFT_SPEED = b.comment("Множитель скорости поворота от валов (1 = как у CBC)").defineInRange("shaftSpeedMultiplier", 1.0, 0.05, 20.0);
+        SHAFT_SPEED = b.comment("Множитель скорости поворота от контроллеров наводки (1 = как у валов CBC)")
+                .defineInRange("shaftSpeedMultiplier", 1.0, 0.05, 20.0);
         SLEW = b.comment("Скорость поворота станка без кинетики (requireRotation = false), градусов/тик")
                 .defineInRange("slewDegPerTick", 6.0, 0.2, 90.0);
+        CONTROLLER_STRESS = b.comment("Нагрузка контроллера наводки на кинетику, единиц стресса на об/мин")
+                .defineInRange("controllerStress", 4.0, 0.0, 256.0);
         LATENCY = b.comment("Дополнительная задержка выстрела для упреждения, тиков (обычно 0: задержки CBC учтены)")
                 .defineInRange("extraLatencyTicks", 0.0, -5.0, 20.0);
         LEAD_ITERATIONS = b.comment("Итерации расчёта упреждения (метод секущих)").defineInRange("leadIterations", 16, 2, 40);
@@ -195,37 +171,9 @@ public final class FcsConfig {
         LOG_SHOTS = b.comment("Писать в лог каждый выстрел: цель, решение, ошибку ствола (отладка)").define("logShots", false);
         b.pop();
 
-        b.comment("Радары мода: сеть по каналам (цвет красителя), без проводов и связок").push("radar");
-        NETWORK_RANGE = b.comment("Вычислители и мониторы видят радары своего канала в этом радиусе, блоков")
-                .defineInRange("networkRange", 256.0, 16.0, 4096.0);
-        RADAR_LOS = b.comment("Радар не видит сквозь блоки").define("requireLineOfSight", true);
-        RADAR_SIZE_AFFECTS_RANGE = b.comment("Крупные цели видны дальше, мелкие ближе (x0.6..x1.5)").define("sizeAffectsRange", true);
+        b.comment("Радарный монитор").push("monitor");
         DESIGNATION_TICKS = b.comment("Сколько держится назначение цели с монитора, тиков").defineInRange("designationTicks", 1200, 20, 72000);
         MONITOR_MAX_SIZE = b.comment("Наибольший размер монитора из блоков (ширина и высота)").defineInRange("monitorMaxSize", 6, 1, 16);
-        b.push("bearing");
-        BEARING_BASE_RANGE = b.comment("Дальность антенны с одним облучателем, блоков").defineInRange("baseRange", 64.0, 8.0, 2048.0);
-        BEARING_RANGE_PER_DISH = b.comment("Прибавка дальности за каждый блок отражателя").defineInRange("rangePerDish", 12.0, 0.0, 256.0);
-        BEARING_MAX_RANGE = b.defineInRange("maxRange", 384.0, 8.0, 4096.0);
-        BEARING_BEAM_WIDTH = b.comment("Ширина луча по азимуту, градусов").defineInRange("beamWidth", 12.0, 1.0, 90.0);
-        BEARING_MIN_EL = b.defineInRange("minElevation", -10.0, -90.0, 90.0);
-        BEARING_MAX_EL = b.defineInRange("maxElevation", 80.0, -90.0, 90.0);
-        b.pop();
-        b.push("phasedArray");
-        ARRAY_BASE_RANGE = b.comment("Дальность контроллера без панелей, блоков").defineInRange("baseRange", 48.0, 8.0, 2048.0);
-        ARRAY_RANGE_PER_PANEL = b.defineInRange("rangePerPanel", 10.0, 0.0, 256.0);
-        ARRAY_MAX_RANGE = b.defineInRange("maxRange", 320.0, 8.0, 4096.0);
-        ARRAY_MAX_PANELS = b.defineInRange("maxPanels", 64, 1, 1024);
-        ARRAY_HALF_ANGLE = b.comment("Половина сектора обзора по азимуту, градусов").defineInRange("halfAngle", 60.0, 5.0, 90.0);
-        ARRAY_MIN_EL = b.defineInRange("minElevation", -15.0, -90.0, 90.0);
-        ARRAY_MAX_EL = b.defineInRange("maxElevation", 75.0, -90.0, 90.0);
-        ARRAY_STRESS = b.comment("Нагрузка на кинетику за элемент решётки, единиц стресса на об/мин").defineInRange("stressPerPanel", 0.5, 0.0, 64.0);
-        b.pop();
-        b.push("dome");
-        DOME_RANGE = b.defineInRange("range", 48.0, 8.0, 1024.0);
-        DOME_INTERVAL = b.comment("Период обзора, тиков").defineInRange("scanInterval", 10, 1, 200);
-        DOME_MIN_EL = b.defineInRange("minElevation", -20.0, -90.0, 90.0);
-        DOME_MAX_EL = b.defineInRange("maxElevation", 85.0, -90.0, 90.0);
-        b.pop();
         b.pop();
 
         SPEC = b.build();

@@ -1,8 +1,0 @@
-{
-  "parent": "minecraft:block/orientable",
-  "textures": {
-    "front": "radar_fcs:block/phased_array_panel_front",
-    "side": "radar_fcs:block/phased_array_side",
-    "top": "radar_fcs:block/phased_array_side"
-  }
-}

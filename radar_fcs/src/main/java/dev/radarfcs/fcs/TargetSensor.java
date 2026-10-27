@@ -1,6 +1,7 @@
 package dev.radarfcs.fcs;
 
 import dev.radarfcs.FcsConfig;
+import dev.radarfcs.FcsDev;
 import dev.radarfcs.compat.ContraptionCompat;
 import dev.radarfcs.compat.RadarLink;
 import dev.radarfcs.compat.SableCompat;
@@ -9,9 +10,6 @@ import dev.radarfcs.core.Track;
 import dev.radarfcs.core.TrackTable;
 import dev.radarfcs.core.Vec;
 import dev.radarfcs.iff.IffRegistry;
-import dev.radarfcs.radar.RadarContact;
-import dev.radarfcs.radar.RadarEmitter;
-import dev.radarfcs.radar.RadarScanner;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -39,9 +37,8 @@ import net.minecraft.world.scores.Team;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Сенсор вычислителя. Радары (свои радары мода по каналу и Create Radars рядом) обнаруживают цели,
- * вычислитель сопровождает их по живой сущности (точная позиция каждые scanInterval тиков),
- * а корабли Sable - по их физике. Без радаров (или в режиме DIRECT) используется собственный сенсор.
+ * Сенсор вычислителя и монитора. Радары Create Radars на линках обнаруживают цели, сенсор сопровождает их
+ * по живой сущности (точная позиция каждые scanInterval тиков), а корабли Sable - по их физике.
  */
 public final class TargetSensor {
 
@@ -73,54 +70,34 @@ public final class TargetSensor {
         contacts = 0;
     }
 
-    public void sense(ServerLevel level, List<BlockEntity> radars, List<RadarEmitter> own, Context ctx, long now) {
-        sense(level, radars, own, ctx, now, new EngageSettings(), t -> false);
+    public void sense(ServerLevel level, List<BlockEntity> radars, Context ctx, long now) {
+        sense(level, radars, ctx, now, new EngageSettings(), t -> false);
     }
 
     /**
+     * @param radars   радары Create Radars на линках
      * @param settings настройки вычислителя: типы целей, окно скорости, стоящие/движущиеся
      * @param dropped  цели, сброшенные вычислителем (после N выстрелов)
      */
-    public void sense(ServerLevel level, List<BlockEntity> radars, List<RadarEmitter> own, Context ctx, long now,
+    public void sense(ServerLevel level, List<BlockEntity> radars, Context ctx, long now,
                       EngageSettings settings, java.util.function.Predicate<Track> dropped) {
         TrackTable.Settings s = new TrackTable.Settings(FcsConfig.TRACK_WINDOW.get(), 0.12);
-        FcsConfig.SensorMode mode = FcsConfig.SENSOR_MODE.get();
         Set<String> seen = new HashSet<>();
         contacts = 0;
         usedRadar = false;
-        double radarRange = 0;
-        if (mode != FcsConfig.SensorMode.DIRECT && !own.isEmpty()) {
+        if (FcsDev.radarless) {
+            directScan(level, ctx, FcsDev.radarlessRange, now, s);
+        } else if (RadarLink.apiAvailable() && !radars.isEmpty()) {
             usedRadar = true;
-            for (RadarEmitter r : own) {
-                radarRange = Math.max(radarRange, r.radarRange());
-                for (RadarContact c : r.radarContacts().all()) {
-                    String id = c.id.toString();
-                    if (!seen.add(id)) continue;
-                    contacts++;
-                    observeOwnContact(level, c, id, now, s);
-                }
-            }
-        }
-        if (mode != FcsConfig.SensorMode.DIRECT && RadarLink.apiAvailable() && !radars.isEmpty()) {
-            boolean ok = true;
             for (BlockEntity r : radars) {
                 List<RadarLink.Contact> list = RadarLink.contacts(r);
-                if (list == null) {
-                    ok = false;
-                    break;
-                }
-                radarRange = Math.max(radarRange, RadarLink.range(r));
+                if (list == null) continue;
                 for (RadarLink.Contact c : list) {
                     if (!seen.add(c.id())) continue;
                     contacts++;
                     observeContact(level, c, ctx, now, s);
                 }
             }
-            usedRadar |= ok;
-        }
-        if (!usedRadar && mode != FcsConfig.SensorMode.RADAR) {
-            double range = radarRange > 0 ? radarRange : FcsConfig.SENSOR_RANGE.get();
-            directScan(level, ctx, range, now, s);
         }
         table.prune(now, FcsConfig.TRACK_TIMEOUT.get());
         liveSeen.removeIf(id -> table.get(id) == null);
@@ -130,34 +107,6 @@ public final class TargetSensor {
                         && settings.speedAllowed(t.speedPerTick() * 20) && !dropped.test(t),
                 ctx.origin(), FcsConfig.MIN_RANGE.get(), FcsConfig.MAX_RANGE.get(), t -> settings.motionAllowed(t));
         active = TrackTable.sortedByDistance(table.active(), ctx.origin());
-    }
-
-    // ------------------------------------------------------------ свои радары
-
-    private void observeOwnContact(ServerLevel level, RadarContact c, String id, long now, TrackTable.Settings s) {
-        if (c.isShip()) {
-            SableCompat.Ship ship = SableCompat.find(level, c.id, c.pos, 64);
-            if (ship != null) {
-                observeShip(level, ship, now, s);
-            } else {
-                Track t = table.observe(id, Track.Kind.SHIP, c.name, new Vec(c.pos.x, c.pos.y, c.pos.z), c.size, c.lastSeen,
-                        false, new Vec(c.vel.x, c.vel.y, c.vel.z), s);
-                t.hostile = true;
-                t.handle = null;
-                t.volume = 8 * c.size * c.size * c.size;
-            }
-            return;
-        }
-        Entity e = c.entity != null && !c.entity.isRemoved() ? c.entity : level.getEntity(c.id);
-        if (e != null && e.isAlive()) {
-            if (RadarScanner.isIgnoredEntity(e)) return;
-            observeEntity(e, id, now, s);
-            liveSeen.add(id);
-            return;
-        }
-        // сущность была и исчезла: уничтожена или выгружена
-        table.remove(id);
-        liveSeen.remove(id);
     }
 
     // ------------------------------------------------------ радар Create Radars
@@ -184,7 +133,7 @@ public final class TargetSensor {
                 liveSeen.remove(c.id());
                 return;
             }
-            if (RadarScanner.isIgnoredEntity(e)) return;
+            if (isIgnoredEntity(e)) return;
             observeEntity(e, c.id(), now, s);
             liveSeen.add(c.id());
             return;
@@ -237,7 +186,25 @@ public final class TargetSensor {
     }
 
     private static boolean isCandidateEntity(Entity e) {
-        return RadarScanner.detectable(e);
+        if (!e.isAlive() || e.isSpectator() || e.isRemoved()) return false;
+        if (e instanceof Player) return true;
+        if (ContraptionCompat.isContraption(e)) return !ContraptionCompat.isIgnored(e);
+        if (e instanceof Projectile) return FcsConfig.TARGET_PROJECTILES.get();
+        return e instanceof net.minecraft.world.entity.Mob && !isIgnoredEntity(e);
+    }
+
+    /** Сущность из списка игнорируемых (конфиг) или служебный контрапшен. */
+    public static boolean isIgnoredEntity(Entity e) {
+        if (ContraptionCompat.isContraption(e)) return ContraptionCompat.isIgnored(e);
+        String id = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
+        return FcsConfig.IGNORED_ENTITIES.get().contains(id);
+    }
+
+    public static Track.Kind kindOf(Entity e) {
+        if (e instanceof Player) return Track.Kind.PLAYER;
+        if (ContraptionCompat.isContraption(e)) return Track.Kind.CONTRAPTION;
+        if (e instanceof Projectile) return Track.Kind.PROJECTILE;
+        return Track.Kind.MOB;
     }
 
     // ------------------------------------------------------------- замеры
@@ -245,7 +212,7 @@ public final class TargetSensor {
     private void observeEntity(Entity e, String id, long now, TrackTable.Settings s) {
         AABB bb = e.getBoundingBox();
         Vec3 c = bb.getCenter();
-        Track.Kind kind = RadarScanner.kindOf(e);
+        Track.Kind kind = kindOf(e);
         double hr = kind == Track.Kind.CONTRAPTION
                 ? Math.min(6.0, Math.max(1.0, Math.min(bb.getXsize(), bb.getZsize()) * 0.5))
                 : Math.max(0.35, Math.min(bb.getXsize(), bb.getYsize()) * 0.5);

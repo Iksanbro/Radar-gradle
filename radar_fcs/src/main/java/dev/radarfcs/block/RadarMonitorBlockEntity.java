@@ -5,11 +5,8 @@ import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.core.Vec;
 import dev.radarfcs.fcs.TargetSensor;
-import dev.radarfcs.radar.RadarContact;
+import dev.radarfcs.compat.RadarLink;
 import dev.radarfcs.link.LinkRegistry;
-import dev.radarfcs.radar.RadarEmitter;
-import dev.radarfcs.radar.RadarInfo;
-import dev.radarfcs.radar.RadarNetwork;
 import dev.radarfcs.registry.FcsRegistry;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -80,9 +77,11 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     private List<Target> targets = List.of();
     private CompoundTag lastSent = new CompoundTag();
     private long lastCluster = Long.MIN_VALUE / 2;
-    /** Вычислители, подключённые к экрану радарными линками: назначение цели идёт только им. */
-    private int linkedFcs;
-    /** Цель, назначенная на этом экране (для вычислителей, подключённых линком). */
+    /** Сопровождение целей с радаров на линках (как у вычислителя). */
+    private final TargetSensor sensor = new TargetSensor();
+    /** Цели под огнём вычислителей на линках: id -> до какого тика. */
+    private final Map<UUID, Long> engaged = new HashMap<>();
+    /** Цель, назначенная на этом экране (для вычислителей на линках). */
     @Nullable private UUID localTarget;
     private long localUntil;
 
@@ -201,6 +200,11 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         return m.localTarget != null && m.localUntil >= now ? m.localTarget : null;
     }
 
+    /** Вычислитель на линке ведёт огонь по цели (отметка на экране). */
+    public void markEngaged(UUID target, long until) {
+        master().engaged.put(target, until);
+    }
+
     /** Блоки стены экрана (линк может стоять на любом). */
     private List<BlockPos> wallPositions() {
         Direction right = facing().getCounterClockWise();
@@ -227,60 +231,48 @@ public class RadarMonitorBlockEntity extends BlockEntity {
 
     private void refresh(ServerLevel level, long now) {
         Vec3 center = screenCenter(level);
-        int ch = channel.getId();
-        // радары и вычислители, подключённые линками к любому блоку экрана; без линков на радары - радары канала
-        List<RadarEmitter> linkedRadars = new ArrayList<>();
-        int fcsLinks = 0;
+        // радары Create Radars на линках с любым блоком экрана
+        List<BlockEntity> radars = new ArrayList<>();
         for (BlockPos p : wallPositions()) {
             for (BlockPos q : LinkRegistry.linkedTo(level, p)) {
                 if (!level.isLoaded(q)) continue;
                 BlockEntity be = level.getBlockEntity(q);
-                if (be instanceof RadarEmitter e && !e.isRadarRemoved()) linkedRadars.add(e);
-                else if (be instanceof FireControlBlockEntity) fcsLinks++;
+                if (be != null && !be.isRemoved() && RadarLink.isRadar(be) && RadarLink.isRunning(be) && !radars.contains(be)) {
+                    radars.add(be);
+                }
             }
-        }
-        linkedFcs = fcsLinks;
-        List<RadarEmitter> radars;
-        if (linkedRadars.isEmpty()) {
-            radars = RadarNetwork.linked(level, center, ch, FcsConfig.NETWORK_RANGE.get());
-        } else {
-            radars = new ArrayList<>();
-            for (RadarEmitter r : linkedRadars) if (r.radarRunning() && !radars.contains(r)) radars.add(r);
         }
         radarCount = radars.size();
         double reach = 0;
         List<Site> siteList = new ArrayList<>();
-        Map<UUID, RadarContact> merged = new HashMap<>();
-        for (RadarEmitter r : radars) {
-            Vec3 o = r.radarOrigin();
-            reach = Math.max(reach, o.subtract(center).horizontalDistance() + r.radarRange());
-            siteList.add(new Site((float) (o.x - center.x), (float) (o.z - center.z), r.radarType().ordinal()));
-            for (RadarContact c : r.radarContacts().all()) {
-                RadarContact prev = merged.get(c.id);
-                if (prev == null || c.lastSeen > prev.lastSeen) merged.put(c.id, c);
-            }
+        for (BlockEntity r : radars) {
+            Vec3 o = SableCompat.toWorld(level, Vec3.atCenterOf(RadarLink.worldPos(r)));
+            reach = Math.max(reach, o.subtract(center).horizontalDistance() + RadarLink.range(r));
+            siteList.add(new Site((float) (o.x - center.x), (float) (o.z - center.z), 0));
         }
         UUID ship = SableCompat.containingId(level, worldPosition);
         Vec origin = new Vec(center.x, center.y, center.z);
-        TargetSensor.Context ctx = new TargetSensor.Context(owner, ownerTeam, ch, ship == null ? Set.of() : Set.of(ship), origin);
-        UUID designated = linkedFcs > 0 ? localDesignation(now) : RadarNetwork.designated(level, ch, now);
-        double minSpeed = FcsConfig.MIN_SPEED.get() / 20.0;
+        TargetSensor.Context ctx = new TargetSensor.Context(owner, ownerTeam, channel.getId(), ship == null ? Set.of() : Set.of(ship), origin);
+        sensor.sense(level, radars, ctx, now);
+        UUID designated = localDesignation(now);
+        engaged.values().removeIf(until -> until < now);
         List<Target> tl = new ArrayList<>();
         List<Blip> bl = new ArrayList<>();
         double farthest = 0;
-        for (RadarContact c : merged.values()) {
-            Vec p = new Vec(c.pos.x, c.pos.y, c.pos.z);
-            Vec v = new Vec(c.vel.x, c.vel.y, c.vel.z);
-            if (c.speedPerTick() < minSpeed) continue;
-            if (!TargetSensor.isEligible(c.kind, c.hostile, p, v, origin)) continue;
-            if (TargetSensor.isFriendly(level, c.entity, c.kind, c.id.toString(), p, ctx, now)) continue;
-            double dx = c.pos.x - center.x, dz = c.pos.z - center.z;
+        for (Track t : sensor.active()) {
+            UUID id;
+            try {
+                id = UUID.fromString(t.id);
+            } catch (IllegalArgumentException e) {
+                continue;
+            }
+            double dx = t.pos.x() - center.x, dz = t.pos.z() - center.z;
             double dist = Math.hypot(dx, dz);
             farthest = Math.max(farthest, dist);
-            tl.add(new Target(c.id, c.name, dx, dz, dist));
-            int flags = (RadarNetwork.isEngaged(level, ch, c.id, now) ? FLAG_ENGAGED : 0)
-                    | (c.id.equals(designated) ? FLAG_DESIGNATED : 0) | (c.kind == Track.Kind.SHIP ? FLAG_SHIP : 0);
-            bl.add(new Blip((float) dx, (float) dz, (float) (c.pos.y - center.y), c.kind.ordinal(), flags));
+            tl.add(new Target(id, t.name, dx, dz, dist));
+            int flags = (engaged.containsKey(id) ? FLAG_ENGAGED : 0)
+                    | (id.equals(designated) ? FLAG_DESIGNATED : 0) | (t.kind == Track.Kind.SHIP ? FLAG_SHIP : 0);
+            bl.add(new Blip((float) dx, (float) dz, (float) (t.pos.y() - center.y), t.kind.ordinal(), flags));
         }
         // авто: чтобы поместились все цели, но не дальше, чем видят радары
         double coverage = niceRange(reach);
@@ -329,7 +321,8 @@ public class RadarMonitorBlockEntity extends BlockEntity {
             be.channel = c;
             be.setChanged();
         }
-        RadarInfo.channelMessage(p, c);
+        p.displayClientMessage(Component.translatable("radar_fcs.msg.channel",
+                Component.translatable("color.minecraft." + c.getName())), true);
     }
 
     public void cycleScale(Player p) {
@@ -367,15 +360,13 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         }
         long now = sl.getGameTime();
         if (best != null) {
-            // экран с вычислителями на линках назначает цель только им, иначе - всем вычислителям канала
+            // назначение - вычислителям на линках этого экрана
             m.localTarget = best.id();
             m.localUntil = now + FcsConfig.DESIGNATION_TICKS.get();
-            if (m.linkedFcs == 0) RadarNetwork.designate(sl, m.channel.getId(), best.id(), now + FcsConfig.DESIGNATION_TICKS.get());
             p.displayClientMessage(Component.translatable("radar_fcs.msg.designated", best.name(),
                     String.format(Locale.ROOT, "%.0f", best.dist())).withStyle(ChatFormatting.YELLOW), true);
         } else {
             m.localTarget = null;
-            if (m.linkedFcs == 0) RadarNetwork.clearDesignation(sl, m.channel.getId());
             p.displayClientMessage(Component.translatable("radar_fcs.msg.designation_cleared").withStyle(ChatFormatting.GRAY), true);
         }
         m.refresh(sl, now);

@@ -5,23 +5,16 @@ import com.simibubi.create.api.registry.CreateRegistries;
 import com.simibubi.create.api.stress.BlockStressValues;
 import dev.radarfcs.FcsConfig;
 import dev.radarfcs.FcsMod;
-import dev.radarfcs.block.AntennaBlock;
+import dev.radarfcs.block.AimControllerBlock;
+import dev.radarfcs.block.AimControllerBlockEntity;
 import dev.radarfcs.block.FireControlBlock;
 import dev.radarfcs.block.FireControlBlockEntity;
 import dev.radarfcs.block.IffTransponderBlock;
 import dev.radarfcs.block.IffTransponderBlockEntity;
-import dev.radarfcs.block.PhasedArrayBlockEntity;
-import dev.radarfcs.block.PhasedArrayControllerBlock;
-import dev.radarfcs.block.PhasedArrayPanelBlock;
-import dev.radarfcs.block.RadarBearingBlock;
-import dev.radarfcs.block.RadarBearingBlockEntity;
-import dev.radarfcs.block.RadarDomeBlock;
-import dev.radarfcs.block.RadarDomeBlockEntity;
 import dev.radarfcs.block.RadarMonitorBlock;
 import dev.radarfcs.block.RadarMonitorBlockEntity;
 import dev.radarfcs.block.RadarLinkBlock;
 import dev.radarfcs.block.RadarLinkBlockEntity;
-import dev.radarfcs.block.RadarReceiverBlock;
 import dev.radarfcs.item.RadarLinkItem;
 import dev.radarfcs.compat.FcsDisplaySource;
 import net.minecraft.core.registries.Registries;
@@ -57,35 +50,24 @@ public final class FcsRegistry {
             () -> new IffTransponderBlock(BlockBehaviour.Properties.of().mapColor(MapColor.METAL)
                     .strength(2.5f).requiresCorrectToolForDrops().sound(SoundType.COPPER).lightLevel(s -> 5)));
 
-    // радары
-    public static final DeferredBlock<RadarBearingBlock> RADAR_BEARING = BLOCKS.register("radar_bearing",
-            () -> new RadarBearingBlock(metal(MapColor.COLOR_GRAY, 3.0f).noOcclusion()));
-    public static final DeferredBlock<RadarReceiverBlock> RADAR_RECEIVER = BLOCKS.register("radar_receiver",
-            () -> new RadarReceiverBlock(metal(MapColor.METAL, 2.0f).lightLevel(s -> 4)));
-    public static final DeferredBlock<AntennaBlock> RADAR_DISH = BLOCKS.register("radar_dish",
-            () -> new AntennaBlock(metal(MapColor.METAL, 2.0f)));
-    public static final DeferredBlock<PhasedArrayControllerBlock> PHASED_ARRAY_CONTROLLER = BLOCKS.register("phased_array_controller",
-            () -> new PhasedArrayControllerBlock(metal(MapColor.TERRACOTTA_BROWN, 3.0f).lightLevel(s -> 5)));
-    public static final DeferredBlock<PhasedArrayPanelBlock> PHASED_ARRAY_PANEL = BLOCKS.register("phased_array_panel",
-            () -> new PhasedArrayPanelBlock(metal(MapColor.COLOR_GRAY, 2.0f)));
-    public static final DeferredBlock<RadarDomeBlock> RADAR_DOME = BLOCKS.register("radar_dome",
-            () -> new RadarDomeBlock(metal(MapColor.SNOW, 2.0f).noOcclusion().lightLevel(s -> 3)));
     public static final DeferredBlock<RadarMonitorBlock> RADAR_MONITOR = BLOCKS.register("radar_monitor",
             () -> new RadarMonitorBlock(metal(MapColor.COLOR_BLACK, 2.0f).lightLevel(s -> 6)));
+
+    // контроллеры наводки: горизонтальной (поворот станка) и вертикальной (наклон ствола)
+    public static final DeferredBlock<AimControllerBlock> YAW_CONTROLLER = BLOCKS.register("yaw_controller",
+            () -> new AimControllerBlock(metal(MapColor.STONE, 2.5f).noOcclusion(), false));
+    public static final DeferredBlock<AimControllerBlock> PITCH_CONTROLLER = BLOCKS.register("pitch_controller",
+            () -> new AimControllerBlock(metal(MapColor.STONE, 2.5f).noOcclusion(), true));
 
     public static final DeferredBlock<RadarLinkBlock> RADAR_LINK = BLOCKS.register("radar_link",
             () -> new RadarLinkBlock(metal(MapColor.COLOR_LIGHT_BLUE, 1.5f).noOcclusion().lightLevel(s -> 4)));
 
     public static final DeferredItem<BlockItem> FIRE_CONTROL_ITEM = ITEMS.registerSimpleBlockItem(FIRE_CONTROL);
+    public static final DeferredItem<BlockItem> YAW_CONTROLLER_ITEM = ITEMS.registerSimpleBlockItem(YAW_CONTROLLER);
+    public static final DeferredItem<BlockItem> PITCH_CONTROLLER_ITEM = ITEMS.registerSimpleBlockItem(PITCH_CONTROLLER);
     public static final DeferredItem<RadarLinkItem> RADAR_LINK_ITEM = ITEMS.register("radar_link",
             () -> new RadarLinkItem(RADAR_LINK.get(), new net.minecraft.world.item.Item.Properties()));
     public static final DeferredItem<BlockItem> IFF_TRANSPONDER_ITEM = ITEMS.registerSimpleBlockItem(IFF_TRANSPONDER);
-    public static final DeferredItem<BlockItem> RADAR_BEARING_ITEM = ITEMS.registerSimpleBlockItem(RADAR_BEARING);
-    public static final DeferredItem<BlockItem> RADAR_RECEIVER_ITEM = ITEMS.registerSimpleBlockItem(RADAR_RECEIVER);
-    public static final DeferredItem<BlockItem> RADAR_DISH_ITEM = ITEMS.registerSimpleBlockItem(RADAR_DISH);
-    public static final DeferredItem<BlockItem> PHASED_ARRAY_CONTROLLER_ITEM = ITEMS.registerSimpleBlockItem(PHASED_ARRAY_CONTROLLER);
-    public static final DeferredItem<BlockItem> PHASED_ARRAY_PANEL_ITEM = ITEMS.registerSimpleBlockItem(PHASED_ARRAY_PANEL);
-    public static final DeferredItem<BlockItem> RADAR_DOME_ITEM = ITEMS.registerSimpleBlockItem(RADAR_DOME);
     public static final DeferredItem<BlockItem> RADAR_MONITOR_ITEM = ITEMS.registerSimpleBlockItem(RADAR_MONITOR);
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FireControlBlockEntity>> FIRE_CONTROL_BE =
@@ -95,21 +77,14 @@ public final class FcsRegistry {
             BLOCK_ENTITIES.register("iff_transponder",
                     () -> BlockEntityType.Builder.of(IffTransponderBlockEntity::new, IFF_TRANSPONDER.get()).build(null));
 
-    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<RadarBearingBlockEntity>> RADAR_BEARING_BE =
-            BLOCK_ENTITIES.register("radar_bearing", () -> BlockEntityType.Builder.of(
-                    (pos, state) -> new RadarBearingBlockEntity(FcsRegistry.RADAR_BEARING_BE.get(), pos, state),
-                    RADAR_BEARING.get()).build(null));
-    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<PhasedArrayBlockEntity>> PHASED_ARRAY_BE =
-            BLOCK_ENTITIES.register("phased_array_controller", () -> BlockEntityType.Builder.of(
-                    (pos, state) -> new PhasedArrayBlockEntity(FcsRegistry.PHASED_ARRAY_BE.get(), pos, state),
-                    PHASED_ARRAY_CONTROLLER.get()).build(null));
-    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<RadarDomeBlockEntity>> RADAR_DOME_BE =
-            BLOCK_ENTITIES.register("radar_dome",
-                    () -> BlockEntityType.Builder.of(RadarDomeBlockEntity::new, RADAR_DOME.get()).build(null));
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<RadarMonitorBlockEntity>> RADAR_MONITOR_BE =
             BLOCK_ENTITIES.register("radar_monitor",
                     () -> BlockEntityType.Builder.of(RadarMonitorBlockEntity::new, RADAR_MONITOR.get()).build(null));
 
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<AimControllerBlockEntity>> AIM_CONTROLLER_BE =
+            BLOCK_ENTITIES.register("aim_controller", () -> BlockEntityType.Builder.of(
+                    (pos, state) -> new AimControllerBlockEntity(FcsRegistry.AIM_CONTROLLER_BE.get(), pos, state),
+                    YAW_CONTROLLER.get(), PITCH_CONTROLLER.get()).build(null));
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<RadarLinkBlockEntity>> RADAR_LINK_BE =
             BLOCK_ENTITIES.register("radar_link",
                     () -> BlockEntityType.Builder.of(RadarLinkBlockEntity::new, RADAR_LINK.get()).build(null));
@@ -124,14 +99,10 @@ public final class FcsRegistry {
                     .displayItems((params, out) -> {
                         out.accept(FIRE_CONTROL_ITEM.get());
                         out.accept(RADAR_LINK_ITEM.get());
+                        out.accept(YAW_CONTROLLER_ITEM.get());
+                        out.accept(PITCH_CONTROLLER_ITEM.get());
                         out.accept(IFF_TRANSPONDER_ITEM.get());
                         out.accept(RADAR_MONITOR_ITEM.get());
-                        out.accept(RADAR_DOME_ITEM.get());
-                        out.accept(RADAR_BEARING_ITEM.get());
-                        out.accept(RADAR_RECEIVER_ITEM.get());
-                        out.accept(RADAR_DISH_ITEM.get());
-                        out.accept(PHASED_ARRAY_CONTROLLER_ITEM.get());
-                        out.accept(PHASED_ARRAY_PANEL_ITEM.get());
                     })
                     .build());
 
@@ -150,9 +121,8 @@ public final class FcsRegistry {
     /** Привязки к API Create после регистрации: источник Display Link, нагрузка на кинетику. */
     public static void bindCreate() {
         DisplaySource.BY_BLOCK.add(FIRE_CONTROL.get(), FCS_DISPLAY_SOURCE.get());
-        BlockStressValues.IMPACTS.register(RADAR_BEARING.get(), () -> 4.0);
-        // реальная нагрузка решётки зависит от числа панелей (PhasedArrayBlockEntity), здесь - для подсказок
-        BlockStressValues.IMPACTS.register(PHASED_ARRAY_CONTROLLER.get(), () -> FcsConfig.safe(FcsConfig.ARRAY_STRESS));
+        BlockStressValues.IMPACTS.register(YAW_CONTROLLER.get(), () -> FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
+        BlockStressValues.IMPACTS.register(PITCH_CONTROLLER.get(), () -> FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
     }
 
     private FcsRegistry() {}

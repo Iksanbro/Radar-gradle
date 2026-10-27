@@ -1,0 +1,35 @@
+{
+  "variants": {
+    "facing=up": {
+      "model": "radar_fcs:block/pitch_controller"
+    },
+    "facing=down": {
+      "model": "radar_fcs:block/pitch_controller",
+      "x": 180,
+      "uvlock": true
+    },
+    "facing=north": {
+      "model": "radar_fcs:block/pitch_controller",
+      "x": 90,
+      "uvlock": true
+    },
+    "facing=south": {
+      "model": "radar_fcs:block/pitch_controller",
+      "x": 90,
+      "y": 180,
+      "uvlock": true
+    },
+    "facing=east": {
+      "model": "radar_fcs:block/pitch_controller",
+      "x": 90,
+      "y": 90,
+      "uvlock": true
+    },
+    "facing=west": {
+      "model": "radar_fcs:block/pitch_controller",
+      "x": 90,
+      "y": 270,
+      "uvlock": true
+    }
+  }
+}

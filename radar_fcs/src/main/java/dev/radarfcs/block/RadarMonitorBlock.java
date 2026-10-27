@@ -1,7 +1,6 @@
 package dev.radarfcs.block;
 
 import com.mojang.serialization.MapCodec;
-import dev.radarfcs.radar.RadarInfo;
 import dev.radarfcs.registry.FcsRegistry;
 import java.util.List;
 import net.minecraft.ChatFormatting;
@@ -105,8 +104,8 @@ public class RadarMonitorBlock extends BaseEntityBlock {
     @Override
     protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player,
                                               InteractionHand hand, BlockHitResult hit) {
-        DyeColor dye = RadarInfo.dye(stack);
-        if (dye == null) return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        if (!(stack.getItem() instanceof net.minecraft.world.item.DyeItem di)) return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        DyeColor dye = di.getDyeColor();
         if (!level.isClientSide && level.getBlockEntity(pos) instanceof RadarMonitorBlockEntity be) be.setChannel(dye, player);
         return ItemInteractionResult.sidedSuccess(level.isClientSide);
     }

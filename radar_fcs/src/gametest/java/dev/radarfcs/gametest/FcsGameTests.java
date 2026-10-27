@@ -1,6 +1,7 @@
 package dev.radarfcs.gametest;
 
 import dev.radarfcs.FcsConfig;
+import dev.radarfcs.FcsDev;
 import dev.radarfcs.FcsMod;
 import dev.radarfcs.block.FireControlBlockEntity;
 import dev.radarfcs.fcs.MountState;
@@ -53,7 +54,6 @@ public class FcsGameTests {
 
     static void commonConfig() {
         FcsConfig.MIN_RANGE.set(4.0);
-        FcsConfig.LINK_RADIUS.set(16);
         FcsConfig.GLOW_TARGETS.set(true);
         FcsConfig.MARK_TARGETS.set(true);
         FcsConfig.HOSTILE_ONLY.set(true);
@@ -99,12 +99,17 @@ public class FcsGameTests {
         doomed.forEach(net.minecraft.world.entity.Entity::discard);
     }
 
+    /** Тесты баллистики: цели без радара (FcsDev.radarless), чтобы не зависеть от обзора радара. */
     static void direct(ServerLevel level) {
         cleanup(level);
         commonConfig();
-        FcsConfig.REQUIRE_RADAR.set(false);
-        FcsConfig.SENSOR_MODE.set(FcsConfig.SensorMode.DIRECT);
-        FcsConfig.SENSOR_RANGE.set(80.0);
+        FcsDev.radarless = true;
+        FcsDev.radarlessRange = 80;
+    }
+
+    static void direct(ServerLevel level, double range) {
+        direct(level);
+        FcsDev.radarlessRange = range;
     }
 
     @BeforeBatch(batch = "big") public static void b1(ServerLevel l) { direct(l); }
@@ -124,13 +129,13 @@ public class FcsGameTests {
     @BeforeBatch(batch = "shipiff") public static void b8(ServerLevel l) { direct(l); }
     @AfterBatch(batch = "shipiff") public static void a8(ServerLevel l) { cleanup(l); }
 
-    @BeforeBatch(batch = "fastauto") public static void b9(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @BeforeBatch(batch = "fastauto") public static void b9(ServerLevel l) { direct(l, 160); }
     @AfterBatch(batch = "fastauto") public static void a9(ServerLevel l) { cleanup(l); }
-    @BeforeBatch(batch = "fastauto100") public static void b12(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @BeforeBatch(batch = "fastauto100") public static void b12(ServerLevel l) { direct(l, 160); }
     @AfterBatch(batch = "fastauto100") public static void a12(ServerLevel l) { cleanup(l); }
-    @BeforeBatch(batch = "fastdive") public static void b13(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @BeforeBatch(batch = "fastdive") public static void b13(ServerLevel l) { direct(l, 160); }
     @AfterBatch(batch = "fastdive") public static void a13(ServerLevel l) { cleanup(l); }
-    @BeforeBatch(batch = "fastship") public static void b10(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @BeforeBatch(batch = "fastship") public static void b10(ServerLevel l) { direct(l, 160); }
     @AfterBatch(batch = "fastship") public static void a10(ServerLevel l) { cleanup(l); }
     @BeforeBatch(batch = "nopower") public static void b11(ServerLevel l) { direct(l); }
     @AfterBatch(batch = "nopower") public static void a11(ServerLevel l) { cleanup(l); }
@@ -139,8 +144,7 @@ public class FcsGameTests {
     public static void beforeRadar(ServerLevel level) {
         cleanup(level);
         commonConfig();
-        FcsConfig.REQUIRE_RADAR.set(true);
-        FcsConfig.SENSOR_MODE.set(FcsConfig.SensorMode.RADAR);
+        FcsDev.radarless = false;
     }
 
     @AfterBatch(batch = "radar") public static void a5(ServerLevel l) { cleanup(l); }
@@ -165,13 +169,30 @@ public class FcsGameTests {
     }
 
     /**
-     * Вращение на валы станка: снизу - поворот, сбоку (по оси наклона) - наклон. Творческие моторы, rpm об/мин.
-     * Без вращения вычислитель не наводит (requireRotation).
+     * Контроллеры наводки у станка (горизонтальной - под ним, вертикальной - сбоку) и творческие моторы на их валах,
+     * rpm об/мин. Без контроллеров и вращения вычислитель не наводит (requireRotation).
      */
     static void powerMount(GameTestHelper h, BlockPos mount, Direction dir, int rpm) {
-        motor(h, mount.below(), Direction.UP, rpm);
+        controllers(h, mount, dir);
+        motors(h, mount, dir, rpm);
+    }
+
+    /** Контроллеры наводки без вращения. */
+    static void controllers(GameTestHelper h, BlockPos mount, Direction dir) {
+        h.setBlock(mount.below(), FcsRegistry.YAW_CONTROLLER.get().defaultBlockState()
+                .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.UP));
         Direction side = dir.getClockWise();
-        motor(h, mount.relative(side), side.getOpposite(), rpm);
+        h.setBlock(mount.relative(side), FcsRegistry.PITCH_CONTROLLER.get().defaultBlockState()
+                .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, side.getOpposite()));
+        CREATED.add(h.absolutePos(mount.below()));
+        CREATED.add(h.absolutePos(mount.relative(side)));
+    }
+
+    /** Моторы на валы контроллеров наводки: под горизонтальным и за вертикальным. */
+    static void motors(GameTestHelper h, BlockPos mount, Direction dir, int rpm) {
+        motor(h, mount.below(2), Direction.UP, rpm);
+        Direction side = dir.getClockWise();
+        motor(h, mount.relative(side, 2), side.getOpposite(), rpm);
     }
 
     static void motor(GameTestHelper h, BlockPos rel, Direction facing, int rpm) {
@@ -188,6 +209,7 @@ public class FcsGameTests {
         h.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState()
                 .setValue(BlockStateProperties.HORIZONTAL_FACING, dir));
         if (power) powerMount(h, mount, dir, 256);
+        else controllers(h, mount, dir);
         BlockPos pivot = mount.above(2);
         Direction facing = dir.getOpposite();
         h.setBlock(pivot.relative(dir, -chambers), block("createbigcannons:cast_iron_cannon_end").defaultBlockState()
@@ -462,13 +484,65 @@ public class FcsGameTests {
         return true;
     }
 
+    /** Вычислитель, подключённый радарными линками ко всем станкам площадки (станки ставятся раньше). */
     static FireControlBlockEntity fcs(GameTestHelper h, BlockPos rel) {
+        FireControlBlockEntity be = fcsBare(h, rel);
+        // GameTestHelper.relativePos считает от другого начала, чем absolutePos: смещение - от absolutePos(0, 0, 0)
+        BlockPos origin = h.absolutePos(BlockPos.ZERO);
+        for (BlockPos m : mountsInTest(h)) linkMount(h, m.subtract(origin), rel);
+        return be;
+    }
+
+    /** Вычислитель без линков. */
+    static FireControlBlockEntity fcsBare(GameTestHelper h, BlockPos rel) {
         h.setBlock(rel, FcsRegistry.FIRE_CONTROL.get().defaultBlockState());
         if (h.getLevel().getBlockEntity(h.absolutePos(rel)) instanceof FireControlBlockEntity be) {
             CREATED.add(h.absolutePos(rel));
             return be;
         }
         throw new GameTestAssertException("FCS block entity missing");
+    }
+
+    /** Станки CBC площадки теста (абсолютные позиции). */
+    static java.util.List<BlockPos> mountsInTest(GameTestHelper h) {
+        AABB box = h.getBounds();
+        java.util.List<BlockPos> out = new java.util.ArrayList<>();
+        ServerLevel l = h.getLevel();
+        for (int cx = (int) Math.floor(box.minX) >> 4; cx <= (int) Math.floor(box.maxX) >> 4; cx++) {
+            for (int cz = (int) Math.floor(box.minZ) >> 4; cz <= (int) Math.floor(box.maxZ) >> 4; cz++) {
+                var chunk = l.getChunkSource().getChunkNow(cx, cz);
+                if (chunk == null) continue;
+                for (var be : java.util.List.copyOf(chunk.getBlockEntities().values())) {
+                    if (dev.radarfcs.compat.CbcMount.of(be) != null && box.contains(Vec3.atCenterOf(be.getBlockPos()))) out.add(be.getBlockPos());
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Радарный линк станок - вычислитель на свободной боковой грани станка. */
+    static void linkMount(GameTestHelper h, BlockPos mountRel, BlockPos fcsRel) {
+        BlockState st = h.getBlockState(mountRel);
+        Direction f = st.hasProperty(BlockStateProperties.HORIZONTAL_FACING) ? st.getValue(BlockStateProperties.HORIZONTAL_FACING) : Direction.NORTH;
+        for (Direction d : new Direction[]{f.getCounterClockWise(), f.getOpposite(), f, f.getClockWise()}) {
+            if (h.getBlockState(mountRel.relative(d)).isAir()) {
+                link(h, mountRel, d, fcsRel);
+                return;
+            }
+        }
+        throw new GameTestAssertException("no free face for a radar link at mount " + mountRel);
+    }
+
+    /** Линк на грани face блока attachedRel, второй конец - otherRel. */
+    static dev.radarfcs.block.RadarLinkBlockEntity link(GameTestHelper h, BlockPos attachedRel, Direction face, BlockPos otherRel) {
+        BlockPos at = attachedRel.relative(face);
+        h.setBlock(at, FcsRegistry.RADAR_LINK.get().defaultBlockState().setValue(dev.radarfcs.block.RadarLinkBlock.FACING, face));
+        CREATED.add(h.absolutePos(at));
+        if (!(h.getLevel().getBlockEntity(h.absolutePos(at)) instanceof dev.radarfcs.block.RadarLinkBlockEntity be)) {
+            throw new GameTestAssertException("no radar link at " + at);
+        }
+        be.setOther(h.absolutePos(otherRel));
+        return be;
     }
 
     /** Цель без ИИ, которую тест двигает сам: туда-обратно вдоль оси Z с заданной скоростью. */
@@ -983,13 +1057,13 @@ public class FcsGameTests {
     // Пушки из сборки пользователя против цели 70 м/с поперёк линии огня (как fastauto)
     private static final Vec3 USER_START = new Vec3(46.5, 9, -37.5), USER_VEL = new Vec3(0, 0, 3.5);
 
-    @BeforeBatch(batch = "user_auto") public static void bu1(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @BeforeBatch(batch = "user_auto") public static void bu1(ServerLevel l) { direct(l, 160); }
     @AfterBatch(batch = "user_auto") public static void au1(ServerLevel l) { cleanup(l); }
-    @BeforeBatch(batch = "user_rotary") public static void bu2(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @BeforeBatch(batch = "user_rotary") public static void bu2(ServerLevel l) { direct(l, 160); }
     @AfterBatch(batch = "user_rotary") public static void au2(ServerLevel l) { cleanup(l); }
-    @BeforeBatch(batch = "user_medium") public static void bu3(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @BeforeBatch(batch = "user_medium") public static void bu3(ServerLevel l) { direct(l, 160); }
     @AfterBatch(batch = "user_medium") public static void au3(ServerLevel l) { cleanup(l); }
-    @BeforeBatch(batch = "user_qf") public static void bu4(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @BeforeBatch(batch = "user_qf") public static void bu4(ServerLevel l) { direct(l, 160); }
     @AfterBatch(batch = "user_qf") public static void au4(ServerLevel l) { cleanup(l); }
 
     /** Стальная автопушка, 3 ствола, бронебойные патроны. */
@@ -1058,7 +1132,7 @@ public class FcsGameTests {
         });
     }
 
-    /** Без вращения на валах станка наведения нет (статус «нет вращения»); с вращением - попадание. */
+    /** Контроллеры наводки без вращения: наведения нет (статус «нет вращения»); моторы на их валы - попадание. */
     @GameTest(template = ARENA, batch = "nopower", timeoutTicks = 600)
     public static void noRotationNoAiming(GameTestHelper h) {
         floor(h);
@@ -1072,7 +1146,7 @@ public class FcsGameTests {
         h.runAtTickTime(80, () -> {
             for (MountState m : be.mountStates()) if (m.status == Status.NO_POWER) sawNoPower.set(true);
             if (husk.getHealth() < max) h.fail("fired without rotation");
-            powerMount(h, mount, Direction.EAST, 256);
+            motors(h, mount, Direction.EAST, 256);
         });
         h.succeedWhen(() -> {
             if (!sawNoPower.get()) throw new GameTestAssertException("NO_POWER status not observed without rotation");
@@ -1080,7 +1154,7 @@ public class FcsGameTests {
         });
     }
 
-    /** Цели берутся с плоского радара Create Radars: без радара - статус «нет радара», с радаром - попадание. */
+    /** Цели берутся с плоского радара Create Radars на линке: без него - статус «нет радара», с ним - попадание. */
     @GameTest(template = ARENA, batch = "radar", timeoutTicks = 700)
     public static void radarDesignatedTarget(GameTestHelper h) {
         if (!ModList.get().isLoaded("create_radar")) {
@@ -1100,12 +1174,15 @@ public class FcsGameTests {
             // плоский радар сканирует в сторону, противоположную FACING: FACING=запад -> луч на восток, к цели
             h.setBlock(new BlockPos(8, 1, 26), block("create_radar:plane_radar").defaultBlockState()
                     .trySetValue(BlockStateProperties.HORIZONTAL_FACING, Direction.WEST));
+            CREATED.add(h.absolutePos(new BlockPos(8, 1, 26)));
+            link(h, new BlockPos(8, 1, 26), Direction.UP, new BlockPos(6, 1, 28));
         });
         h.succeedWhen(() -> {
             if (!sawNoRadar.get()) throw new GameTestAssertException("NO_RADAR status not observed before radar placed");
             if (husk.isAlive() && husk.getHealth() >= max) throw new GameTestAssertException("target not hit yet");
             FcsMod.LOG.info("[radar_fcs test] radar: HIT via Create Radars tracks, radar used={}", be.sensor().usedRadar());
             if (!be.sensor().usedRadar()) throw new GameTestAssertException("radar tracks were not used");
+            if (be.linkedRadars().size() != 1) throw new GameTestAssertException("radars on links: " + be.linkedRadars().size());
         });
     }
     /** Корабль Create Aeronautics / Sable - цель: вычислитель стреляет и попадает по движущемуся кораблю. */

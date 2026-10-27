@@ -3,7 +3,6 @@ package dev.radarfcs.compat;
 import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.simibubi.create.content.contraptions.Contraption;
 import dev.radarfcs.FcsConfig;
-import dev.radarfcs.block.AntennaBlock;
 import dev.radarfcs.block.IffTransponderBlock;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -17,7 +16,6 @@ import rbasamoyai.createbigcannons.cannon_control.contraption.PitchOrientedContr
 public final class ContraptionCompat {
     private static final long CACHE_TICKS = 100;
     /** Бит маски: в контрапшене есть антенна радара. */
-    private static final long ANTENNA_BIT = 1L << 62;
     /** Сущность -> {битовая маска каналов транспондеров и антенны, тик}. */
     private static final Map<Entity, long[]> IFF_CACHE = new WeakHashMap<>();
 
@@ -32,10 +30,9 @@ public final class ContraptionCompat {
         return e instanceof PitchOrientedContraptionEntity;
     }
 
-    /** Не цель: пушка на станке, вращающаяся антенна радара, поезда и т.п. (ignoredContraptionHints). */
+    /** Не цель: пушка на станке, поезда и т.п. (ignoredContraptionHints). */
     public static boolean isIgnored(Entity e) {
-        return isMountedCannon(e) || Reflect.nameMatches(e.getClass(), FcsConfig.IGNORED_CONTRAPTION_HINTS.get())
-                || (mask(e, e.level().getGameTime()) & ANTENNA_BIT) != 0;
+        return isMountedCannon(e) || Reflect.nameMatches(e.getClass(), FcsConfig.IGNORED_CONTRAPTION_HINTS.get());
     }
 
     /** Есть ли в контрапшене транспондер этого канала. Результат кэшируется на 5 секунд. */
@@ -63,7 +60,6 @@ public final class ContraptionCompat {
         for (Map.Entry<BlockPos, StructureBlockInfo> en : c.getBlocks().entrySet()) {
             BlockState s = en.getValue().state();
             if (s.getBlock() instanceof IffTransponderBlock) mask |= 1L << IffTransponderBlock.channelOf(s);
-            else if (s.getBlock() instanceof AntennaBlock) mask |= ANTENNA_BIT;
         }
         return mask;
     }

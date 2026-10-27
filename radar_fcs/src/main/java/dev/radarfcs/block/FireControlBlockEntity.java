@@ -2,6 +2,7 @@ package dev.radarfcs.block;
 
 import com.simibubi.create.api.equipment.goggles.IHaveGoggleInformation;
 import dev.radarfcs.FcsConfig;
+import dev.radarfcs.FcsDev;
 import dev.radarfcs.compat.CbcMount;
 import dev.radarfcs.compat.RadarLink;
 import dev.radarfcs.compat.SableCompat;
@@ -15,8 +16,6 @@ import dev.radarfcs.fcs.Status;
 import dev.radarfcs.fcs.TargetSensor;
 import dev.radarfcs.link.LinkKind;
 import dev.radarfcs.link.LinkRegistry;
-import dev.radarfcs.radar.RadarEmitter;
-import dev.radarfcs.radar.RadarNetwork;
 import dev.radarfcs.registry.FcsRegistry;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -59,8 +58,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
 
     private final TargetSensor sensor = new TargetSensor();
     private final Map<BlockPos, MountState> mounts = new LinkedHashMap<>();
+    /** Радары Create Radars на линках. */
     private final List<BlockEntity> radars = new ArrayList<>();
-    private List<RadarEmitter> ownRadars = List.of();
     private int runningRadars;
     private long lastDiscover = Long.MIN_VALUE / 2;
     private boolean hold;
@@ -74,15 +73,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     /** Выстрелы всех пушек по каждой цели и цели, сброшенные после заданного числа выстрелов. */
     private final Map<String, Integer> shotsAt = new java.util.HashMap<>();
     private final Set<String> dropped = new HashSet<>();
-    /**
-     * Аппаратура на радарных линках. Есть станок на линке - управляем только станками на линках (иначе - станками
-     * в радиусе linkRadius, кроме подключённых линком к другому вычислителю); радар на линке - только радары на линках
-     * (иначе - радары канала); монитор на линке - назначение цели только с таких мониторов (иначе - с мониторов канала).
-     */
-    private final List<RadarEmitter> radarsOnLinks = new ArrayList<>();
+    /** Мониторы на линках: с них назначение цели, на них - отметки целей под огнём. */
     private final List<BlockPos> linkedMonitors = new ArrayList<>();
-    private final Set<Integer> monitorChannels = new HashSet<>();
-    private int linkedMountCount, linkedRadarCount;
 
     // сводка для клиента (очки инженера) и Display Link
     private CompoundTag summary = new CompoundTag();
@@ -105,25 +97,16 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             discover(level, now);
         }
         Vec origin = origin(level);
-        // свои радары: на линках или канала (сеть); радары Create Radars - на линках или рядом
-        if (linkedRadarCount > 0) {
-            List<RadarEmitter> live = new ArrayList<>();
-            for (RadarEmitter r : radarsOnLinks) if (!r.isRadarRemoved() && r.radarRunning()) live.add(r);
-            ownRadars = live;
-        } else {
-            ownRadars = RadarNetwork.linked(level, new Vec3(origin.x(), origin.y(), origin.z()), channel.getId(),
-                    FcsConfig.NETWORK_RANGE.get());
-        }
-        runningRadars = ownRadars.size();
-        for (BlockEntity r : radars) if (!r.isRemoved() && RadarLink.isRunning(r)) runningRadars++;
-        if (FcsConfig.REQUIRE_RADAR.get() && runningRadars == 0) {
+        // цели - только с работающих радаров Create Radars на линках
+        List<BlockEntity> live = new ArrayList<>();
+        for (BlockEntity r : radars) if (!r.isRemoved() && RadarLink.isRunning(r)) live.add(r);
+        runningRadars = live.size();
+        if (runningRadars == 0 && !FcsDev.radarless) {
             sensor.clear();
             for (MountState m : mounts.values()) FcsControl.cease(level, m, Status.NO_RADAR);
         } else {
             if (now % FcsConfig.SCAN_INTERVAL.get() == 0) {
-                List<BlockEntity> live = new ArrayList<>();
-                for (BlockEntity r : radars) if (!r.isRemoved() && RadarLink.isRunning(r)) live.add(r);
-                sensor.sense(level, live, ownRadars, context(level), now, settings, t -> dropped.contains(t.id));
+                sensor.sense(level, live, context(level), now, settings, t -> dropped.contains(t.id));
                 // цели, которых больше нет, - из учёта выстрелов и сброса
                 if (now % 100 == 0) {
                     shotsAt.keySet().removeIf(id -> sensor.get(id) == null);
@@ -137,8 +120,11 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                 if (m.targetId != null && (m.status == Status.FIRE || m.status == Status.AIMING)) {
                     UUID tid = uuidOrNull(m.targetId);
                     if (tid != null) {
-                        RadarNetwork.markEngaged(level, channel.getId(), tid, now + 30);
-                        for (int mc : monitorChannels) if (mc != channel.getId()) RadarNetwork.markEngaged(level, mc, tid, now + 30);
+                        for (BlockPos mp : linkedMonitors) {
+                            if (level.isLoaded(mp) && level.getBlockEntity(mp) instanceof RadarMonitorBlockEntity mon) {
+                                mon.markEngaged(tid, now + 30);
+                            }
+                        }
                     }
                 }
             }
@@ -169,10 +155,9 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         return new Vec(w.x, w.y, w.z);
     }
 
-    /** Назначенная цель: с мониторов на линках, а без них - с мониторов канала. */
+    /** Назначенная цель - с мониторов на линках. */
     @Nullable
     private UUID designation(ServerLevel level, long now) {
-        if (linkedMonitors.isEmpty()) return RadarNetwork.designated(level, channel.getId(), now);
         for (BlockPos p : linkedMonitors) {
             if (level.isLoaded(p) && level.getBlockEntity(p) instanceof RadarMonitorBlockEntity m) {
                 UUID d = m.localDesignation(now);
@@ -187,18 +172,11 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         lastDiscover = Long.MIN_VALUE / 2;
     }
 
-    /**
-     * Подключённая аппаратура: на радарных линках, а чего на линках нет - plug & play: станки CBC и радары
-     * Create Radars в радиусе linkRadius (по картам block entity загруженных чанков).
-     */
+    /** Подключённая аппаратура - только на радарных линках: станки CBC, радары Create Radars, мониторы. */
     private void discover(ServerLevel level, long now) {
         Set<BlockPos> found = new HashSet<>();
         radars.clear();
-        radarsOnLinks.clear();
         linkedMonitors.clear();
-        monitorChannels.clear();
-        linkedMountCount = 0;
-        List<BlockEntity> linkedCr = new ArrayList<>();
         for (BlockPos p : LinkRegistry.linkedTo(level, worldPosition)) {
             if (!level.isLoaded(p)) continue;
             BlockEntity be = level.getBlockEntity(p);
@@ -209,45 +187,13 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                     BlockPos key = p.immutable();
                     found.add(key);
                     mounts.computeIfAbsent(key, MountState::new).mount = CbcMount.of(be);
-                    linkedMountCount++;
                 }
-                case RADAR -> radarsOnLinks.add((RadarEmitter) be);
-                case CR_RADAR -> linkedCr.add(be);
+                case RADAR -> radars.add(be);
                 case MONITOR -> {
                     RadarMonitorBlockEntity m = ((RadarMonitorBlockEntity) be).master();
                     if (!linkedMonitors.contains(m.getBlockPos())) linkedMonitors.add(m.getBlockPos());
-                    monitorChannels.add(m.channel().getId());
                 }
                 default -> { }
-            }
-        }
-        linkedRadarCount = radarsOnLinks.size() + linkedCr.size();
-        radars.addAll(linkedCr);
-        boolean scanMounts = linkedMountCount == 0, scanRadars = linkedRadarCount == 0;
-        if (scanMounts || scanRadars) {
-            int r = FcsConfig.LINK_RADIUS.get();
-            double r2 = (double) r * r;
-            int cx0 = (worldPosition.getX() - r) >> 4, cx1 = (worldPosition.getX() + r) >> 4;
-            int cz0 = (worldPosition.getZ() - r) >> 4, cz1 = (worldPosition.getZ() + r) >> 4;
-            for (int cx = cx0; cx <= cx1; cx++) {
-                for (int cz = cz0; cz <= cz1; cz++) {
-                    LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
-                    if (chunk == null) continue;
-                    for (BlockEntity other : List.copyOf(chunk.getBlockEntities().values())) {
-                        BlockPos p = other.getBlockPos();
-                        if (other == this || other.isRemoved() || p.distSqr(worldPosition) > r2) continue;
-                        if (RadarLink.isRadar(other)) {
-                            if (scanRadars) radars.add(other);
-                            continue;
-                        }
-                        CbcMount d = scanMounts ? CbcMount.of(other) : null;
-                        if (d != null && !linkedToOtherFcs(level, p)) {
-                            BlockPos key = p.immutable();
-                            found.add(key);
-                            mounts.computeIfAbsent(key, MountState::new).mount = d;
-                        }
-                    }
-                }
             }
         }
         Iterator<Map.Entry<BlockPos, MountState>> it = mounts.entrySet().iterator();
@@ -267,14 +213,6 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             if (s != null) ships.add(s);
         }
         platformShips = Set.copyOf(ships);
-    }
-
-    /** Станок подключён линком к другому вычислителю: в радиусе его не берём. */
-    private boolean linkedToOtherFcs(Level level, BlockPos mount) {
-        for (BlockPos q : LinkRegistry.linkedTo(level, mount)) {
-            if (!q.equals(worldPosition) && level.isLoaded(q) && level.getBlockEntity(q) instanceof FireControlBlockEntity) return true;
-        }
-        return false;
     }
 
     public void releaseAll() {
@@ -351,16 +289,14 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     private void updateSummary(ServerLevel level) {
         CompoundTag tag = new CompoundTag();
         tag.putInt("Radars", runningRadars);
-        tag.putInt("RadarBlocks", radars.size() + ownRadars.size());
-        tag.putBoolean("RadarOk", !FcsConfig.REQUIRE_RADAR.get() || runningRadars > 0);
+        tag.putInt("RadarBlocks", radars.size());
+        tag.putBoolean("RadarOk", runningRadars > 0 || FcsDev.radarless);
         tag.putBoolean("Hold", hold);
         tag.putInt("Channel", channel.getId());
         tag.putInt("Targets", sensor.active().size());
         tag.putInt("Contacts", sensor.usedRadar() ? sensor.contacts() : sensor.all().size());
         tag.putBoolean("Direct", !sensor.usedRadar());
-        if (linkedMountCount + linkedRadarCount + linkedMonitors.size() > 0) {
-            tag.putIntArray("Links", new int[]{linkedMountCount, linkedRadarCount, linkedMonitors.size()});
-        }
+        tag.putIntArray("Links", new int[]{mounts.size(), radars.size(), linkedMonitors.size()});
         Set<String> engaged = new HashSet<>();
         ListTag ml = new ListTag();
         for (MountState m : mounts.values()) {
@@ -369,7 +305,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             mt.putString("N", m.mount == null ? "?" : m.mount.typeName());
             if (m.targetName != null && (m.status == Status.FIRE || m.status == Status.AIMING || m.status == Status.HOLD
                     || m.status == Status.BLOCKED_FRIENDLY || m.status == Status.BLOCKED_TERRAIN || m.status == Status.NO_AMMO
-                    || m.status == Status.NO_POWER || m.status == Status.PAUSE)) {
+                    || m.status == Status.NO_POWER || m.status == Status.NO_CONTROLLER || m.status == Status.PAUSE)) {
                 mt.putString("T", m.targetName);
                 mt.putFloat("D", (float) m.distance);
                 mt.putFloat("E", (float) m.aimError);
@@ -478,8 +414,9 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         return sensor;
     }
 
-    public List<RadarEmitter> linkedRadars() {
-        return ownRadars;
+    /** Радары Create Radars на линках. */
+    public List<BlockEntity> linkedRadars() {
+        return radars;
     }
 
     public DyeColor channel() {

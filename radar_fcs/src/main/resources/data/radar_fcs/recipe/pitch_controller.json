@@ -1,0 +1,26 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " P ",
+    "EGE",
+    " L "
+  ],
+  "key": {
+    "P": {
+      "item": "create:precision_mechanism"
+    },
+    "E": {
+      "item": "create:electron_tube"
+    },
+    "G": {
+      "item": "create:gearbox"
+    },
+    "L": {
+      "item": "create:large_cogwheel"
+    }
+  },
+  "result": {
+    "id": "radar_fcs:pitch_controller",
+    "count": 1
+  }
+}
