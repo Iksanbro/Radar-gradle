@@ -82,8 +82,15 @@ public final class DevScreenshots {
         });
         if (tick == 330) shot(mc, "fcs_transponders");
         // монитор на линках с радаром Create Radars и вычислителем
-        if (tick == 332) server.execute(() -> look(server, new Vec3(base.getX() - 3.5, base.getY() + 1.0, base.getZ() - 1.5),
-                new Vec3(base.getX() - 7.5, base.getY() + 1.4, base.getZ() - 1.5)));
+        // взгляд на отметку цели - сведения о ней на экране
+        if (tick == 332) server.execute(() -> {
+            Vec3 pt = new Vec3(base.getX() - 3.5, base.getY() + 1.0, base.getZ() - 1.5);
+            if (husk != null && husk.isAlive()
+                    && server.overworld().getBlockEntity(base.offset(-3, 0, -3)) instanceof dev.radarfcs.block.RadarMonitorBlockEntity mon) {
+                pt = mon.master().screenPointFor(husk.getBoundingBox().getCenter());
+            }
+            look(server, pt, new Vec3(base.getX() - 7.5, base.getY() + 1.4, base.getZ() - 1.5));
+        });
         if (tick == 338) shot(mc, "radar_monitor");
         // контроллеры наводки у станка: общий вид и очки инженера
         if (tick == 340) server.execute(() -> look(server, new Vec3(base.getX() + 4.5, base.getY() - 0.2, base.getZ() + 0.9),
@@ -144,8 +151,8 @@ public final class DevScreenshots {
         p.teleportTo(server.overworld(), eye.x, eye.y - 1.62, eye.z, yaw, pitch);
     }
 
-    /** Все линки сцены - в одной радарной сети. */
-    private static final java.util.UUID SCENE_NET = java.util.UUID.nameUUIDFromBytes("radar_fcs:screenshots".getBytes());
+    /** Все линки сцены - в одной радарной сети, своей у каждого запуска (сцены прошлых запусков стоят в том же мире). */
+    private static final java.util.UUID SCENE_NET = java.util.UUID.randomUUID();
 
     private static void placeLink(ServerLevel level, BlockPos attached, Direction face, BlockPos other) {
         BlockPos at = attached.relative(face);
@@ -227,10 +234,14 @@ public final class DevScreenshots {
         if (husk != null) {
             husk.setNoAi(true);
             husk.setPersistenceRequired();
+            var hp = husk.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
+            if (hp != null) hp.setBaseValue(1000);                         // живёт до конца съёмки
+            husk.setHealth(husk.getMaxHealth());
             husk.setPos(base.getX() + 36.5, y, base.getZ() - 6);
             level.addFreshEntity(husk);
         }
         player.setItemSlot(EquipmentSlot.HEAD, new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("create:goggles"))));
+        player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, ItemStack.EMPTY);     // линк из прошлой съёмки
         player.teleportTo(level, base.getX() - 6.5, y + 3, base.getZ() + 7.5, -120f, 15f);
         FcsMod.LOG.info("[radar_fcs dev] scene built at {}", base);
     }

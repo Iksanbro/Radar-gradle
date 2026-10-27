@@ -23,7 +23,7 @@ import org.jetbrains.annotations.Nullable;
  * (ручное наведение вычислителей сети), снятие назначения, масштаб и фильтры показа.
  */
 public final class RadarMonitorScreen extends Screen {
-    private static final int W = 380, H = 232, ROW = 12, LIST_X = 8, LIST_W = 232, LIST_TOP = 30;
+    private static final int W = 380, H = 240, ROW = 12, LIST_X = 8, LIST_W = 232, LIST_TOP = 30;
     private static final int ROWS = (H - LIST_TOP - 34) / ROW;
 
     private final BlockPos pos;
@@ -61,8 +61,8 @@ public final class RadarMonitorScreen extends Screen {
             showButtons.add(addRenderableWidget(Button.builder(showText(m, s), b -> {
                 RadarMonitorBlockEntity mm = monitor();
                 if (mm != null) send(MonitorCommandPayload.SHOW, mm.show() ^ s.bit, "");
-            }).bounds(x, y, w, 15).build()));
-            y += 16;
+            }).bounds(x, y, w, 14).build()));
+            y += 15;
         }
         addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.close"), b -> onClose())
                 .bounds(left + W - 84, top + H - 24, 80, 20).build());
@@ -162,7 +162,7 @@ public final class RadarMonitorScreen extends Screen {
         Component l2 = Component.translatable("radar_fcs.monitor_gui.coords",
                 String.format(Locale.ROOT, "%.0f", c.x + b.dx()), String.format(Locale.ROOT, "%.0f", c.y + b.dy()),
                 String.format(Locale.ROOT, "%.0f", c.z + b.dz()), String.format(Locale.ROOT, "%.0f", Math.hypot(b.dx(), b.dz())),
-                String.format(Locale.ROOT, "%+.0f", b.dy()), String.format(Locale.ROOT, "%.1f", b.speed())).withStyle(ChatFormatting.WHITE);
+                String.format(Locale.ROOT, "%+d", Math.round(b.dy())), String.format(Locale.ROOT, "%.1f", b.speed())).withStyle(ChatFormatting.WHITE);
         return List.of(l1, l2);
     }
 

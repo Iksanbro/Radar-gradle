@@ -141,8 +141,23 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         int dye = be.channel().getTextureDiffuseColor();
         rect(vc, m, w - 0.5f - e - 0.12f, -0.5f + e + 0.02f, w - 0.5f - e - 0.02f, -0.5f + e + 0.05f, 0.002f, 0xFF000000 | (dye & 0xFFFFFF));
 
-        // подписи - последними: текст берёт из буферов свой тип рендера, и буфер квадов после него недействителен
+        // сведения о цели под взглядом (или назначенной): подложка - квадом здесь, текст - ниже. Свой фон текста шрифта
+        // лежит почти в одной плоскости с буквами и на расстоянии перекрывает их (мерцание по глубине)
         float scale = 0.0075f * (float) Math.sqrt(Math.min(w, h));
+        float boxW = (w - 2 * e * 1.6f) / scale;
+        Blip info = hovered;
+        if (info == null) for (Blip b : blips) if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) info = b;
+        List<Component> lines = info == null ? List.of() : RadarMonitorScreen.describe(be, info);
+        int widest = 1;
+        for (Component c : lines) widest = Math.max(widest, font.width(c));
+        float k = Math.min(1f, boxW / widest);
+        if (!lines.isEmpty()) {
+            float ox = -0.5f + e * 1.6f, oy = h - 0.5f - e * 1.6f;
+            float y0 = font.lineHeight + 2 - k, y1 = font.lineHeight + 2 + k * (lines.size() * (font.lineHeight + 1));
+            rect(vc, m, ox - k * scale, oy - y1 * scale, ox + (widest + 1) * k * scale, oy - y0 * scale, 0.0028f, 0xC0000000);
+        }
+
+        // подписи - последними: текст берёт из буферов свой тип рендера, и буфер квадов после него недействителен
         ps.pushPose();
         ps.translate(-0.5f + e * 1.6f, h - 0.5f - e * 1.6f, 0.003f);
         ps.scale(scale, -scale, scale);
@@ -150,25 +165,18 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         font.drawInBatch(Component.translatable("radar_fcs.monitor.range", Math.round(range)).getString(), 0, 0, TEXT, false, tm,
                 buffers, Font.DisplayMode.POLYGON_OFFSET, 0, LightTexture.FULL_BRIGHT);
         String right1 = Component.translatable("radar_fcs.monitor.targets", count).getString();
-        float boxW = (w - 2 * e * 1.6f) / scale;
         font.drawInBatch(right1, boxW - font.width(right1), 0, TEXT, false, tm, buffers, Font.DisplayMode.POLYGON_OFFSET, 0,
                 LightTexture.FULL_BRIGHT);
         float boxH = (h - 2 * e * 1.6f) / scale;
-        Blip info = hovered;
-        if (info == null) for (Blip b : blips) if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) info = b;
-        if (info != null) {
+        if (!lines.isEmpty()) {
             // сведения о цели под строкой дальности; на маленьком экране - мельче, чтобы влезли
-            List<Component> lines = RadarMonitorScreen.describe(be, info);
-            int widest = 1;
-            for (Component c : lines) widest = Math.max(widest, font.width(c));
-            float k = Math.min(1f, boxW / widest);
             ps.pushPose();
             ps.translate(0, font.lineHeight + 2, 0);
             ps.scale(k, k, 1);
             Matrix4f im = ps.last().pose();
             float ty = 0;
             for (Component c : lines) {
-                font.drawInBatch(c, 0, ty, 0xFFFFFFFF, false, im, buffers, Font.DisplayMode.POLYGON_OFFSET, 0x90000000,
+                font.drawInBatch(c, 0, ty, 0xFFFFFFFF, false, im, buffers, Font.DisplayMode.POLYGON_OFFSET, 0,
                         LightTexture.FULL_BRIGHT);
                 ty += font.lineHeight + 1;
             }
