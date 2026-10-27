@@ -11,6 +11,8 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 @EventBusSubscriber(modid = FcsMod.MODID)
 public final class DevAutostop {
     private static final AtomicInteger TICKS = new AtomicInteger();
+    /** Чанк площадки теста -> тик, с которого он не тикает. */
+    private static final java.util.Map<Long, Long> WAITING = new java.util.HashMap<>();
 
     private DevAutostop() {}
 
@@ -37,11 +39,23 @@ public final class DevAutostop {
                 if (info.isDone() || loadedField.getBoolean(info)) continue;
                 var sbe = (net.minecraft.world.level.block.entity.StructureBlockEntity) sbeField.get(info);
                 if (sbe == null || !(sbe.getLevel() instanceof net.minecraft.server.level.ServerLevel level)) continue;
+                long now = server.getTickCount();
                 net.minecraft.gametest.framework.StructureUtils.getStructureBoundingBox(sbe).intersectingChunks().forEach(cp -> {
-                    if (!level.isPositionEntityTicking(cp.getWorldPosition())) {
-                        FcsMod.LOG.warn("[radar_fcs test] watchdog: test {} waits for chunk {} (forced={}), forcing it",
-                                info.getTestName(), cp, level.getForcedChunks().contains(cp.toLong()));
+                    if (level.isPositionEntityTicking(cp.getWorldPosition())) {
+                        WAITING.remove(cp.toLong());
+                        return;
+                    }
+                    long since = WAITING.computeIfAbsent(cp.toLong(), k -> now);
+                    boolean forced = level.getForcedChunks().contains(cp.toLong());
+                    if (!forced) {
                         level.setChunkForced(cp.x, cp.z, true);
+                    } else if (now - since > 400) {
+                        // принудительная загрузка числится, а чанк не тикает: переставить тикет
+                        FcsMod.LOG.warn("[radar_fcs test] watchdog: test {} stuck on chunk {} for {} ticks, re-forcing",
+                                info.getTestName(), cp, now - since);
+                        level.setChunkForced(cp.x, cp.z, false);
+                        level.setChunkForced(cp.x, cp.z, true);
+                        WAITING.put(cp.toLong(), now);
                     }
                 });
             }

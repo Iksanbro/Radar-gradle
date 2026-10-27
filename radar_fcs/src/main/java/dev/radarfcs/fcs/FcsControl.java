@@ -211,7 +211,8 @@ public final class FcsControl {
         Vec3 shotW = shotL == null ? null : SableCompat.dirToWorld(ship, shotL);
         double allowed = Math.max(target.hitRadius * 0.8 + 0.2,
                 m.distance * Math.tan(Math.toRadians(FcsConfig.FIRE_TOLERANCE.get())));
-        if (!big) allowed += FcsConfig.RAPID_SPREAD.get();
+        double margin = big ? 0 : FcsConfig.RAPID_SPREAD.get();
+        allowed += margin;
         double missDist = Double.POSITIVE_INFINITY;
         if (shotW != null) {
             Vec sd = new Vec(shotW.x, shotW.y, shotW.z);
@@ -224,8 +225,9 @@ public final class FcsControl {
         }
         m.predictedMiss = missDist;
         m.tolerance = allowed;
-        // очередь автопушки не рвём на мелких колебаниях: продолжаем, пока промах меньше удвоенного порога
-        boolean onTarget = missDist <= allowed || (!big && m.triggerOn && missDist <= allowed * 2);
+        // Промах считается для каждого следующего выстрела автопушки, поэтому очередь держим, пока он мал;
+        // небольшой запас на продолжение очереди убирает дребезг сигнала на границе порога
+        boolean onTarget = missDist <= allowed || (!big && m.triggerOn && missDist <= allowed + 0.5 * margin);
         // молодой трек или резкий манёвр: оценка движения ненадёжна - наводимся, но не стреляем
         if (target.observedSpan() < FcsConfig.FIRE_MIN_TRACK.get()) onTarget = false;
         if (target.residual > Math.max(Track.MANEUVER_RESIDUAL, target.hitRadius * 0.25)) onTarget = false;
