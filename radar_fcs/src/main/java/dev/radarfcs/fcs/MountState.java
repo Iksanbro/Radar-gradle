@@ -64,6 +64,8 @@ public final class MountState implements ShotObserver.Listener {
     /** Выстрелов в текущей очереди и конец паузы между очередями. */
     public int salvoCount;
     public long pauseUntil = Long.MIN_VALUE / 2;
+    /** Тик, в который учтён последний выстрел. */
+    public long lastCountedShot = Long.MIN_VALUE / 2;
     /** Всего выстрелов этой пушки (для отчёта). */
     public int shotsFired;
     public long lastFire = Long.MIN_VALUE / 2;

@@ -90,13 +90,15 @@ public final class FcsControl {
             m.cmdYaw = d.yaw();
             m.cmdPitch = d.pitch();
         }
-        if (m.estimate == null || now - m.estimateTick >= 20) m.setEstimate(CbcBallistics.estimate(level, d), now);
+        // заряжание: пока пушка пуста, проверять часто (автомат заряжания успевает за несколько тиков)
+        if (m.estimate == null || now - m.estimateTick >= (m.estimate.loaded() ? 20 : 2)) m.setEstimate(CbcBallistics.estimate(level, d), now);
         EngageSettings settings = fcs.settings();
         // выстрелы прошлого тика: по какой цели, сколько в очереди
         if (m.pendingShots > 0) {
             int n = m.pendingShots;
             m.pendingShots = 0;
             m.salvoCount += n;
+            m.lastCountedShot = now;
             if (m.targetId != null) {
                 if (m.targetId.equals(m.pick.currentId)) m.pick.shotsAtCurrent += n;
                 for (int i = 0; i < n; i++) fcs.onShotAt(m.targetId);
@@ -168,7 +170,6 @@ public final class FcsControl {
         }
         if (!target.id.equals(m.targetId)) {
             m.safetyTick = Long.MIN_VALUE / 2;
-            m.salvoCount = 0;
             if (kind == CbcMount.Kind.RAPID) setTrigger(m, false);
         }
         m.pick.acquire(target.id, now);
@@ -316,6 +317,8 @@ public final class FcsControl {
                                     Vec3 pivotW, Vec3 barrelW, double muzzleDist, long now, EngageSettings settings) {
         boolean learn = FcsConfig.LEARN_FROM_SHOTS.get() && barrelW != null && m.estimate != null;
         int salvo = settings.roundsPerSalvo();
+        // перерыв в стрельбе не короче паузы (цель пропала, пушка перезаряжается) - уже пауза: очередь заново
+        if (m.salvoCount > 0 && m.salvoCount < salvo && now - m.lastCountedShot > settings.pauseTicks) m.salvoCount = 0;
         if (m.salvoCount >= salvo) {                          // очередь (или одиночный выстрел) сделана - пауза
             m.salvoCount = 0;
             m.pauseUntil = now + settings.pauseTicks;

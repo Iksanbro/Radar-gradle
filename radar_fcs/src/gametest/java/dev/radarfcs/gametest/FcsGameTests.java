@@ -281,7 +281,7 @@ public class FcsGameTests {
      * Роторная пушка CBC Neo Warfare: казённик позади оси, подшипник на оси, затем стволы; патроны - в казённик.
      * @return false, если мода нет
      */
-    private static boolean rotaryCannon(GameTestHelper h, BlockPos mount, Direction dir, String material, int barrels, int rounds) {
+    static boolean rotaryCannon(GameTestHelper h, BlockPos mount, Direction dir, String material, int barrels, int rounds) {
         Block breech = block("cbcmodernwarfare:" + material + "_rotarycannon_breech");
         if (breech == Blocks.AIR) return false;
         h.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, dir));
@@ -313,7 +313,7 @@ public class FcsGameTests {
     }
 
     /** Средняя пушка Neo Warfare: казённик позади оси, откатный ствол на оси, затем стволы. */
-    private static boolean mediumCannon(GameTestHelper h, BlockPos mount, Direction dir, String material, int barrels) {
+    static boolean mediumCannon(GameTestHelper h, BlockPos mount, Direction dir, String material, int barrels) {
         Block breech = block("cbcmodernwarfare:" + material + "_mediumcannon_breech");
         if (breech == Blocks.AIR) return false;
         h.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, dir));

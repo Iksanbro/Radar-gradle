@@ -59,6 +59,10 @@ public class SettingsGameTests {
     @AfterBatch(batch = "set_drop") public static void a5(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "set_priority") public static void b6(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "set_priority") public static void a6(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "set_burst_rotary") public static void b8(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "set_burst_rotary") public static void a8(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "set_burst_medium") public static void b9(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "set_burst_medium") public static void a9(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "set_switch") public static void b7(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "set_switch") public static void a7(ServerLevel l) { FcsGameTests.cleanup(l); }
 
@@ -129,6 +133,45 @@ public class SettingsGameTests {
         logEvery(h, be, "set_burst", 40);
         h.runAtTickTime(480, () -> {
             checkSalvos(h, "set_burst", rounds, 25, 4, 40, 4);
+            h.succeed();
+        });
+    }
+
+    /** Очередь роторной пушки CBC Neo Warfare (стреляет каждый тик, пока есть сигнал): по 6 выстрелов, пауза 30 тиков. */
+    @GameTest(template = ARENA, batch = "set_burst_rotary", timeoutTicks = 440)
+    public static void burstModeRotaryCannon(GameTestHelper h) {
+        floor(h);
+        if (!FcsGameTests.rotaryCannon(h, MOUNT, Direction.EAST, "bronze", 3, 512)) {
+            h.succeed();                                                       // без Neo Warfare тест не применим
+            return;
+        }
+        FireControlBlockEntity be = fcs(h, FCS);
+        configure(be, s -> { s.fireMode = EngageSettings.FireMode.BURST; s.burstLength = 6; s.pauseTicks = 30; });
+        tough(movingTarget(h, EntityType.HUSK, new Vec3(40.5, 1, 24.5), 0.15, 16));
+        List<Long> rounds = roundTicks(h, MOUNT);
+        logEvery(h, be, "set_burst_rotary", 40);
+        h.runAtTickTime(400, () -> {
+            checkSalvos(h, "set_burst_rotary", rounds, 20, 6, 30, 5);
+            h.succeed();
+        });
+    }
+
+    /** Очередь средней пушки CBC Neo Warfare (выстрел по фронту сигнала, автомат заряжания 5 тиков): по 3, пауза 40. */
+    @GameTest(template = ARENA, batch = "set_burst_medium", timeoutTicks = 440)
+    public static void burstModeMediumCannon(GameTestHelper h) {
+        floor(h);
+        if (!FcsGameTests.mediumCannon(h, MOUNT, Direction.EAST, "nethersteel", 3)) {
+            h.succeed();
+            return;
+        }
+        FcsGameTests.mediumAutoloader(h, MOUNT, 5);
+        FireControlBlockEntity be = fcs(h, FCS);
+        configure(be, s -> { s.fireMode = EngageSettings.FireMode.BURST; s.burstLength = 3; s.pauseTicks = 40; });
+        tough(movingTarget(h, EntityType.HUSK, new Vec3(40.5, 1, 24.5), 0.15, 16));
+        List<Long> rounds = roundTicks(h, MOUNT);
+        logEvery(h, be, "set_burst_medium", 40);
+        h.runAtTickTime(400, () -> {
+            checkSalvos(h, "set_burst_medium", rounds, 25, 3, 40, 4);
             h.succeed();
         });
     }

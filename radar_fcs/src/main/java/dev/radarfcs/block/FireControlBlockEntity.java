@@ -265,10 +265,6 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         return dropped.contains(targetId);
     }
 
-    public void report(Player p) {
-        for (Component line : summaryLines(summary, true)) p.sendSystemMessage(line);
-    }
-
     // ---------------------------------------------------------------- сводка
 
     private void updateSummary(ServerLevel level) {
