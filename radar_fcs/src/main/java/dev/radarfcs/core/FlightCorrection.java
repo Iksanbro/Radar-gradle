@@ -11,6 +11,8 @@ import java.util.List;
  */
 public final class FlightCorrection {
     public static final int MAX_TICKS = 240;
+    /** Наибольшая правдоподобная тяга, блоков/тик²: больше - уже не полёт, а сбой наблюдения. */
+    private static final double MAX_THRUST = 4.0;
 
     private final double[] dAlong = new double[MAX_TICKS];
     private final double[] dVert = new double[MAX_TICKS];
@@ -47,6 +49,7 @@ public final class FlightCorrection {
             speedSamples++;
         }
         int used = 0;
+        double prevAlong = 0;
         for (int t = 0; t + 1 < velocities.size() && t < MAX_TICKS; t++) {
             Vec v = velocities.get(t);
             Vec a = velocities.get(t + 1).sub(v);
@@ -61,8 +64,12 @@ public final class FlightCorrection {
             double vert = (a.y() - c * au) / det;
             double rAlong = along - base.along(t, s);
             double rVert = vert - base.vertical(t);
-            // попадание/рикошет: скачок ускорения - дальше данные не про свободный полёт
-            if (Math.abs(rAlong) > 0.5 + s * 0.5 || Math.abs(rVert) > 0.5) break;
+            // Попадание (снаряд пробил цель и затормозил), рикошет: сильное и внезапное торможение или боковой скачок -
+            // дальше данные не про свободный полёт. Ровное отличие (сопротивление снаряда аддона) и разгон вперёд
+            // (тяга ракеты, в том числе с медленным стартом) - учатся.
+            double drop = 0.3 + 0.05 * s;
+            if ((rAlong < -drop && rAlong < prevAlong - drop) || rAlong > MAX_THRUST || Math.abs(rVert) > 0.5) break;
+            prevAlong = rAlong;
             double w = count[t] < 3 ? 1.0 / (count[t] + 1) : smoothing;
             dAlong[t] += (rAlong - dAlong[t]) * w;
             dVert[t] += (rVert - dVert[t]) * w;

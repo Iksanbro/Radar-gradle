@@ -11,7 +11,7 @@ public class SolverTest {
     static int failures = 0;
 
     /** «Истинный» снаряд CBC в 3D. */
-    static final class Truth {
+    static class Truth {
         final double speed, g, k; final boolean quad; final double thrust; final int burn; final double burnG, coastG; final int life;
         Truth(double speed, double g, double k, boolean quad, double thrust, int burn, double burnG, double coastG, int life) {
             this.speed = speed; this.g = g; this.k = k; this.quad = quad; this.thrust = thrust; this.burn = burn;
@@ -124,10 +124,59 @@ public class SolverTest {
         if (pct < minHitPct || agr < 97) { failures++; System.out.println("  FAIL"); }
     }
 
+    /**
+     * Ракета исправления CBC-AT (cbcatfix): старт 0.15 бл/тик, пока есть топливо - разгон к крейсерской скорости
+     * (ускорение = недобор скорости / время отклика) без гравитации, затем обычный баллистический полёт.
+     */
+    static final class CruiseRocket extends Truth {
+        final double cruise, response; final int powered;
+        CruiseRocket(double cruise, double response, int powered) {
+            super(0.15, -0.025, 0.01, false, 0, 0, 1, 1, 160);
+            this.cruise = cruise; this.response = response; this.powered = powered;
+        }
+        @Override Vec accel(int t, Vec v) {
+            if (t >= powered) return super.accel(t, v);
+            double s = v.length(), err = cruise - s;
+            double a = err >= 0 ? Math.min(err / response, cruise / response) : err * 0.035;
+            return v.scale(1 / s).scale(a);
+        }
+    }
+
     static void rocketLearning() {
-        // ракета: тяга 0.3 бл/тик² 15 тиков, гравитация x0.875 при тяге и x1.3 после
-        Truth truth = new Truth(1.5, -0.025, 0.01, false, 0.3, 15, 0.875, 1.3, 120);
-        CbcFlightModel base = CbcFlightModel.ballistic(1.5, -0.025, 0.01, false, 120);   // модель без тяги
+        // ракета CBC-AT: тяга 0.3 бл/тик² 15 тиков, гравитация x0.875 при тяге и x1.3 после
+        rocketLearning("rocket", new Truth(1.5, -0.025, 0.01, false, 0.3, 15, 0.875, 1.3, 120),
+                CbcFlightModel.ballistic(1.5, -0.025, 0.01, false, 120));
+        // ракета с исправлением CBC-AT: медленный старт и разгон до 3 бл/тик; базовая модель - как у автопушки
+        rocketLearning("slow-start rocket", new CruiseRocket(3.0, 3.0, 40), CbcFlightModel.ballistic(9, -0.025, 0.01, false, 160));
+    }
+
+    /**
+     * Снаряд пробил цель на 5-м тике и резко затормозил: обучение должно остановиться на этом тике
+     * и не записать торможение в модель полёта.
+     */
+    static void penetrationLearning() {
+        Truth truth = new Truth(9, -0.025, 0.01, false, 0, 0, 1, 1, 40);
+        FlightModel base = modelOf(truth);
+        FlightCorrection corr = new FlightCorrection();
+        for (int shot = 0; shot < 3; shot++) {
+            List<Vec> vels = new ArrayList<>();
+            Vec v = new Vec(9, 0, 0);
+            vels.add(v);
+            for (int t = 0; t < 20; t++) {
+                v = v.add(truth.accel(t, v));
+                if (t == 5) v = v.scale(0.72);                                  // пробитие: скорость падает на 28 %
+                vels.add(v);
+            }
+            corr.learn(base, vels, 0.3);
+        }
+        FlightModel m = corr.apply(base);
+        double worst = 0;
+        for (int t = 0; t < 20; t++) worst = Math.max(worst, Math.abs(m.along(t, 9) - base.along(t, 9)));
+        System.out.printf(Locale.ROOT, "penetration: learned ticks %d (expected 5), largest model change %.3f%n", corr.learnedTicks(), worst);
+        if (corr.learnedTicks() != 5 || worst > 0.01) { failures++; System.out.println("  FAIL"); }
+    }
+
+    static void rocketLearning(String name, Truth truth, CbcFlightModel base) {
         BallisticSolver solver = new BallisticSolver(-30, 60, false);
         Vec pivot = new Vec(0, 70, 0);
         BallisticSolver.Muzzle muzzle = BallisticSolver.Muzzle.offset(pivot, 2.0);
@@ -147,8 +196,8 @@ public class SolverTest {
                 n++; sum += miss; if (miss < 1.5) ok++;
             }
             double pct = 100.0 * ok / Math.max(1, n);
-            System.out.printf(Locale.ROOT, "rocket %-27s solved %3d  miss<1.5: %5.1f%%  avg %.2f  (learned ticks %d, speed x%.3f)%n",
-                    phase == 0 ? "before learning" : "after 3 observed shots", n, pct, sum / Math.max(1, n),
+            System.out.printf(Locale.ROOT, "%-17s %-23s solved %3d  miss<1.5: %5.1f%%  avg %.2f  (learned ticks %d, speed x%.3f)%n",
+                    name, phase == 0 ? "before learning" : "after 3 observed shots", n, pct, sum / Math.max(1, n),
                     corr.learnedTicks(), corr.speedRatio());
             if (phase == 1 && pct < 90) { failures++; System.out.println("  FAIL: learning did not converge"); }
         }
@@ -243,6 +292,7 @@ public class SolverTest {
         fastCase("fast targets, autocannon 6 b/t", new Truth(6, -0.025, 0.01, false, 0, 0, 1, 1, 60), 150, 97);
         boxMiss();
         rocketLearning();
+        penetrationLearning();
         trackFilter();
         maneuver();
         if (failures > 0) {

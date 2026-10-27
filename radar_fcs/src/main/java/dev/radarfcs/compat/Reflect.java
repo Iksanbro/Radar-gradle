@@ -37,6 +37,18 @@ public final class Reflect {
         }).orElse(null);
     }
 
+    /** Открытый метод с параметрами (включая унаследованные и методы интерфейсов). */
+    @Nullable
+    public static Method method(Class<?> c, String name, Class<?>... params) {
+        return METHODS.computeIfAbsent(new Key(c, name + java.util.Arrays.toString(params), params.length), k -> {
+            try {
+                return Optional.of(c.getMethod(name, params));
+            } catch (NoSuchMethodException | RuntimeException | LinkageError e) {
+                return Optional.empty();
+            }
+        }).orElse(null);
+    }
+
     @Nullable
     public static Field field(Class<?> c, String name) {
         return FIELDS.computeIfAbsent(new Key(c, name, -1), k -> {
@@ -80,6 +92,16 @@ public final class Reflect {
 
     public static double number(@Nullable Object o, double def) {
         return o instanceof Number n ? n.doubleValue() : def;
+    }
+
+    /** Реализует ли класс (или его предки) интерфейс с таким простым именем. */
+    public static boolean implementsNamed(Class<?> c, String simpleName) {
+        for (Class<?> k = c; k != null && k != Object.class; k = k.getSuperclass()) {
+            for (Class<?> i : k.getInterfaces()) {
+                if (i.getSimpleName().equals(simpleName) || implementsNamed(i, simpleName)) return true;
+            }
+        }
+        return false;
     }
 
     /** Есть ли в имени класса или его предков один из фрагментов. */

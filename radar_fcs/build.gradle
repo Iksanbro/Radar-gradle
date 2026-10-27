@@ -103,6 +103,8 @@ def prepareRunMods = tasks.register('prepareRunMods', Sync) {
     from configurations.devMods
     // без Sable и Create Radars companion в dev-запуске кладём отдельным модом (в jar он встроен)
     if (project.hasProperty('fcsMinimal')) from(companionJar)
+    // -PfcsExtraMods=<папка>: дополнительные jar'ы модов не с Modrinth (CurseForge: исправление CBC-AT, CBC Neo Warfare)
+    if (project.hasProperty('fcsExtraMods')) from(fileTree(project.property('fcsExtraMods')).matching { include '*.jar' })
     into file('run/mods')
 }
 

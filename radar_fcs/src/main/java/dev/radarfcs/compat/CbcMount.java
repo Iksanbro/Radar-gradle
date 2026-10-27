@@ -79,6 +79,8 @@ public final class CbcMount {
         AbstractMountedCannonContraption c = cannon();
         if (c == null) return Kind.UNSUPPORTED;
         if (c instanceof MountedBigCannonContraption big) return big.isDropMortar() ? Kind.UNSUPPORTED : Kind.BIG;
+        // средняя пушка Neo Warfare заряжается предметом, но стреляет по фронту сигнала, как большая
+        if (NeoWarfare.isMedium(c)) return Kind.BIG;
         if (c instanceof MountedAutocannonContraption || c instanceof ItemCannon) return Kind.RAPID;
         if (Reflect.nameMatches(c.getClass(), FcsConfig.RAPID_CLASS_HINTS.get())) return Kind.RAPID;
         return Kind.BIG;
@@ -185,7 +187,7 @@ public final class CbcMount {
     /**
      * Расстояние от оси вращения до точки появления снаряда вдоль ствола.
      * CBC создаёт снаряд у дульного среза: у больших пушек - в центре последнего блока ствола,
-     * у автопушек - на полблока дальше.
+     * у автопушек (и средних пушек Neo Warfare) - на полблока дальше, у роторных пушек Neo Warfare - на 2.75 дальше.
      */
     public double muzzleDistance() {
         AbstractMountedCannonContraption c = cannon();
@@ -196,7 +198,8 @@ public final class CbcMount {
             int along = p.getX() * o.getStepX() + p.getY() * o.getStepY() + p.getZ() * o.getStepZ();
             if (along > front) front = along;
         }
-        return Math.max(0.5, front + (kind() == Kind.RAPID ? 0.5 : 0.0));
+        double ahead = NeoWarfare.isRotary(c) ? 2.75 : NeoWarfare.isMedium(c) || kind() == Kind.RAPID ? 0.5 : 0.0;
+        return Math.max(0.5, front + ahead);
     }
 
     /** Собрать пушку так же, как редстоун-сигнал сборки, и сразу вернуть состояние сигнала. */

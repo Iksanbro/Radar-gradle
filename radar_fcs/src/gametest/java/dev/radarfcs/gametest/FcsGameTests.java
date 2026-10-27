@@ -239,27 +239,184 @@ public class FcsGameTests {
      * В казённик кладутся пулемётные патроны.
      */
     private static void autocannon(GameTestHelper h, BlockPos mount, Direction dir, int barrels, int rounds) {
+        autocannon(h, mount, dir, "cast_iron", barrels, rounds, "createbigcannons:machine_gun_round");
+    }
+
+    private static void autocannon(GameTestHelper h, BlockPos mount, Direction dir, String material, int barrels, int rounds,
+                                   String ammo) {
         h.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState()
                 .setValue(BlockStateProperties.HORIZONTAL_FACING, dir));
         powerMount(h, mount, dir, 256);
         BlockPos pivot = mount.above(2);
-        h.setBlock(pivot.relative(dir, -1), block("createbigcannons:cast_iron_autocannon_breech").defaultBlockState()
+        h.setBlock(pivot.relative(dir, -1), block("createbigcannons:" + material + "_autocannon_breech").defaultBlockState()
                 .setValue(BlockStateProperties.FACING, dir));
-        h.setBlock(pivot, block("createbigcannons:cast_iron_autocannon_recoil_spring").defaultBlockState()
+        h.setBlock(pivot, block("createbigcannons:" + material + "_autocannon_recoil_spring").defaultBlockState()
                 .setValue(BlockStateProperties.FACING, dir));
         for (int i = 1; i <= barrels; i++) {
-            h.setBlock(pivot.relative(dir, i), block("createbigcannons:cast_iron_autocannon_barrel").defaultBlockState()
+            h.setBlock(pivot.relative(dir, i), block("createbigcannons:" + material + "_autocannon_barrel").defaultBlockState()
                     .setValue(BlockStateProperties.FACING, dir));
         }
         connect(h, pivot.relative(dir, -1), dir, barrels + 2);
         BlockPos abs = h.absolutePos(pivot.relative(dir, -1));
         if (h.getLevel().getBlockEntity(abs) instanceof AbstractAutocannonBreechBlockEntity breech) {
-            var item = BuiltInRegistries.ITEM.get(ResourceLocation.parse("createbigcannons:machine_gun_round"));
-            for (int i = 0; i < rounds; i++) breech.getInputBuffer().add(new net.minecraft.world.item.ItemStack(item));
+            for (int i = 0; i < rounds; i++) breech.getInputBuffer().add(autocannonAmmo(ammo));
             breech.setChanged();
         } else {
             throw new GameTestAssertException("no autocannon breech at " + pivot.relative(dir, -1));
         }
+    }
+
+    /** Патрон автопушки: пулемётный - как есть, снаряд автопушки (бронебойный и др.) - в снаряженной гильзе. */
+    static net.minecraft.world.item.ItemStack autocannonAmmo(String id) {
+        var item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(id));
+        if (id.endsWith("machine_gun_round")) return new net.minecraft.world.item.ItemStack(item);
+        var cart = new net.minecraft.world.item.ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("createbigcannons:autocannon_cartridge")));
+        rbasamoyai.createbigcannons.munitions.autocannon.AutocannonCartridgeItem.writeProjectile(new net.minecraft.world.item.ItemStack(item), cart);
+        return cart;
+    }
+
+    // ------------------------------------------------------------ пушки из сборки пользователя
+
+    /**
+     * Роторная пушка CBC Neo Warfare: казённик позади оси, подшипник на оси, затем стволы; патроны - в казённик.
+     * @return false, если мода нет
+     */
+    private static boolean rotaryCannon(GameTestHelper h, BlockPos mount, Direction dir, String material, int barrels, int rounds) {
+        Block breech = block("cbcmodernwarfare:" + material + "_rotarycannon_breech");
+        if (breech == Blocks.AIR) return false;
+        h.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, dir));
+        powerMount(h, mount, dir, 256);
+        BlockPos pivot = mount.above(2);
+        h.setBlock(pivot.relative(dir, -1), breech.defaultBlockState().trySetValue(BlockStateProperties.FACING, dir));
+        h.setBlock(pivot, block("cbcmodernwarfare:" + material + "_rotarycannon_bearing").defaultBlockState()
+                .trySetValue(BlockStateProperties.FACING, dir));
+        for (int i = 1; i <= barrels; i++) {
+            h.setBlock(pivot.relative(dir, i), block("cbcmodernwarfare:" + material + "_rotarycannon_barrel").defaultBlockState()
+                    .trySetValue(BlockStateProperties.FACING, dir));
+        }
+        connect(h, pivot.relative(dir, -1), dir, barrels + 2);
+        var be = h.getLevel().getBlockEntity(h.absolutePos(pivot.relative(dir, -1)));
+        if (!(dev.radarfcs.compat.Reflect.call0(be, "getInputBuffer") instanceof java.util.Deque<?> q))
+            throw new GameTestAssertException("no rotary cannon breech input");
+        @SuppressWarnings("unchecked") java.util.Deque<net.minecraft.world.item.ItemStack> qq = (java.util.Deque<net.minecraft.world.item.ItemStack>) q;
+        var item = BuiltInRegistries.ITEM.get(ResourceLocation.parse("createbigcannons:machine_gun_round"));
+        for (int i = 0; i < rounds; i++) qq.add(new net.minecraft.world.item.ItemStack(item));
+        be.setChanged();
+        return true;
+    }
+
+    /** Снаряженный патрон средней пушки Neo Warfare (гильза с бронебойным снарядом). */
+    static net.minecraft.world.item.ItemStack mediumCartridge() {
+        var cart = BuiltInRegistries.ITEM.get(ResourceLocation.parse("cbcmodernwarfare:ap_mediumcannon_cartridge"));
+        Object st = dev.radarfcs.compat.Reflect.call0(cart, "getCreativeTabCartridgeItem");
+        return st instanceof net.minecraft.world.item.ItemStack is ? is : new net.minecraft.world.item.ItemStack(cart);
+    }
+
+    /** Средняя пушка Neo Warfare: казённик позади оси, откатный ствол на оси, затем стволы. */
+    private static boolean mediumCannon(GameTestHelper h, BlockPos mount, Direction dir, String material, int barrels) {
+        Block breech = block("cbcmodernwarfare:" + material + "_mediumcannon_breech");
+        if (breech == Blocks.AIR) return false;
+        h.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, dir));
+        powerMount(h, mount, dir, 256);
+        BlockPos pivot = mount.above(2);
+        h.setBlock(pivot.relative(dir, -1), breech.defaultBlockState().trySetValue(BlockStateProperties.FACING, dir));
+        h.setBlock(pivot, block("cbcmodernwarfare:" + material + "_mediumcannon_recoil_barrel").defaultBlockState()
+                .trySetValue(BlockStateProperties.FACING, dir));
+        for (int i = 1; i <= barrels; i++) {
+            h.setBlock(pivot.relative(dir, i), block("cbcmodernwarfare:" + material + "_mediumcannon_barrel").defaultBlockState()
+                    .trySetValue(BlockStateProperties.FACING, dir));
+        }
+        connect(h, pivot.relative(dir, -1), dir, barrels + 2);
+        var be = h.getLevel().getBlockEntity(h.absolutePos(pivot.relative(dir, -1)));
+        setMediumInput(be, mediumCartridge());
+        return true;
+    }
+
+    static void setMediumInput(Object breech, net.minecraft.world.item.ItemStack stack) {
+        try {
+            breech.getClass().getMethod("setInputBuffer", net.minecraft.world.item.ItemStack.class).invoke(breech, stack);
+        } catch (ReflectiveOperationException e) {
+            throw new GameTestAssertException("cannot load medium cannon: " + e);
+        }
+    }
+
+    /** Автомат заряжания средней пушки: через reloadTicks после выстрела кладёт новый патрон в казённик. */
+    static void mediumAutoloader(GameTestHelper h, BlockPos mountRel, int reloadTicks) {
+        AtomicInteger since = new AtomicInteger();
+        h.onEachTick(() -> {
+            var cm = dev.radarfcs.compat.CbcMount.of(h.getLevel().getBlockEntity(h.absolutePos(mountRel)));
+            var c = cm == null ? null : cm.cannon();
+            if (c == null) return;
+            Object breech = c.presentBlockEntities.get(c.getStartPos());
+            Object in = dev.radarfcs.compat.Reflect.call0(breech, "getInputBuffer");
+            boolean loaded = in instanceof net.minecraft.world.item.ItemStack st && !st.isEmpty()
+                    && dev.radarfcs.compat.Reflect.call0(st.getItem(), "getCreativeTabCartridgeItem") != null
+                    && BuiltInRegistries.ITEM.getKey(st.getItem()).getPath().startsWith("ap_");
+            if (loaded) { since.set(0); return; }
+            if (since.incrementAndGet() >= reloadTicks) setMediumInput(breech, mediumCartridge());
+        });
+    }
+
+    /**
+     * Большая пушка со скорострельным затвором: затвор позади оси, на оси ствол с картриджем, дальше
+     * нарезные стволы CBC-AT (снаряд в первом). Картридж - полный (сила 4).
+     */
+    private static boolean qfRifledCannon(GameTestHelper h, BlockPos mount, Direction dir, String material, int rifled) {
+        Block rifledBlock = block("cbc_at:" + material + "_rifled_barrel");
+        if (rifledBlock == Blocks.AIR) return false;
+        h.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, dir));
+        powerMount(h, mount, dir, 256);
+        BlockPos pivot = mount.above(2);
+        Direction facing = dir.getOpposite();
+        h.setBlock(pivot.relative(dir, -1), block("createbigcannons:" + material + "_quickfiring_breech").defaultBlockState()
+                .trySetValue(BlockStateProperties.FACING, facing));
+        h.setBlock(pivot, block("createbigcannons:" + material + "_cannon_barrel").defaultBlockState().setValue(BlockStateProperties.FACING, facing));
+        for (int i = 1; i <= rifled; i++) h.setBlock(pivot.relative(dir, i), rifledBlock.defaultBlockState().trySetValue(BlockStateProperties.FACING, facing));
+        connect(h, pivot.relative(dir, -1), dir, rifled + 2);
+        loadQf(h.getLevel(), h.absolutePos(pivot), h.absolutePos(pivot.relative(dir, 1)), dir, true);
+        return true;
+    }
+
+    static StructureBlockInfo fullCartridge(BlockPos pos, Direction dir) {
+        BlockState st = block("createbigcannons:big_cartridge").defaultBlockState()
+                .trySetValue(BlockStateProperties.FACING, dir)
+                .trySetValue(rbasamoyai.createbigcannons.munitions.big_cannon.propellant.BigCartridgeBlock.FILLED, true);
+        CompoundTag nbt = new CompoundTag();
+        nbt.putInt("Power", 4);                                        // CBC 5.11.7
+        CompoundTag comps = new CompoundTag();
+        comps.putInt("createbigcannons:power", 4);                     // CBC 5.11.3
+        nbt.put("components", comps);
+        return new StructureBlockInfo(pos, st, nbt);
+    }
+
+    /** Зарядить картридж и снаряд в блоки пушки: в мире (world = true) или в собранном контрапшене (локальные позиции). */
+    static void loadQf(ServerLevel level, BlockPos cartridgePos, BlockPos shellPos, Direction dir, boolean world) {
+        if (!(level.getBlockEntity(cartridgePos) instanceof IBigCannonBlockEntity c) || !(level.getBlockEntity(shellPos) instanceof IBigCannonBlockEntity sh))
+            throw new GameTestAssertException("no cannon blocks for quick-firing load");
+        c.cannonBehavior().loadBlock(fullCartridge(cartridgePos, dir));
+        sh.cannonBehavior().loadBlock(new StructureBlockInfo(shellPos, block("createbigcannons:solid_shot").defaultBlockState()
+                .setValue(BlockStateProperties.FACING, dir), new CompoundTag()));
+        level.getBlockEntity(cartridgePos).setChanged();
+        level.getBlockEntity(shellPos).setChanged();
+    }
+
+    /** Автомат заряжания скорострельной пушки: через reloadTicks после выстрела - новый картридж и снаряд. */
+    static void qfAutoloader(GameTestHelper h, BlockPos mountRel, Direction dir, int reloadTicks) {
+        AtomicInteger since = new AtomicInteger();
+        h.onEachTick(() -> {
+            var cm = dev.radarfcs.compat.CbcMount.of(h.getLevel().getBlockEntity(h.absolutePos(mountRel)));
+            var c = cm == null ? null : cm.cannon();
+            if (c == null) return;
+            BlockPos cartLocal = BlockPos.ZERO, shellLocal = BlockPos.ZERO.relative(dir);
+            if (!(c.presentBlockEntities.get(cartLocal) instanceof IBigCannonBlockEntity cart)
+                    || !(c.presentBlockEntities.get(shellLocal) instanceof IBigCannonBlockEntity shell)) return;
+            boolean loaded = !shell.cannonBehavior().block().state().isAir();
+            if (loaded) { since.set(0); return; }
+            if (since.incrementAndGet() < reloadTicks) return;
+            cart.cannonBehavior().loadBlock(fullCartridge(cartLocal, dir));
+            shell.cannonBehavior().loadBlock(new StructureBlockInfo(shellLocal, block("createbigcannons:solid_shot").defaultBlockState()
+                    .setValue(BlockStateProperties.FACING, dir), new CompoundTag()));
+        });
     }
 
     /** Ракетная установка CBC Advanced Technologies: казённик позади оси, направляющие дальше. */
@@ -290,7 +447,14 @@ public class FcsGameTests {
             java.util.Deque<net.minecraft.world.item.ItemStack> q = (java.util.Deque<net.minecraft.world.item.ItemStack>)
                     be.getClass().getMethod("getInputBuffer").invoke(be);
             var item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(rocketItem));
-            for (int i = 0; i < rockets; i++) q.add(new net.minecraft.world.item.ItemStack(item));
+            boolean fix = ModList.get().isLoaded("cbcatfix");
+            for (int i = 0; i < rockets; i++) {
+                var st = new net.minecraft.world.item.ItemStack(item);
+                // исправление CBC-AT включает двигатель, только если в ракете есть топливо (как у собранной на верстаке)
+                if (fix) net.minecraft.world.item.component.CustomData.update(net.minecraft.core.component.DataComponents.CUSTOM_DATA, st,
+                        tag -> tag.putBoolean("CbcatFixAssemblyFuel", true));
+                q.add(st);
+            }
             be.setChanged();
         } catch (ReflectiveOperationException e) {
             throw new GameTestAssertException("cannot load rocket pod: " + e);
@@ -464,7 +628,9 @@ public class FcsGameTests {
     @GameTest(template = ARENA, batch = "rocket", timeoutTicks = 900)
     public static void rocketPodLearnsAndHits(GameTestHelper h) {
         floor(h);
-        if (!rocketPod(h, new BlockPos(10, 1, 32), Direction.EAST, 3, "cbc_at:ap_rocket_item", 96)) {
+        // исправление CBC-AT (cbcatfix) ограничивает пусковую тремя блоками вместе с казёнником
+        int rails = ModList.get().isLoaded("cbcatfix") ? 2 : 3;
+        if (!rocketPod(h, new BlockPos(10, 1, 32), Direction.EAST, rails, "cbc_at:ap_rocket_item", 96)) {
             h.succeed();                                                       // без CBC-AT тест не применим
             return;
         }
@@ -472,6 +638,19 @@ public class FcsGameTests {
         Mob husk = movingTarget(h, EntityType.HUSK, new Vec3(46.5, 1, 24.5), 0.1, 14);
         float max = husk.getMaxHealth();
         logEvery(h, be, "rocket", 20);
+        if (Boolean.getBoolean("radarfcs.probe")) {
+            Vec3 mc = h.absoluteVec(Vec3.atCenterOf(new BlockPos(10, 3, 32)));
+            AtomicInteger t0 = new AtomicInteger(-1), tick = new AtomicInteger();
+            h.onEachTick(() -> {
+                int t = tick.getAndIncrement();
+                for (AbstractCannonProjectile p : h.getLevel().getEntitiesOfClass(AbstractCannonProjectile.class, new AABB(mc, mc).inflate(80))) {
+                    if (t0.get() < 0) t0.set(t);
+                    if (t - t0.get() > 50) continue;
+                    FcsMod.LOG.info("[radar_fcs probe] rocket #{} t={} pos={} vel={} |v|={}", p.getId(), t, p.position().subtract(mc),
+                            p.getDeltaMovement(), String.format(java.util.Locale.ROOT, "%.3f", p.getDeltaMovement().length()));
+                }
+            });
+        }
         h.succeedWhen(() -> {
             if (husk.isAlive() && husk.getHealth() >= max) throw new GameTestAssertException("target not hit yet");
             MountState m = be.mountStates().isEmpty() ? null : be.mountStates().get(0);
@@ -501,14 +680,18 @@ public class FcsGameTests {
         return mob;
     }
 
+    /** Снаряд появился у пушки, если впервые замечен ближе этого к станку (дуло + один тик полёта), блоков. */
+    static final double MUZZLE_ZONE = 22;
+
     /** Снаряды, вылетевшие из пушки (новые снаряды CBC рядом со станком). */
     static AtomicInteger countRounds(GameTestHelper h, BlockPos mountRel) {
         AtomicInteger n = new AtomicInteger();
         java.util.Set<Integer> seen = new java.util.HashSet<>();
         Vec3 c = h.absoluteVec(Vec3.atCenterOf(mountRel));
         h.onEachTick(() -> {
+            // только выстрелы: снаряд впервые замечен у пушки (осколки бронебойных снарядов появляются у цели)
             for (AbstractCannonProjectile p : h.getLevel().getEntitiesOfClass(AbstractCannonProjectile.class, new AABB(c, c).inflate(160))) {
-                if (seen.add(p.getId())) n.incrementAndGet();
+                if (seen.add(p.getId()) && p.position().distanceTo(c) < MUZZLE_ZONE) n.incrementAndGet();
             }
         });
         return n;
@@ -643,15 +826,21 @@ public class FcsGameTests {
         return best;
     }
 
+    /** Урон снарядов CBC и аддонов (Neo Warfare, CBC-AT); удушье в блоках и пр. не считаем. */
+    static boolean isCannonDamage(String msgId) {
+        return msgId.startsWith("createbigcannons") || msgId.startsWith("cbcmodernwarfare") || msgId.startsWith("cbc_at")
+                || msgId.startsWith("cbcatfix");
+    }
+
     static void onDamage(net.neoforged.neoforge.event.entity.living.LivingDamageEvent.Post e) {
-        if (e.getSource().getMsgId().startsWith("createbigcannons")) {
+        if (isCannonDamage(e.getSource().getMsgId())) {
             var rs = PROBE_HITS.get(e.getEntity());
             if (rs != null) for (Runnable r : java.util.List.copyOf(rs)) r.run();
         }
         var l = HITS.get(e.getEntity());
         if (l == null) return;
         // урон снарядов CBC приходит без прямой сущности; удушье в блоках и пр. не считаем
-        if (e.getSource().getMsgId().startsWith("createbigcannons")) l.accept(null);
+        if (isCannonDamage(e.getSource().getMsgId())) l.accept(null);
     }
 
     /**
@@ -688,8 +877,25 @@ public class FcsGameTests {
     }
 
     private static void fastAutocannon(GameTestHelper h, String name, Vec3 startRel, Vec3 vel, int leg) {
+        fastTarget(h, name, startRel, vel, leg, () -> {
+            autocannon(h, new BlockPos(10, 1, 32), Direction.EAST, 4, 512);
+            return true;
+        });
+    }
+
+    /**
+     * Пушка на станке (10,1,32) и вычислитель против цели-манекена, летящей туда-обратно: 300 тиков огня,
+     * в лог - доля попаданий. Тест проходит, если попала хотя бы четверть снарядов (и не меньше 3).
+     * build ставит пушку и возвращает false, если нужного мода нет (тест тогда не применим).
+     */
+    private static void fastTarget(GameTestHelper h, String name, Vec3 startRel, Vec3 vel, int leg,
+                                   java.util.function.BooleanSupplier build) {
         floor(h);
-        autocannon(h, new BlockPos(10, 1, 32), Direction.EAST, 4, 512);
+        if (!build.getAsBoolean()) {
+            FcsMod.LOG.info("[radar_fcs test] {}: cannon mod not installed, test skipped", name);
+            h.succeed();
+            return;
+        }
         FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 28));
         Vec3 endRel = startRel.add(vel.scale(leg));
         removeBarriers(h, BlockPos.containing(Math.min(0, Math.min(startRel.x, endRel.x)) - 4, 1, Math.min(startRel.z, endRel.z) - 8),
@@ -700,6 +906,7 @@ public class FcsGameTests {
         var hp = target.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
         if (hp != null) hp.setBaseValue(1024);
         target.setHealth(target.getMaxHealth());
+        h.onEachTick(() -> { if (target.isAlive()) target.setHealth(target.getMaxHealth()); });   // снаряды больших пушек не убивают манекен
         logEvery(h, be, name, 10);
         AtomicInteger hits = countHits(h, target), rounds = countRounds(h, new BlockPos(10, 1, 32));
         // подробный разбор каждого снаряда (расчёт против факта): ./gradlew runGameTestServer -PfcsProbe
@@ -707,19 +914,27 @@ public class FcsGameTests {
         // Цель-манекен разворачивается мгновенно (настоящая так не умеет): снаряды, которые в этот момент уже
         // летят, промахиваются при любом расчёте. Отдельно считаем снаряды, выпущенные не в такой момент.
         java.util.Map<Integer, Integer> spawned = new java.util.HashMap<>();
-        java.util.Set<Integer> hitIds = new java.util.HashSet<>();
+        java.util.Set<Integer> hitIds = new java.util.HashSet<>(), others = new java.util.HashSet<>();
         AtomicInteger tick = new AtomicInteger();
         Vec3 mc = h.absoluteVec(Vec3.atCenterOf(new BlockPos(10, 1, 32)));
         h.onEachTick(() -> {
             int t = tick.getAndIncrement();
             for (AbstractCannonProjectile p : h.getLevel().getEntitiesOfClass(AbstractCannonProjectile.class, new AABB(mc, mc).inflate(160)))
-                spawned.putIfAbsent(p.getId(), t);
+                if (!spawned.containsKey(p.getId()) && !others.contains(p.getId())) {
+                    if (p.position().distanceTo(mc) < MUZZLE_ZONE) spawned.put(p.getId(), t);
+                    else others.add(p.getId());
+                }
         });
         onProjectileHit(target, () -> {
             AbstractCannonProjectile p = nearestProjectile(h, target);
             if (p != null) hitIds.add(p.getId());
         });
         h.runAtTickTime(300, () -> {
+            // попадания - по выпущенным снарядам (урон осколков и повторный урон одного снаряда не в счёт)
+            int roundHits = 0;
+            for (Integer id : spawned.keySet()) if (hitIds.contains(id)) roundHits++;
+            hits.set(roundHits);
+            rounds.set(spawned.size());
             double rate = rounds.get() == 0 ? 0 : 100.0 * hits.get() / rounds.get();
             int clear = 0, clearHits = 0;
             for (var en : spawned.entrySet()) {
@@ -733,7 +948,7 @@ public class FcsGameTests {
             FcsMod.LOG.info("[radar_fcs test] {}: {} hits of {} rounds ({}%) on a {} m/s target; fired clear of target reversals: {} of {} ({}%)",
                     name, hits.get(), rounds.get(), String.format(java.util.Locale.ROOT, "%.0f", rate), Math.round(vel.length() * 20),
                     clearHits, clear, String.format(java.util.Locale.ROOT, "%.0f", clear == 0 ? 0 : 100.0 * clearHits / clear));
-            if (hits.get() < 3 || rate < 25) h.fail(name + ": " + hits.get() + " hits of " + rounds.get() + " rounds");
+            if (hits.get() < minHits(name) || rate < 25) h.fail(name + ": " + hits.get() + " hits of " + rounds.get() + " rounds");
             h.succeed();
         });
     }
@@ -760,6 +975,59 @@ public class FcsGameTests {
      * Три большие пушки по одному выстрелу (8 бл/тик) по кораблю Sable 3x3x3, летящему со скоростью 3.5 бл/тик (70 м/с).
      * У CBC есть собственный случайный разброс снарядов, поэтому требуется хотя бы одно попадание из трёх.
      */
+    /** Меньше выстрелов у пушек с перезарядкой: им хватает двух попаданий. */
+    private static int minHits(String name) {
+        return name.startsWith("user_medium") || name.startsWith("user_qf") ? 2 : 3;
+    }
+
+    // Пушки из сборки пользователя против цели 70 м/с поперёк линии огня (как fastauto)
+    private static final Vec3 USER_START = new Vec3(46.5, 9, -37.5), USER_VEL = new Vec3(0, 0, 3.5);
+
+    @BeforeBatch(batch = "user_auto") public static void bu1(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @AfterBatch(batch = "user_auto") public static void au1(ServerLevel l) { cleanup(l); }
+    @BeforeBatch(batch = "user_rotary") public static void bu2(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @AfterBatch(batch = "user_rotary") public static void au2(ServerLevel l) { cleanup(l); }
+    @BeforeBatch(batch = "user_medium") public static void bu3(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @AfterBatch(batch = "user_medium") public static void au3(ServerLevel l) { cleanup(l); }
+    @BeforeBatch(batch = "user_qf") public static void bu4(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @AfterBatch(batch = "user_qf") public static void au4(ServerLevel l) { cleanup(l); }
+
+    /** Стальная автопушка, 3 ствола, бронебойные патроны. */
+    @GameTest(template = ARENA, batch = "user_auto", timeoutTicks = 400)
+    public static void steelAutocannon3(GameTestHelper h) {
+        fastTarget(h, "user_steel_autocannon", USER_START, USER_VEL, 40, () -> {
+            autocannon(h, new BlockPos(10, 1, 32), Direction.EAST, "steel", 3, 512, "createbigcannons:ap_autocannon_round");
+            return true;
+        });
+    }
+
+    /** Бронзовая роторная пушка CBC Neo Warfare, 3 ствола. */
+    @GameTest(template = ARENA, batch = "user_rotary", timeoutTicks = 400)
+    public static void bronzeRotary3(GameTestHelper h) {
+        fastTarget(h, "user_bronze_rotary", USER_START, USER_VEL, 40,
+                () -> rotaryCannon(h, new BlockPos(10, 1, 32), Direction.EAST, "bronze", 3, 1024));
+    }
+
+    /** Незерстальная средняя пушка CBC Neo Warfare, 3 ствола; автомат заряжания - 5 тиков. */
+    @GameTest(template = ARENA, batch = "user_medium", timeoutTicks = 400)
+    public static void nethersteelMedium3(GameTestHelper h) {
+        fastTarget(h, "user_medium_nethersteel", USER_START, USER_VEL, 40, () -> {
+            if (!mediumCannon(h, new BlockPos(10, 1, 32), Direction.EAST, "nethersteel", 3)) return false;
+            mediumAutoloader(h, new BlockPos(10, 1, 32), 5);
+            return true;
+        });
+    }
+
+    /** Стальная большая пушка: скорострельный затвор, ствол с картриджем 4/4, 4 нарезных ствола CBC-AT. */
+    @GameTest(template = ARENA, batch = "user_qf", timeoutTicks = 400)
+    public static void steelQfRifled(GameTestHelper h) {
+        fastTarget(h, "user_qf_steel_rifled", USER_START, USER_VEL, 40, () -> {
+            if (!qfRifledCannon(h, new BlockPos(10, 1, 32), Direction.EAST, "steel", 4)) return false;
+            qfAutoloader(h, new BlockPos(10, 1, 32), Direction.EAST, 10);
+            return true;
+        });
+    }
+
     @GameTest(template = ARENA, batch = "fastship", timeoutTicks = 400)
     public static void bigCannonHitsFastShip(GameTestHelper h) {
         if (!ModList.get().isLoaded("sable")) {

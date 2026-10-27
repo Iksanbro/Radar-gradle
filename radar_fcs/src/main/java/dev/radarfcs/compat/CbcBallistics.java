@@ -13,6 +13,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -20,7 +21,8 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemp
 import org.jetbrains.annotations.Nullable;
 import rbasamoyai.createbigcannons.cannon_control.contraption.AbstractMountedCannonContraption;
 import rbasamoyai.createbigcannons.cannon_control.contraption.MountedBigCannonContraption;
-import rbasamoyai.createbigcannons.cannons.autocannon.IAutocannonBlockEntity;
+import rbasamoyai.createbigcannons.cannons.ICannonBlockEntity;
+import rbasamoyai.createbigcannons.cannons.ItemCannonBehavior;
 import rbasamoyai.createbigcannons.cannons.autocannon.breech.AbstractAutocannonBreechBlockEntity;
 import rbasamoyai.createbigcannons.cannons.big_cannons.IBigCannonBlockEntity;
 import rbasamoyai.createbigcannons.munitions.AbstractCannonProjectile;
@@ -66,6 +68,7 @@ public final class CbcBallistics {
         if (c == null) return new Estimate(fallback, false, "-", "none", false, Double.NaN, reach0);
         try {
             if (c instanceof MountedBigCannonContraption big && kind == CbcMount.Kind.BIG) return bigCannon(level, big, fallback);
+            if (NeoWarfare.isMedium(c)) return medium(level, c, fallback);
             if (kind == CbcMount.Kind.RAPID) return rapid(level, c, fallback);
         } catch (Throwable t) {
             FcsMod.LOG.debug("[radar_fcs] ballistics estimate failed for {}: {}", c.getClass().getName(), t.toString());
@@ -191,12 +194,7 @@ public final class CbcBallistics {
         double baseSpread = Reflect.number(Reflect.call0(props, "baseSpread"), Double.NaN);
         double spreadPerBarrel = Reflect.number(Reflect.call0(props, "spreadReductionPerBarrel"), 0);
 
-        int barrels = 0;
-        BlockPos cur = start.relative(o);
-        for (int guard = 0; guard < 64 && c.presentBlockEntities.get(cur) instanceof IAutocannonBlockEntity; guard++) {
-            barrels++;
-            cur = cur.relative(o);
-        }
+        int barrels = itemBarrels(c);
         double speed = Double.isNaN(baseSpeed) ? fallback.speed() : baseSpeed + perBarrel * Math.min(barrels, maxIncreases);
         // как в CBC: каждый ствол уменьшает разброс, но не ниже нуля
         double spread = Double.isNaN(baseSpread) ? Double.NaN : Math.max(0, baseSpread - spreadPerBarrel * barrels);
@@ -212,6 +210,11 @@ public final class CbcBallistics {
                     round = AutocannonAmmoContainerItem.getMainAmmoStack(breech.getMagazine());
             }
             loaded = round != null && !round.isEmpty();
+        } else if (breechBe != null) {
+            // казённики аддонов (роторная пушка Neo Warfare и др.) - тем же API по именам методов
+            round = addonRound(breechBe);
+            if (round != null) loaded = !round.isEmpty();
+            else round = ItemStack.EMPTY;
         }
         CbcFlightModel base = fallback.withSpeed(speed).withMaxTicks(Math.max(5, lifetime));
         String ammo = "?";
@@ -228,6 +231,83 @@ public final class CbcBallistics {
                 reach = reachOf(acp, 0.1);
             }
             ammo = BuiltInRegistries.ITEM.getKey(round.getItem()).getPath();
+        }
+        String fp = c.getClass().getSimpleName() + "|" + barrels + "|" + ammo;
+        return new Estimate(base, loaded, ammo, fp, exact, spread, reach);
+    }
+
+    /**
+     * Стволы предметной пушки (автопушки CBC, роторные и средние пушки Neo Warfare) от блока за казёнником:
+     * так их считает сама пушка при выстреле (пружина отката и подшипник тоже).
+     */
+    static int itemBarrels(AbstractMountedCannonContraption c) {
+        Direction o = c.initialOrientation();
+        int barrels = 0;
+        BlockPos cur = c.getStartPos().relative(o);
+        for (int guard = 0; guard < 64 && c.presentBlockEntities.get(cur) instanceof ICannonBlockEntity<?> cbe
+                && cbe.cannonBehavior() instanceof ItemCannonBehavior; guard++) {
+            barrels++;
+            cur = cur.relative(o);
+        }
+        return barrels;
+    }
+
+    /** Следующий патрон в казённике аддона: getInputBuffer() (очередь или один предмет), затем getMagazine(); null - не понять. */
+    @Nullable
+    private static ItemStack addonRound(BlockEntity breech) {
+        Object in = Reflect.call0(breech, "getInputBuffer");
+        if (in instanceof Deque<?> q) {
+            if (!q.isEmpty() && q.peekFirst() instanceof ItemStack st) return st;
+        } else if (in instanceof ItemStack st && !st.isEmpty()) {
+            return st;
+        }
+        Object mag = Reflect.call0(breech, "getMagazine");
+        if (mag instanceof ItemStack ms && !ms.isEmpty()) {
+            try {
+                if (AutocannonAmmoContainerItem.getTotalAmmoCount(ms) > 0) return AutocannonAmmoContainerItem.getMainAmmoStack(ms);
+            } catch (Throwable ignored) {
+            }
+            return null;                                                     // магазин аддона: заряжена ли - неизвестно
+        }
+        return in == null && mag == null ? null : ItemStack.EMPTY;
+    }
+
+    // ------------------------------------------------------------ средняя пушка CBC Neo Warfare
+
+    /**
+     * Средняя пушка (CBC Modern Warfare / Neo Warfare): снаряд из казённика, скорость и разброс - по материалу
+     * и числу стволов, как у автопушки; стреляет по фронту сигнала, как большая пушка.
+     */
+    private static Estimate medium(ServerLevel level, AbstractMountedCannonContraption c, CbcFlightModel fallback) {
+        Object props = Reflect.call0(Reflect.get(c, "cannonMaterial"), "properties");
+        double baseSpeed = Reflect.number(Reflect.call0(props, "baseSpeed"), Double.NaN);
+        double perBarrel = Reflect.number(Reflect.call0(props, "speedIncreasePerBarrel"), 0);
+        int maxIncreases = (int) Reflect.number(Reflect.call0(props, "maxSpeedIncreases"), 0);
+        double baseSpread = Reflect.number(Reflect.call0(props, "baseSpread"), Double.NaN);
+        double spreadPerBarrel = Reflect.number(Reflect.call0(props, "spreadReductionPerBarrel"), 0);
+        int barrels = itemBarrels(c);
+        double speed = Double.isNaN(baseSpeed) ? fallback.speed() : baseSpeed + perBarrel * Math.min(barrels, maxIncreases);
+        double spread = Double.isNaN(baseSpread) ? Double.NaN : Math.max(0, baseSpread - spreadPerBarrel * barrels);
+
+        BlockEntity breech = c.presentBlockEntities.get(c.getStartPos());
+        ItemStack round = breech == null ? ItemStack.EMPTY : addonRound(breech);
+        if (round == null) round = ItemStack.EMPTY;
+        CbcFlightModel base = fallback.withSpeed(speed);
+        String ammo = round.isEmpty() ? "empty" : BuiltInRegistries.ITEM.getKey(round.getItem()).getPath();
+        boolean loaded = false, exact = false;
+        double reach = 0.4;
+        // заряжена, если в казённике патрон средней пушки со снарядом (после выстрела там пустая гильза)
+        if (!round.isEmpty() && Reflect.implementsNamed(round.getItem().getClass(), "MediumcannonAmmoItem")) {
+            Method m = Reflect.method(round.getItem().getClass(), "getMediumcannonProjectile", ItemStack.class, Level.class);
+            try {
+                if (m != null && m.invoke(round.getItem(), round, level) instanceof AbstractCannonProjectile acp) {
+                    loaded = true;
+                    base = fromProjectile(level, acp, speed, fallback.maxTicks(), base);
+                    exact = !Double.isNaN(baseSpeed);
+                    reach = reachOf(acp, 0.4);
+                }
+            } catch (Throwable ignored) {
+            }
         }
         String fp = c.getClass().getSimpleName() + "|" + barrels + "|" + ammo;
         return new Estimate(base, loaded, ammo, fp, exact, spread, reach);
