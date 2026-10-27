@@ -5,10 +5,12 @@ import dev.radarfcs.FcsConfig;
 import dev.radarfcs.compat.CbcMount;
 import dev.radarfcs.compat.RadarLink;
 import dev.radarfcs.compat.SableCompat;
+import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.core.Vec;
 import dev.radarfcs.fcs.FcsControl;
 import dev.radarfcs.fcs.MountState;
+import dev.radarfcs.fcs.SettingsNbt;
 import dev.radarfcs.fcs.Status;
 import dev.radarfcs.fcs.TargetSensor;
 import dev.radarfcs.radar.RadarEmitter;
@@ -65,6 +67,11 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     private DyeColor channel = DyeColor.WHITE;
     private Set<UUID> platformShips = Set.of();
     @Nullable private UUID ownShip;
+    /** Настройки этого вычислителя (экран настроек). */
+    private EngageSettings settings = new EngageSettings();
+    /** Выстрелы всех пушек по каждой цели и цели, сброшенные после заданного числа выстрелов. */
+    private final Map<String, Integer> shotsAt = new java.util.HashMap<>();
+    private final Set<String> dropped = new HashSet<>();
 
     // сводка для клиента (очки инженера) и Display Link
     private CompoundTag summary = new CompoundTag();
@@ -99,7 +106,12 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             if (now % FcsConfig.SCAN_INTERVAL.get() == 0) {
                 List<BlockEntity> live = new ArrayList<>();
                 for (BlockEntity r : radars) if (!r.isRemoved() && RadarLink.isRunning(r)) live.add(r);
-                sensor.sense(level, live, ownRadars, context(level), now);
+                sensor.sense(level, live, ownRadars, context(level), now, settings, t -> dropped.contains(t.id));
+                // цели, которых больше нет, - из учёта выстрелов и сброса
+                if (now % 100 == 0) {
+                    shotsAt.keySet().removeIf(id -> sensor.get(id) == null);
+                    dropped.removeIf(id -> sensor.get(id) == null);
+                }
             }
             UUID designated = RadarNetwork.designated(level, channel.getId(), now);
             String des = designated == null ? null : designated.toString();
@@ -230,6 +242,29 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         return summary.getInt("Targets");
     }
 
+    public EngageSettings settings() {
+        return settings;
+    }
+
+    /** Новые настройки с экрана (проверяются здесь); p - кому сообщить (null - никому). */
+    public void applySettings(EngageSettings s, @Nullable Player p) {
+        settings = s.copy().sanitize();
+        dropped.clear();
+        setChanged();
+        if (level != null) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+        if (p != null) p.displayClientMessage(Component.translatable("radar_fcs.msg.settings_saved").withStyle(ChatFormatting.GREEN), true);
+    }
+
+    /** Выстрел пушки этого вычислителя по цели: учёт для сброса после N выстрелов. */
+    public void onShotAt(String targetId) {
+        int n = shotsAt.merge(targetId, 1, Integer::sum);
+        if (settings.dropAfterShots > 0 && n >= settings.dropAfterShots) dropped.add(targetId);
+    }
+
+    public boolean isDropped(String targetId) {
+        return dropped.contains(targetId);
+    }
+
     public void report(Player p) {
         for (Component line : summaryLines(summary, true)) p.sendSystemMessage(line);
     }
@@ -254,7 +289,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             mt.putString("N", m.mount == null ? "?" : m.mount.typeName());
             if (m.targetName != null && (m.status == Status.FIRE || m.status == Status.AIMING || m.status == Status.HOLD
                     || m.status == Status.BLOCKED_FRIENDLY || m.status == Status.BLOCKED_TERRAIN || m.status == Status.NO_AMMO
-                    || m.status == Status.NO_POWER)) {
+                    || m.status == Status.NO_POWER || m.status == Status.PAUSE)) {
                 mt.putString("T", m.targetName);
                 mt.putFloat("D", (float) m.distance);
                 mt.putFloat("E", (float) m.aimError);
@@ -383,6 +418,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         if (owner != null) tag.putUUID("Owner", owner);
         tag.putString("OwnerTeam", ownerTeam);
         tag.putInt("Channel", channel.getId());
+        tag.put("Settings", SettingsNbt.write(settings));
     }
 
     @Override
@@ -392,6 +428,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         owner = tag.hasUUID("Owner") ? tag.getUUID("Owner") : null;
         ownerTeam = tag.getString("OwnerTeam");
         channel = DyeColor.byId(tag.getInt("Channel"));
+        settings = SettingsNbt.read(tag.getCompound("Settings"));
         if (tag.contains("Summary", Tag.TAG_COMPOUND)) summary = tag.getCompound("Summary");
     }
 

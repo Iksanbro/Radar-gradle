@@ -99,7 +99,7 @@ public class FcsGameTests {
         doomed.forEach(net.minecraft.world.entity.Entity::discard);
     }
 
-    private static void direct(ServerLevel level) {
+    static void direct(ServerLevel level) {
         cleanup(level);
         commonConfig();
         FcsConfig.REQUIRE_RADAR.set(false);
@@ -238,7 +238,7 @@ public class FcsGameTests {
      * Чугунная автопушка как в ponder-сцене CBC: казённик позади оси, пружина отката на оси, затем стволы.
      * В казённик кладутся пулемётные патроны.
      */
-    private static void autocannon(GameTestHelper h, BlockPos mount, Direction dir, int barrels, int rounds) {
+    static void autocannon(GameTestHelper h, BlockPos mount, Direction dir, int barrels, int rounds) {
         autocannon(h, mount, dir, "cast_iron", barrels, rounds, "createbigcannons:machine_gun_round");
     }
 

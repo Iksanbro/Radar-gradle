@@ -30,11 +30,13 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.phys.BlockHitResult;
+import net.neoforged.fml.loading.FMLEnvironment;
 import org.jetbrains.annotations.Nullable;
 
 /**
  * Вычислитель управления огнём.
- * ПКМ - отчёт, Shift+ПКМ - запрет/разрешение огня, ПКМ красителем - канал «свой-чужой».
+ * ПКМ - экран настроек (режим огня, цели, приоритет) и состояния, Shift+ПКМ - запрет/разрешение огня,
+ * ПКМ красителем - канал «свой-чужой».
  */
 public class FireControlBlock extends BaseEntityBlock {
     public static final MapCodec<FireControlBlock> CODEC = simpleCodec(FireControlBlock::new);
@@ -99,9 +101,10 @@ public class FireControlBlock extends BaseEntityBlock {
 
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
-        if (!level.isClientSide && level.getBlockEntity(pos) instanceof FireControlBlockEntity be) {
-            if (player.isShiftKeyDown()) be.toggleHold(player);
-            else be.report(player);
+        if (player.isShiftKeyDown()) {
+            if (!level.isClientSide && level.getBlockEntity(pos) instanceof FireControlBlockEntity be) be.toggleHold(player);
+        } else if (level.isClientSide && FMLEnvironment.dist.isClient()) {
+            dev.radarfcs.client.FcsClientHooks.openFcsSettings(pos);
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
     }

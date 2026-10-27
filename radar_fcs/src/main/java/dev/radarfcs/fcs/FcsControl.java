@@ -11,6 +11,8 @@ import dev.radarfcs.core.Aim;
 import dev.radarfcs.core.BallisticSolver;
 import dev.radarfcs.core.FlightModel;
 import dev.radarfcs.core.TargetMotion;
+import dev.radarfcs.core.EngageSettings;
+import dev.radarfcs.core.TargetPicker;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.core.TrackTable;
 import dev.radarfcs.core.Vec;
@@ -89,6 +91,17 @@ public final class FcsControl {
             m.cmdPitch = d.pitch();
         }
         if (m.estimate == null || now - m.estimateTick >= 20) m.setEstimate(CbcBallistics.estimate(level, d), now);
+        EngageSettings settings = fcs.settings();
+        // выстрелы прошлого тика: по какой цели, сколько в очереди
+        if (m.pendingShots > 0) {
+            int n = m.pendingShots;
+            m.pendingShots = 0;
+            m.salvoCount += n;
+            if (m.targetId != null) {
+                if (m.targetId.equals(m.pick.currentId)) m.pick.shotsAtCurrent += n;
+                for (int i = 0; i < n; i++) fcs.onShotAt(m.targetId);
+            }
+        }
 
         // система координат станка: на корабле - через позу корабля
         SubLevelAccess ship = SableCompat.containing(level, d.pos());
@@ -120,21 +133,11 @@ public final class FcsControl {
         BallisticSolver solver = new BallisticSolver(-d.maxDepression(), d.maxElevation(), FcsConfig.HIGH_ARC.get())
                 .discrete(discrete);
 
-        // приоритет - ближайшая к этой пушке цель; текущую держим, пока новая не заметно ближе
-        List<Track> cands = TrackTable.sortedByDistance(active, pivot);
-        if (m.targetId != null) {
-            Track cur = sensor.get(m.targetId);
-            if (cur != null && cur.active && cands.indexOf(cur) > 0
-                    && cands.get(0).pos.distance(pivot) >= cur.pos.distance(pivot) * FcsConfig.TARGET_SWITCH_RATIO.get()) {
-                cands.remove(cur);
-                cands.add(0, cur);
-            }
-        }
-        // цель, назначенная с монитора, - в приоритете, если по ней есть решение
-        if (designated != null) {
-            Track des = sensor.get(designated);
-            if (des != null && des.active && cands.remove(des)) cands.add(0, des);
-        }
+        // Выбор цели по настройкам вычислителя: уровень приоритета типа, режим приоритета, удержание текущей,
+        // переключение по приоритету и по правилу; назначенная с монитора - вне очереди.
+        List<Track> pool = new ArrayList<>(active);
+        pool.removeIf(t -> fcs.isDropped(t.id));
+        List<Track> cands = TargetPicker.order(pool, pivot, settings, m.pick, now, FcsConfig.TARGET_SWITCH_RATIO.get(), designated);
         // Команда станку исполнится к следующему тику: решаем для снаряда, вылетающего через тик.
         BallisticSolver.Solution sol = null;
         Track target = null;
@@ -165,8 +168,10 @@ public final class FcsControl {
         }
         if (!target.id.equals(m.targetId)) {
             m.safetyTick = Long.MIN_VALUE / 2;
+            m.salvoCount = 0;
             if (kind == CbcMount.Kind.RAPID) setTrigger(m, false);
         }
+        m.pick.acquire(target.id, now);
         m.targetId = target.id;
         m.targetName = target.name;
         m.hintPitch = Math.toRadians(sol.pitchDeg());
@@ -281,7 +286,7 @@ public final class FcsControl {
         boolean fire = aligned && loaded && verdict == FireSafety.Verdict.CLEAR && !hold;
         boolean wasOn = m.triggerOn;
         long lastFireBefore = m.lastFire;
-        fireControl(level, d, m, kind, fire, pivotW, shotW, muzzleDist, now);
+        fireControl(level, d, m, kind, fire, pivotW, shotW, muzzleDist, now, settings);
         boolean shot = big ? m.lastFire != lastFireBefore : m.triggerOn && !wasOn;
         if (FcsConfig.LOG_SHOTS.get() && shot) {
             FcsMod.LOG.info("[radar_fcs] FIRE {} at {} pos={} vel={} acc={} res={} age={} aim={} ttf={} pitch={} yaw={} err={} miss={} allowed={} speed={} muzzle={}",
@@ -299,19 +304,32 @@ public final class FcsControl {
         else if (verdict == FireSafety.Verdict.TERRAIN) m.status = Status.BLOCKED_TERRAIN;
         else if (!loaded) m.status = Status.NO_AMMO;
         else if (hold) m.status = Status.HOLD;
+        else if (now < m.pauseUntil) m.status = Status.PAUSE;
         else m.status = Status.FIRE;
     }
 
+    /**
+     * Спуск по режиму огня: автоматический - пока выстрел попадёт; одиночный и очередь - выстрел (очередь из
+     * burstLength выстрелов), затем пауза pauseTicks. Выстрелы считаются по снарядам у дульного среза.
+     */
     private static void fireControl(ServerLevel level, CbcMount d, MountState m, CbcMount.Kind kind, boolean fire,
-                                    Vec3 pivotW, Vec3 barrelW, double muzzleDist, long now) {
+                                    Vec3 pivotW, Vec3 barrelW, double muzzleDist, long now, EngageSettings settings) {
         boolean learn = FcsConfig.LEARN_FROM_SHOTS.get() && barrelW != null && m.estimate != null;
+        int salvo = settings.roundsPerSalvo();
+        if (m.salvoCount >= salvo) {                          // очередь (или одиночный выстрел) сделана - пауза
+            m.salvoCount = 0;
+            m.pauseUntil = now + settings.pauseTicks;
+            setTrigger(m, false);
+        }
+        boolean paused = now < m.pauseUntil;
         if (kind == CbcMount.Kind.RAPID) {
-            if (fire) {
+            if (fire && !paused) {
                 if (learn && !ShotObserver.isWatching(m) && (m.correction.shots() < 5 || now - m.lastLearnArm > 100)) {
                     m.prepareShot(m.estimate.model(), pivotW, barrelW);
                     ShotObserver.arm(level, pivotW.add(barrelW.scale(muzzleDist)), barrelW, 6, m);
                     m.lastLearnArm = now;
                 }
+                if (barrelW != null) ShotObserver.count(level, pivotW.add(barrelW.scale(muzzleDist)), barrelW, 3, m);
                 if (!m.triggerOn || !d.firePowered()) {
                     d.setFire(true, FcsConfig.RAPID_FIRE_POWER.get());
                     m.triggerOn = true;
@@ -324,11 +342,12 @@ public final class FcsControl {
         }
         // большая пушка: импульс огня (фронт сигнала), затем сброс
         if (m.triggerOn && now - m.lastFire >= 2) setTrigger(m, false);
-        if (fire && !m.triggerOn && now - m.lastFire >= FcsConfig.BIG_PULSE_INTERVAL.get()) {
+        if (fire && !paused && !m.triggerOn && now - m.lastFire >= FcsConfig.BIG_PULSE_INTERVAL.get()) {
             if (learn) {
                 m.prepareShot(m.estimate.model(), pivotW, barrelW);
                 ShotObserver.arm(level, pivotW.add(barrelW.scale(muzzleDist)), barrelW, 3, m);
             }
+            if (barrelW != null) ShotObserver.count(level, pivotW.add(barrelW.scale(muzzleDist)), barrelW, 3, m);
             d.setFire(true, 15);
             m.triggerOn = true;
             m.lastFire = now;

@@ -31,6 +31,9 @@ public final class ShotObserver {
 
         /** Продолжать ли наблюдение (СУО ещё существует). */
         boolean isListening();
+
+        /** Пушка выстрелила (счёт выстрелов: режимы огня, сброс и переключение целей). */
+        default void onShotCounted(Entity projectile) {}
     }
 
     private record Armed(ResourceKey<Level> dim, Vec3 muzzle, Vec3 dir, long until, Listener listener) {}
@@ -54,6 +57,8 @@ public final class ShotObserver {
     }
 
     private static final List<Armed> ARMED = new ArrayList<>();
+    /** Счёт выстрелов: пока пушка стреляет, её дульный срез «взведён» на каждый тик. */
+    private static final List<Armed> COUNTING = new ArrayList<>();
     private static final List<Watch> WATCHES = new ArrayList<>();
     private static final int MAX_WATCHES = 64;
 
@@ -67,6 +72,13 @@ public final class ShotObserver {
 
     public static synchronized void disarm(Listener listener) {
         ARMED.removeIf(a -> a.listener == listener);
+        COUNTING.removeIf(a -> a.listener == listener);
+    }
+
+    /** Считать снаряды этой пушки ближайшие window тиков (продлевается каждым вызовом). */
+    public static synchronized void count(ServerLevel level, Vec3 muzzle, Vec3 dir, int window, Listener listener) {
+        COUNTING.removeIf(a -> a.listener == listener);
+        COUNTING.add(new Armed(level.dimension(), muzzle, dir.normalize(), level.getGameTime() + window, listener));
     }
 
     public static synchronized boolean isWatching(Listener listener) {
@@ -75,7 +87,7 @@ public final class ShotObserver {
     }
 
     public static synchronized void onEntityJoin(EntityJoinLevelEvent event) {
-        if (ARMED.isEmpty() || !(event.getLevel() instanceof ServerLevel level)) return;
+        if ((ARMED.isEmpty() && COUNTING.isEmpty()) || !(event.getLevel() instanceof ServerLevel level)) return;
         Entity e = event.getEntity();
         if (!(e instanceof Projectile)) return;
         Vec3 v = e.getDeltaMovement();
@@ -84,6 +96,9 @@ public final class ShotObserver {
         Vec3 vd = v.scale(1 / speed);
         long now = level.getGameTime();
         Vec3 pos = e.position();
+        Armed counter = nearest(COUNTING, level, pos, vd, now);
+        if (counter != null) counter.listener.onShotCounted(e);
+        if (ARMED.isEmpty()) return;
         Armed best = null;
         double bestD = Double.MAX_VALUE;
         for (Armed a : ARMED) {
@@ -102,10 +117,24 @@ public final class ShotObserver {
         }
     }
 
+    /** Взведённая пушка, у дульного среза которой появился снаряд по направлению её ствола. */
+    private static Armed nearest(List<Armed> list, ServerLevel level, Vec3 pos, Vec3 vd, long now) {
+        Armed best = null;
+        double bestD = Double.MAX_VALUE;
+        for (Armed a : list) {
+            if (a.dim != level.dimension() || now > a.until) continue;
+            double d = pos.distanceTo(a.muzzle);
+            if (d > 4.5 || vd.dot(a.dir) < 0.94) continue;
+            if (d < bestD) { bestD = d; best = a; }
+        }
+        return best;
+    }
+
     public static synchronized void onLevelTick(LevelTickEvent.Post event) {
         if (!(event.getLevel() instanceof ServerLevel level)) return;
         long now = level.getGameTime();
         ARMED.removeIf(a -> now > a.until + 1 || !a.listener.isListening());
+        COUNTING.removeIf(a -> now > a.until + 1 || !a.listener.isListening());
         Iterator<Watch> it = WATCHES.iterator();
         while (it.hasNext()) {
             Watch w = it.next();

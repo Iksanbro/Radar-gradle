@@ -22,6 +22,7 @@ public final class FcsMod {
         FcsRegistry.register(modBus);
         container.registerConfig(ModConfig.Type.SERVER, FcsConfig.SPEC);
         modBus.addListener(FMLCommonSetupEvent.class, e -> e.enqueueWork(FcsRegistry::bindCreate));
+        modBus.addListener(dev.radarfcs.net.FcsSettingsPayload::register);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onEntityJoin);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onLevelTick);
         NeoForge.EVENT_BUS.addListener(ServerStoppedEvent.class, e -> {

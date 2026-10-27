@@ -28,6 +28,8 @@ public final class Track {
     public double hitRadius = 1;
     /** Точные полуразмеры габарита цели по осям (сущности), блоков; null - известен только hitRadius. */
     public Vec half;
+    /** Объём габарита цели, блоков³ (для приоритета «крупнейшая/наименьшая»). */
+    public double volume = 1;
     public boolean grounded;
     /** Невязка оценки движения (блоков): большая - манёвр, по такой цели лучше не стрелять. */
     public double residual;

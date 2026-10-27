@@ -104,7 +104,26 @@ public final class DevScreenshots {
         if (tick == 610) server.execute(() -> server.getPlayerList().getPlayers().get(0).teleportTo(server.overworld(),
                 rbase.getX() + 3.5, rbase.getY() + 2, rbase.getZ() + 14.5, -150f, 18f));
         if (tick == 660) shot(mc, "radar_array");
-        if (tick == 680) mc.stop();
+        // экран настроек вычислителя первой сцены: все вкладки
+        if (tick == 662) server.execute(() -> {
+            server.getPlayerList().getPlayers().get(0).teleportTo(server.overworld(),
+                    base.getX() - 2.5, base.getY(), base.getZ() + 3.0, -130f, 19f);
+            // настройки меняются на сервере и доходят до клиента с обновлением блока
+            if (server.overworld().getBlockEntity(base) instanceof dev.radarfcs.block.FireControlBlockEntity be) {
+                var st = be.settings().copy();
+                st.fireMode = dev.radarfcs.core.EngageSettings.FireMode.BURST;
+                st.burstLength = 5;
+                st.switchMode = dev.radarfcs.core.EngageSettings.SwitchMode.AFTER_SHOTS;
+                be.applySettings(st, null);
+            }
+        });
+        if (tick >= 690 && tick < 740 && (tick - 690) % 10 == 0) {
+            int tab = (tick - 690) / 10;
+            if (tab == 0) dev.radarfcs.client.FcsClientHooks.openFcsSettings(base);
+            if (mc.screen instanceof dev.radarfcs.client.FcsSettingsScreen sc) sc.showTab(tab);
+        }
+        if (tick >= 695 && tick < 745 && (tick - 695) % 10 == 0) shot(mc, "fcs_settings_" + (tick - 695) / 10);
+        if (tick == 750) mc.stop();
     }
 
     private static void buildRadars(ServerLevel level, ServerPlayer player) {

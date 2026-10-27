@@ -4,6 +4,7 @@ import dev.radarfcs.FcsConfig;
 import dev.radarfcs.compat.ContraptionCompat;
 import dev.radarfcs.compat.RadarLink;
 import dev.radarfcs.compat.SableCompat;
+import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.core.TrackTable;
 import dev.radarfcs.core.Vec;
@@ -73,6 +74,15 @@ public final class TargetSensor {
     }
 
     public void sense(ServerLevel level, List<BlockEntity> radars, List<RadarEmitter> own, Context ctx, long now) {
+        sense(level, radars, own, ctx, now, new EngageSettings(), t -> false);
+    }
+
+    /**
+     * @param settings настройки вычислителя: типы целей, окно скорости, стоящие/движущиеся
+     * @param dropped  цели, сброшенные вычислителем (после N выстрелов)
+     */
+    public void sense(ServerLevel level, List<BlockEntity> radars, List<RadarEmitter> own, Context ctx, long now,
+                      EngageSettings settings, java.util.function.Predicate<Track> dropped) {
         TrackTable.Settings s = new TrackTable.Settings(FcsConfig.TRACK_WINDOW.get(), 0.12);
         FcsConfig.SensorMode mode = FcsConfig.SENSOR_MODE.get();
         Set<String> seen = new HashSet<>();
@@ -115,8 +125,10 @@ public final class TargetSensor {
         table.prune(now, FcsConfig.TRACK_TIMEOUT.get());
         liveSeen.removeIf(id -> table.get(id) == null);
         table.classify(FcsConfig.MIN_SPEED.get() / 20.0, FcsConfig.MIN_SAMPLES.get(),
-                t -> isFriendly(level, t, ctx, now), t -> isEligible(t, ctx), ctx.origin(),
-                FcsConfig.MIN_RANGE.get(), FcsConfig.MAX_RANGE.get());
+                t -> isFriendly(level, t, ctx, now),
+                t -> isEligible(t, ctx) && settings.enabled(EngageSettings.Category.of(t.kind))
+                        && settings.speedAllowed(t.speedPerTick() * 20) && !dropped.test(t),
+                ctx.origin(), FcsConfig.MIN_RANGE.get(), FcsConfig.MAX_RANGE.get(), t -> settings.motionAllowed(t.moving));
         active = TrackTable.sortedByDistance(table.active(), ctx.origin());
     }
 
@@ -132,6 +144,7 @@ public final class TargetSensor {
                         false, new Vec(c.vel.x, c.vel.y, c.vel.z), s);
                 t.hostile = true;
                 t.handle = null;
+                t.volume = 8 * c.size * c.size * c.size;
             }
             return;
         }
@@ -198,6 +211,7 @@ public final class TargetSensor {
         Track t = table.observe(c.id(), kind, name, p, 1.0, c.scannedTime(), false, null, s);
         t.hostile = hostile;
         t.handle = null;
+        t.volume = 1;
     }
 
     // ---------------------------------------------------------- свой сенсор
@@ -241,6 +255,7 @@ public final class TargetSensor {
         t.hostile = e instanceof Enemy;
         // габарит сущности - точный прямоугольник по осям, как его проверяет CBC; у контрапшена он лишь описанный
         t.half = kind == Track.Kind.CONTRAPTION ? null : new Vec(bb.getXsize() * 0.5, bb.getYsize() * 0.5, bb.getZsize() * 0.5);
+        t.volume = bb.getXsize() * bb.getYsize() * bb.getZsize();
     }
 
     private void observeShip(ServerLevel level, SableCompat.Ship ship, long now, TrackTable.Settings s) {
@@ -250,6 +265,7 @@ public final class TargetSensor {
                 ship.radius(), now, false, new Vec(v.x, v.y, v.z), s);
         t.handle = ship;
         t.hostile = true;
+        t.volume = ship.box().getXsize() * ship.box().getYsize() * ship.box().getZsize();
     }
 
     /** Наземная цель: вертикаль не экстраполируется (прыжки мобов - шум). */

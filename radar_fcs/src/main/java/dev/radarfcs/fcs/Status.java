@@ -21,7 +21,9 @@ public enum Status {
     NO_RADAR(ChatFormatting.DARK_RED),
     LOST(ChatFormatting.DARK_GRAY),
     /** Наведение требует вращения, а на валы станка оно не подано. */
-    NO_POWER(ChatFormatting.GOLD);
+    NO_POWER(ChatFormatting.GOLD),
+    /** Пауза между одиночными выстрелами или очередями (режим огня). */
+    PAUSE(ChatFormatting.YELLOW);
 
     public final ChatFormatting color;
 

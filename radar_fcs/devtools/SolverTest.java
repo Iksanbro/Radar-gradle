@@ -282,6 +282,123 @@ public class SolverTest {
         if (!ok) { failures++; System.out.println("  FAIL"); }
     }
 
+    /** Выбор цели по настройкам вычислителя: уровни типов, режимы приоритета, удержание, переключение. */
+    static void targetPicker() {
+        int before = failures;
+        TrackTable table = new TrackTable();
+        Vec pivot = new Vec(0, 64, 0);
+        Track a = table.observe("A", Track.Kind.MOB, "A", new Vec(10, 64, 0), 0.5, 5, false, null, TrackTable.Settings.DEFAULT);
+        Track b = table.observe("B", Track.Kind.MOB, "B", new Vec(11, 64, 0), 0.5, 1, false, null, TrackTable.Settings.DEFAULT);
+        Track c = table.observe("C", Track.Kind.SHIP, "C", new Vec(30, 64, 0), 3, 3, false, null, TrackTable.Settings.DEFAULT);
+        a.vel = new Vec(0.5, 0, 0); b.vel = new Vec(2, 0, 0); c.vel = new Vec(1, 0, 0);
+        a.volume = 0.5; b.volume = 2; c.volume = 400;
+        List<Track> all = List.of(a, b, c);
+        EngageSettings s = new EngageSettings();
+
+        // уровни по умолчанию: корабли (2) выше мобов (1)
+        expect("levels: ship first", first(all, pivot, s, new TargetPicker.State(), 100), "C");
+        s.level[EngageSettings.Category.SHIPS.ordinal()] = 1;
+        String[][] modes = {{"NEAREST", "A"}, {"FARTHEST", "C"}, {"EARLIEST", "B"}, {"LARGEST", "C"}, {"SMALLEST", "A"},
+                {"FASTEST", "B"}, {"SLOWEST", "A"}};
+        for (String[] m : modes) {
+            s.priority = EngageSettings.Priority.valueOf(m[0]);
+            expect("priority " + m[0], first(all, pivot, s, new TargetPicker.State(), 100), m[1]);
+        }
+        s.priority = EngageSettings.Priority.NEAREST;
+
+        // удержание: B чуть дальше A - остаёмся на B; A заметно ближе - переходим
+        TargetPicker.State st = new TargetPicker.State();
+        st.acquire("B", 0);
+        expect("keeps current when not clearly better", first(all, pivot, s, st, 100), "B");
+        b.pos = new Vec(20, 64, 0);
+        expect("switches to clearly nearer", first(all, pivot, s, st, 100), "A");
+        b.pos = new Vec(11, 64, 0);
+
+        // переключение по приоритету: цель выше уровнем перехватывает огонь, только если включено
+        s.level[EngageSettings.Category.SHIPS.ordinal()] = 3;
+        st = new TargetPicker.State();
+        st.acquire("A", 0);
+        s.switchByPriority = false;
+        expect("no switch by priority", first(all, pivot, s, st, 100), "A");
+        s.switchByPriority = true;
+        expect("switch by priority", first(all, pivot, s, st, 100), "C");
+        s.level[EngageSettings.Category.SHIPS.ordinal()] = 1;
+
+        // после N выстрелов: обход всех целей по кругу
+        s.switchMode = EngageSettings.SwitchMode.AFTER_SHOTS;
+        s.switchShots = 3;
+        st = new TargetPicker.State();
+        StringBuilder seq = new StringBuilder();
+        long now = 100;
+        for (int round = 0; round < 6; round++) {
+            String id = first(all, pivot, s, st, now);
+            st.acquire(id, now);
+            seq.append(id);
+            st.shotsAtCurrent += 3;
+            now += 10;
+        }
+        expect("after shots: round robin", seq.toString(), "ABCABC");
+        // единственная цель: огонь по ней продолжается, счётчик правила заново
+        st = new TargetPicker.State();
+        st.acquire("A", 0);
+        st.shotsAtCurrent = 5;
+        expect("single target stays", first(List.of(a), pivot, s, st, 100), "A");
+        if (st.shotsAtCurrent != 0) { failures++; System.out.println("  FAIL: counter not reset"); }
+
+        // через время
+        s.switchMode = EngageSettings.SwitchMode.AFTER_TIME;
+        s.switchSeconds = 5;
+        st = new TargetPicker.State();
+        st.acquire("A", 0);
+        expect("after time: not yet", first(all, pivot, s, st, 99), "A");
+        expect("after time: switched", first(all, pivot, s, st, 100), "B");
+
+        // при остановке
+        s.switchMode = EngageSettings.SwitchMode.ON_STOP;
+        st = new TargetPicker.State();
+        st.acquire("A", 0);
+        a.moving = true;
+        expect("on stop: moving", first(all, pivot, s, st, 100), "A");
+        a.moving = false;
+        expect("on stop: stopped", first(all, pivot, s, st, 100), "B");
+        s.switchMode = EngageSettings.SwitchMode.NONE;
+
+        // назначенная с монитора - вне очереди
+        if (!"C".equals(TargetPicker.order(all, pivot, s, new TargetPicker.State(), 100, 0.85, "C").get(0).id)) {
+            failures++; System.out.println("  FAIL: designated");
+        }
+
+        // фильтры и режимы огня
+        EngageSettings f = new EngageSettings();
+        f.speedMin = 10; f.speedMax = 50;
+        boolean ok = !f.speedAllowed(5) && f.speedAllowed(30) && !f.speedAllowed(60)
+                && !f.motionAllowed(false) && f.motionAllowed(true);
+        f.dropStatic = false; f.dropMoving = true;
+        ok &= f.motionAllowed(false) && !f.motionAllowed(true);
+        f.fireMode = EngageSettings.FireMode.SINGLE;
+        ok &= f.roundsPerSalvo() == 1;
+        f.fireMode = EngageSettings.FireMode.BURST; f.burstLength = 7;
+        ok &= f.roundsPerSalvo() == 7;
+        f.fireMode = EngageSettings.FireMode.AUTO;
+        ok &= f.roundsPerSalvo() == Integer.MAX_VALUE;
+        f.burstLength = 0; f.level[0] = 99; f.speedMin = Double.NaN; f.switchShots = -4;
+        f.sanitize();
+        ok &= f.burstLength == 2 && f.level[0] == EngageSettings.MAX_LEVEL && f.speedMin == 0 && f.switchShots == 1;
+        ok &= EngageSettings.Category.of(Track.Kind.PROJECTILE) == EngageSettings.Category.ENTITIES
+                && EngageSettings.Category.of(Track.Kind.SHIP) == EngageSettings.Category.SHIPS;
+        if (!ok) { failures++; System.out.println("  FAIL: settings filters"); }
+        System.out.println("target picker: " + (failures == before ? "all checks passed" : (failures - before) + " failed"));
+    }
+
+    static String first(List<Track> cands, Vec pivot, EngageSettings s, TargetPicker.State st, long now) {
+        List<Track> o = TargetPicker.order(cands, pivot, s, st, now, 0.85, null);
+        return o.isEmpty() ? "-" : o.get(0).id;
+    }
+
+    static void expect(String what, String got, String want) {
+        if (!want.equals(got)) { failures++; System.out.println("  FAIL " + what + ": got " + got + ", expected " + want); }
+    }
+
     public static void main(String[] a) {
         ballisticCase("big cannon 4 charges", new Truth(8, -0.05, 0.01, false, 0, 0, 1, 1, 600), 300, false, 97);
         ballisticCase("big cannon 2 charges", new Truth(4, -0.05, 0.01, false, 0, 0, 1, 1, 600), 200, false, 97);
@@ -295,6 +412,7 @@ public class SolverTest {
         penetrationLearning();
         trackFilter();
         maneuver();
+        targetPicker();
         if (failures > 0) {
             System.out.println("FAILURES: " + failures);
             System.exit(1);

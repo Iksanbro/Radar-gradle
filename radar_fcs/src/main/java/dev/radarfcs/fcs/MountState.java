@@ -57,6 +57,15 @@ public final class MountState implements ShotObserver.Listener {
 
     // огонь
     public boolean triggerOn;
+    /** Выбор цели этой пушки (приоритет, удержание, переключение). */
+    public final dev.radarfcs.core.TargetPicker.State pick = new dev.radarfcs.core.TargetPicker.State();
+    /** Выстрелы, замеченные у дульного среза и ещё не учтённые. */
+    public int pendingShots;
+    /** Выстрелов в текущей очереди и конец паузы между очередями. */
+    public int salvoCount;
+    public long pauseUntil = Long.MIN_VALUE / 2;
+    /** Всего выстрелов этой пушки (для отчёта). */
+    public int shotsFired;
     public long lastFire = Long.MIN_VALUE / 2;
     public long lastAssembleTry = Long.MIN_VALUE / 2;
     public Status status = Status.IDLE;
@@ -130,6 +139,12 @@ public final class MountState implements ShotObserver.Listener {
                 muzzleSamples++;
             }
         }
+    }
+
+    @Override
+    public void onShotCounted(Entity projectile) {
+        pendingShots++;
+        shotsFired++;
     }
 
     @Override

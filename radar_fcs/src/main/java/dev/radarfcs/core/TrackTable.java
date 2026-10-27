@@ -70,13 +70,22 @@ public final class TrackTable {
      */
     public void classify(double minSpeedPerTick, int minSamples, Predicate<Track> isFriendly,
                          Predicate<Track> isEligible, Vec origin, double minRange, double maxRange) {
+        classify(minSpeedPerTick, minSamples, isFriendly, isEligible, origin, minRange, maxRange, t -> t.moving);
+    }
+
+    /**
+     * @param motionOk годится ли цель по движению (флаг moving уже выставлен): обычно - только движущиеся;
+     *                 вычислитель может брать и стоящие, или только стоящие
+     */
+    public void classify(double minSpeedPerTick, int minSamples, Predicate<Track> isFriendly,
+                         Predicate<Track> isEligible, Vec origin, double minRange, double maxRange, Predicate<Track> motionOk) {
         for (Track t : tracks.values()) {
             double s = t.speedPerTick();
             if (s >= minSpeedPerTick) t.moving = true;
             else if (s < minSpeedPerTick * HYSTERESIS) t.moving = false;
             t.friendly = isFriendly.test(t);
             double d = t.pos.distance(origin);
-            t.active = !t.friendly && t.moving && t.samples >= minSamples && t.observedSpan() >= 3
+            t.active = !t.friendly && motionOk.test(t) && t.samples >= minSamples && t.observedSpan() >= 3
                     && d >= minRange && d <= maxRange && isEligible.test(t);
         }
     }
