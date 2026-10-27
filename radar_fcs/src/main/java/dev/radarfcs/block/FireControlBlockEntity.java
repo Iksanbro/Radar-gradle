@@ -70,11 +70,14 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     @Nullable private UUID ownShip;
     /** Настройки этого вычислителя (экран настроек). */
     private EngageSettings settings = new EngageSettings();
+    /** false - пушки разобраны кнопкой «Разобрать» и не собираются автоматически. */
+    private boolean assembleWanted = true;
     /** Выстрелы всех пушек по каждой цели и цели, сброшенные после заданного числа выстрелов. */
     private final Map<String, Integer> shotsAt = new java.util.HashMap<>();
     private final Set<String> dropped = new HashSet<>();
-    /** Мониторы на линках: с них назначение цели, на них - отметки целей под огнём. */
+    /** Мониторы сети: с них назначение цели, на них - отметки целей под огнём; мониторы Create Radars - выбор цели. */
     private final List<BlockPos> linkedMonitors = new ArrayList<>();
+    private final List<BlockPos> crMonitors = new ArrayList<>();
 
     // сводка для клиента (очки инженера) и Display Link
     private CompoundTag summary = new CompoundTag();
@@ -101,20 +104,20 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         List<BlockEntity> live = new ArrayList<>();
         for (BlockEntity r : radars) if (!r.isRemoved() && RadarLink.isRunning(r)) live.add(r);
         runningRadars = live.size();
-        if (runningRadars == 0 && !FcsDev.radarless) {
+        // ручное наведение: цель, выбранная на мониторе сети (своём или Create Radars)
+        String des = designation(level, now);
+        if (runningRadars == 0 && !FcsDev.radarless && des == null) {
             sensor.clear();
             for (MountState m : mounts.values()) FcsControl.cease(level, m, Status.NO_RADAR);
         } else {
             if (now % FcsConfig.SCAN_INTERVAL.get() == 0) {
-                sensor.sense(level, live, context(level), now, settings, t -> dropped.contains(t.id));
+                sensor.sense(level, live, context(level), now, settings, t -> dropped.contains(t.id), des);
                 // цели, которых больше нет, - из учёта выстрелов и сброса
                 if (now % 100 == 0) {
                     shotsAt.keySet().removeIf(id -> sensor.get(id) == null);
                     dropped.removeIf(id -> sensor.get(id) == null);
                 }
             }
-            UUID designated = designation(level, now);
-            String des = designated == null ? null : designated.toString();
             for (MountState m : mounts.values()) {
                 FcsControl.control(level, this, m, sensor, now, hold, channel.getId(), platformShips, des);
                 if (m.targetId != null && (m.status == Status.FIRE || m.status == Status.AIMING)) {
@@ -155,16 +158,28 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         return new Vec(w.x, w.y, w.z);
     }
 
-    /** Назначенная цель - с мониторов на линках. */
+    /** Цель, назначенная вручную на мониторе сети: своём радарном или Create Radars (id трека) или null. */
     @Nullable
-    private UUID designation(ServerLevel level, long now) {
+    private String designation(ServerLevel level, long now) {
         for (BlockPos p : linkedMonitors) {
             if (level.isLoaded(p) && level.getBlockEntity(p) instanceof RadarMonitorBlockEntity m) {
                 UUID d = m.localDesignation(now);
-                if (d != null) return d;
+                if (d != null) return d.toString();
             }
         }
+        for (BlockPos p : crMonitors) {
+            if (!level.isLoaded(p)) continue;
+            BlockEntity be = level.getBlockEntity(p);
+            String sel = be == null ? null : RadarLink.monitorSelection(be);
+            if (sel != null) return sel;
+        }
         return null;
+    }
+
+    /** Назначенная сейчас цель (для экрана и тестов). */
+    @Nullable
+    public String currentDesignation() {
+        return level instanceof ServerLevel sl ? designation(sl, sl.getGameTime()) : null;
     }
 
     /** Пересмотреть подключённую аппаратуру в ближайший тик (линк поставлен или снят). */
@@ -177,6 +192,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         Set<BlockPos> found = new HashSet<>();
         radars.clear();
         linkedMonitors.clear();
+        crMonitors.clear();
         for (BlockPos p : LinkRegistry.linkedTo(level, worldPosition)) {
             if (!level.isLoaded(p)) continue;
             BlockEntity be = level.getBlockEntity(p);
@@ -193,6 +209,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                     RadarMonitorBlockEntity m = ((RadarMonitorBlockEntity) be).master();
                     if (!linkedMonitors.contains(m.getBlockPos())) linkedMonitors.add(m.getBlockPos());
                 }
+                case CR_MONITOR -> crMonitors.add(p.immutable());
                 default -> { }
             }
         }
@@ -274,6 +291,39 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         if (p != null) p.displayClientMessage(Component.translatable("radar_fcs.msg.settings_saved").withStyle(ChatFormatting.GREEN), true);
     }
 
+    public boolean assembleWanted() {
+        return assembleWanted;
+    }
+
+    /** Кнопка «Собрать»: собрать все пушки вычислителя сейчас и снова собирать их автоматически. */
+    public void assembleAll(@Nullable Player p) {
+        assembleWanted = true;
+        setChanged();
+        int ok = 0, total = 0;
+        long now = level == null ? 0 : level.getGameTime();
+        for (MountState m : mounts.values()) {
+            if (m.mount == null || !m.mount.isValid() || m.status == Status.OTHER_FCS) continue;
+            total++;
+            if (FcsControl.assemble(m, now)) ok++;
+        }
+        lastSummary = Long.MIN_VALUE / 2;
+        if (p != null) p.displayClientMessage(Component.translatable("radar_fcs.msg.assembled", ok, total)
+                .withStyle(ok == total ? ChatFormatting.GREEN : ChatFormatting.GOLD), true);
+    }
+
+    /** Кнопка «Разобрать»: разобрать все пушки вычислителя; до «Собрать» он их не собирает. */
+    public void disassembleAll(@Nullable Player p) {
+        assembleWanted = false;
+        setChanged();
+        int n = 0;
+        for (MountState m : mounts.values()) {
+            if (m.status == Status.OTHER_FCS) continue;
+            if (FcsControl.disassemble(m)) n++;
+        }
+        lastSummary = Long.MIN_VALUE / 2;
+        if (p != null) p.displayClientMessage(Component.translatable("radar_fcs.msg.disassembled", n).withStyle(ChatFormatting.GRAY), true);
+    }
+
     /** Выстрел пушки этого вычислителя по цели: учёт для сброса после N выстрелов. */
     public void onShotAt(String targetId) {
         int n = shotsAt.merge(targetId, 1, Integer::sum);
@@ -296,7 +346,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         tag.putInt("Targets", sensor.active().size());
         tag.putInt("Contacts", sensor.usedRadar() ? sensor.contacts() : sensor.all().size());
         tag.putBoolean("Direct", !sensor.usedRadar());
-        tag.putIntArray("Links", new int[]{mounts.size(), radars.size(), linkedMonitors.size()});
+        tag.putIntArray("Links", new int[]{mounts.size(), radars.size(), linkedMonitors.size() + crMonitors.size()});
         Set<String> engaged = new HashSet<>();
         ListTag ml = new ListTag();
         for (MountState m : mounts.values()) {
@@ -439,6 +489,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         tag.putString("OwnerTeam", ownerTeam);
         tag.putInt("Channel", channel.getId());
         tag.put("Settings", SettingsNbt.write(settings));
+        tag.putBoolean("Assemble", assembleWanted);
     }
 
     @Override
@@ -449,6 +500,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         ownerTeam = tag.getString("OwnerTeam");
         channel = DyeColor.byId(tag.getInt("Channel"));
         settings = SettingsNbt.read(tag.getCompound("Settings"));
+        assembleWanted = !tag.contains("Assemble") || tag.getBoolean("Assemble");
         if (tag.contains("Summary", Tag.TAG_COMPOUND)) summary = tag.getCompound("Summary");
     }
 

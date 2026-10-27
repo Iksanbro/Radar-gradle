@@ -20,6 +20,9 @@ public final class SettingsNbt {
         t.putDouble("SpeedMax", s.speedMax);
         t.putBoolean("DropStatic", s.dropStatic);
         t.putInt("StaticTicks", s.staticTicks);
+        t.putBoolean("HostileOnly", s.hostileOnly);
+        t.put("Whitelist", list(s.whitelist));
+        t.put("Blacklist", list(s.blacklist));
         t.putBoolean("DropMoving", s.dropMoving);
         t.putInt("DropShots", s.dropAfterShots);
         t.putString("Priority", s.priority.name());
@@ -44,6 +47,9 @@ public final class SettingsNbt {
         s.speedMax = t.getDouble("SpeedMax");
         if (t.contains("DropStatic")) s.dropStatic = t.getBoolean("DropStatic");
         if (t.contains("StaticTicks")) s.staticTicks = t.getInt("StaticTicks");
+        if (t.contains("HostileOnly")) s.hostileOnly = t.getBoolean("HostileOnly");
+        read(t.getList("Whitelist", net.minecraft.nbt.Tag.TAG_STRING), s.whitelist);
+        read(t.getList("Blacklist", net.minecraft.nbt.Tag.TAG_STRING), s.blacklist);
         s.dropMoving = t.getBoolean("DropMoving");
         s.dropAfterShots = t.getInt("DropShots");
         s.priority = enumOr(EngageSettings.Priority.class, t.getString("Priority"), s.priority);
@@ -52,6 +58,16 @@ public final class SettingsNbt {
         if (t.contains("SwitchShots")) s.switchShots = t.getInt("SwitchShots");
         if (t.contains("SwitchSeconds")) s.switchSeconds = t.getInt("SwitchSeconds");
         return s.sanitize();
+    }
+
+    private static net.minecraft.nbt.ListTag list(java.util.List<String> l) {
+        net.minecraft.nbt.ListTag out = new net.minecraft.nbt.ListTag();
+        for (String e : l) out.add(net.minecraft.nbt.StringTag.valueOf(e));
+        return out;
+    }
+
+    private static void read(net.minecraft.nbt.ListTag tag, java.util.List<String> into) {
+        for (int i = 0; i < tag.size(); i++) into.add(tag.getString(i));
     }
 
     private static <E extends Enum<E>> E enumOr(Class<E> c, String name, E def) {

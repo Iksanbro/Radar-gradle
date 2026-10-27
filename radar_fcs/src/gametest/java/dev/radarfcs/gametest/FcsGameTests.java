@@ -56,7 +56,6 @@ public class FcsGameTests {
         FcsConfig.MIN_RANGE.set(4.0);
         FcsConfig.GLOW_TARGETS.set(true);
         FcsConfig.MARK_TARGETS.set(true);
-        FcsConfig.HOSTILE_ONLY.set(true);
         FcsConfig.REQUIRE_LOS.set(true);
         FcsConfig.LOG_SHOTS.set(true);
         try {
@@ -94,9 +93,11 @@ public class FcsGameTests {
         CREATED.clear();
         java.util.List<net.minecraft.world.entity.Entity> doomed = new java.util.ArrayList<>();
         for (var e : level.getAllEntities()) {
-            if (e instanceof net.minecraft.world.entity.monster.Husk || e instanceof Projectile) doomed.add(e);
+            if (e instanceof net.minecraft.world.entity.monster.Husk || e instanceof Projectile
+                    || e instanceof net.minecraft.world.entity.animal.Cow || e instanceof net.minecraft.world.entity.vehicle.Boat) doomed.add(e);
         }
         doomed.forEach(net.minecraft.world.entity.Entity::discard);
+        TargetGameTests.removeMockPlayers(level);
     }
 
     /** Тесты баллистики: цели без радара (FcsDev.radarless), чтобы не зависеть от обзора радара. */
@@ -533,16 +534,47 @@ public class FcsGameTests {
         throw new GameTestAssertException("no free face for a radar link at mount " + mountRel);
     }
 
-    /** Линк на грани face блока attachedRel, второй конец - otherRel. */
+    /**
+     * Связать attachedRel с otherRel радарной сетью: линк на грани face блока attachedRel встаёт в сеть линка на otherRel;
+     * если на otherRel линка нет - на его свободную грань ставится линк новой сети (как игрок предметом).
+     */
     static dev.radarfcs.block.RadarLinkBlockEntity link(GameTestHelper h, BlockPos attachedRel, Direction face, BlockPos otherRel) {
+        java.util.UUID net = networkAt(h, otherRel);
+        if (net == null) {
+            net = java.util.UUID.randomUUID();
+            placeLink(h, otherRel, freeFace(h, otherRel), net);
+        }
+        return placeLink(h, attachedRel, face, net);
+    }
+
+    /** Линк сети net на грани face блока attachedRel. */
+    static dev.radarfcs.block.RadarLinkBlockEntity placeLink(GameTestHelper h, BlockPos attachedRel, Direction face, java.util.UUID net) {
         BlockPos at = attachedRel.relative(face);
         h.setBlock(at, FcsRegistry.RADAR_LINK.get().defaultBlockState().setValue(dev.radarfcs.block.RadarLinkBlock.FACING, face));
         CREATED.add(h.absolutePos(at));
         if (!(h.getLevel().getBlockEntity(h.absolutePos(at)) instanceof dev.radarfcs.block.RadarLinkBlockEntity be)) {
             throw new GameTestAssertException("no radar link at " + at);
         }
-        be.setOther(h.absolutePos(otherRel));
+        be.setNetwork(net);
         return be;
+    }
+
+    /** Сеть первого линка, стоящего на блоке rel, или null. */
+    @org.jetbrains.annotations.Nullable
+    static java.util.UUID networkAt(GameTestHelper h, BlockPos rel) {
+        BlockPos abs = h.absolutePos(rel);
+        for (Direction d : Direction.values()) {
+            if (h.getLevel().getBlockEntity(abs.relative(d)) instanceof dev.radarfcs.block.RadarLinkBlockEntity be
+                    && be.attached().equals(abs) && be.network() != null) return be.network();
+        }
+        return null;
+    }
+
+    static Direction freeFace(GameTestHelper h, BlockPos rel) {
+        for (Direction d : new Direction[]{Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST, Direction.DOWN}) {
+            if (h.getBlockState(rel.relative(d)).isAir()) return d;
+        }
+        throw new GameTestAssertException("no free face for a radar link at " + rel);
     }
 
     /** Цель без ИИ, которую тест двигает сам: туда-обратно вдоль оси Z с заданной скоростью. */
@@ -663,20 +695,32 @@ public class FcsGameTests {
         });
     }
 
-    /** Транспондер «свой» рядом с целью: цель своя, огня нет. Другой канал - чужая. */
-    @GameTest(template = ARENA, batch = "iff", timeoutTicks = 260)
+    /**
+     * Зона наземного транспондера бережёт своё на базе (мирная корова, взятая в цели белым списком, - своя, огня по ней нет),
+     * но не прикрывает врага: враждебный моб в той же зоне - цель, по нему огонь.
+     */
+    @GameTest(template = ARENA, batch = "iff", timeoutTicks = 500)
     public static void transponderProtectsTarget(GameTestHelper h) {
         floor(h);
-        bigCannon(h, new BlockPos(10, 1, 32), Direction.EAST, 2, 4, true);
+        autocannon(h, new BlockPos(10, 1, 32), Direction.EAST, 4, 64);
         FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 28));
+        SettingsGameTests.configure(be, s -> s.whitelist.add("minecraft:cow"));
         h.setBlock(new BlockPos(48, 1, 30), FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState());
-        Mob husk = movingTarget(h, EntityType.HUSK, new Vec3(46.5, 1, 26.5), 0.1, 6);
-        float max = husk.getMaxHealth();
+        Mob cow = SettingsGameTests.tough(movingTarget(h, EntityType.COW, new Vec3(46.5, 1, 22.5), 0.1, 6));
+        Mob husk = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(46.5, 1, 34.5), 0.1, 4));
+        AtomicInteger cowHits = countHits(h, cow), huskHits = countHits(h, husk);
         logEvery(h, be, "iff", 40);
-        h.runAtTickTime(220, () -> {
-            if (husk.getHealth() < max) h.fail(("protected target was shot"));
-            if (!be.sensor().active().isEmpty()) h.fail(("protected target is active"));
-            h.succeed();
+        h.onEachTick(() -> {
+            if (cowHits.get() > 0) throw new GameTestAssertException("protected cow was shot");
+            for (MountState m : be.mountStates()) {
+                if (cow.getUUID().toString().equals(m.targetId)) throw new GameTestAssertException("protected cow was picked as a target");
+            }
+        });
+        h.succeedWhen(() -> {
+            var t = be.sensor().get(cow.getUUID().toString());
+            if (t == null || !t.friendly) throw new GameTestAssertException("cow in the zone is not friendly");
+            if (huskHits.get() == 0) throw new GameTestAssertException("hostile mob in the zone not hit yet");
+            FcsMod.LOG.info("[radar_fcs test] iff: hostile in the transponder zone hit {} times, protected cow untouched", huskHits.get());
         });
     }
 

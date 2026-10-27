@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    {
+      "item": "radar_fcs:radar_link"
+    }
+  ],
+  "result": {
+    "id": "radar_fcs:radar_link",
+    "count": 1
+  }
+}

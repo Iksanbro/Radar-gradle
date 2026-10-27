@@ -6,6 +6,7 @@ import com.mojang.math.Axis;
 import dev.radarfcs.block.RadarMonitorBlockEntity;
 import dev.radarfcs.block.RadarMonitorBlockEntity.Blip;
 import dev.radarfcs.block.RadarMonitorBlockEntity.Site;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -16,11 +17,17 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+import java.util.List;
 import org.joml.Matrix4f;
 
 /**
  * Экран радарного монитора: круговая развёртка. Вверх на экране - направление от зрителя
- * (куда он смотрит, стоя перед монитором), вправо - вправо от зрителя.
+ * (куда он смотрит, стоя перед монитором), вправо - вправо от зрителя. Цвета отметок: под огнём - красный,
+ * свои - зелёный, неактивные - серый, угрозы - оранжевый, мирные и прочие - голубой; назначенная - жёлтая рамка,
+ * отметка под взглядом - белая рамка и сведения о цели (имя, координаты, дальность, высота, скорость).
  */
 public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlockEntity> {
     private static final int BG = 0xF0060D08;
@@ -30,6 +37,10 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
     private static final int SWEEP = 0x60FF60;
     private static final int SITE = 0xFF60FF80;
     private static final int HOSTILE = 0xFFFFA020;
+    private static final int NEUTRAL = 0xFF50C8FF;
+    private static final int FRIENDLY = 0xFF40FF60;
+    private static final int INACTIVE = 0xFF7A847A;
+    private static final int HOVER = 0xFFFFFFFF;
     private static final int ENGAGED = 0xFFFF3030;
     private static final int DESIGNATED = 0xFFFFFF40;
     private static final int TEXT = 0xFF70FF90;
@@ -84,19 +95,46 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         // центр - сам монитор
         rect(vc, m, cx - s * 0.9f, cy - s * 0.25f, cx + s * 0.9f, cy + s * 0.25f, 0.0016f, 0xFFFFFFFF);
         rect(vc, m, cx - s * 0.25f, cy - s * 0.9f, cx + s * 0.25f, cy + s * 0.9f, 0.0016f, 0xFFFFFFFF);
+        // точка экрана под взглядом игрока (в тех же осях: X вправо, Y вверх от центра ведущего блока)
+        float[] look = lookPoint(be, f, right, w, h);
+        Blip hovered = null;
+        float hoverD = Math.max(s * 3f, 0.06f);
         int count = 0;
-        for (Blip b : be.blips()) {
-            float[] p = toScreen(b.dx(), b.dz(), f, right, range, r, cx, cy);
-            if (p == null) continue;
-            count++;
-            boolean ship = (b.flags() & RadarMonitorBlockEntity.FLAG_SHIP) != 0;
-            float bs = ship ? s * 1.5f : s;
-            int col = (b.flags() & RadarMonitorBlockEntity.FLAG_ENGAGED) != 0 ? ENGAGED : HOSTILE;
-            rect(vc, m, p[0] - bs, p[1] - bs, p[0] + bs, p[1] + bs, 0.002f, col);
-            if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) {
-                float o = bs * 2.2f, th = bs * 0.45f;
-                frame(vc, m, p[0] - o, p[1] - o, p[0] + o, p[1] + o, th, 0.0024f, DESIGNATED);
+        List<Blip> blips = be.blips();
+        // неактивные и свои - снизу, активные - поверх
+        for (int pass = 0; pass < 2; pass++) {
+            for (Blip b : blips) {
+                boolean minor = (b.flags() & (RadarMonitorBlockEntity.FLAG_INACTIVE | RadarMonitorBlockEntity.FLAG_FRIENDLY)) != 0
+                        && (b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) == 0;
+                if (minor != (pass == 0)) continue;
+                float[] p = toScreen(b.dx(), b.dz(), f, right, range, r, cx, cy);
+                if (p == null) continue;
+                if (!minor) count++;
+                boolean ship = (b.flags() & RadarMonitorBlockEntity.FLAG_SHIP) != 0;
+                float bs = (ship ? s * 1.5f : s) * (minor ? 0.7f : 1f);
+                rect(vc, m, p[0] - bs, p[1] - bs, p[0] + bs, p[1] + bs, minor ? 0.0018f : 0.002f, blipColor(b));
+                if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) {
+                    float o = bs * 2.2f, th = bs * 0.45f;
+                    frame(vc, m, p[0] - o, p[1] - o, p[0] + o, p[1] + o, th, 0.0024f, DESIGNATED);
+                }
+                if (look != null) {
+                    float d = (float) Math.hypot(p[0] - look[0], p[1] - look[1]);
+                    if (d < hoverD) {
+                        hoverD = d;
+                        hovered = b;
+                    }
+                }
             }
+        }
+        if (hovered != null) {
+            float[] p = toScreen(hovered.dx(), hovered.dz(), f, right, range, r, cx, cy);
+            float o = s * 1.8f, th = s * 0.3f;
+            frame(vc, m, p[0] - o, p[1] - o, p[0] + o, p[1] + o, th, 0.0026f, HOVER);
+        } else if (look != null) {
+            // курсор взгляда
+            float c = s * 0.8f, th = s * 0.15f;
+            rect(vc, m, look[0] - c, look[1] - th, look[0] + c, look[1] + th, 0.0026f, 0xA0FFFFFF);
+            rect(vc, m, look[0] - th, look[1] - c, look[0] + th, look[1] + c, 0.0026f, 0xA0FFFFFF);
         }
 
         // цвет канала - полоска в правом нижнем углу
@@ -116,6 +154,26 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         font.drawInBatch(right1, boxW - font.width(right1), 0, TEXT, false, tm, buffers, Font.DisplayMode.POLYGON_OFFSET, 0,
                 LightTexture.FULL_BRIGHT);
         float boxH = (h - 2 * e * 1.6f) / scale;
+        Blip info = hovered;
+        if (info == null) for (Blip b : blips) if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) info = b;
+        if (info != null) {
+            // сведения о цели под строкой дальности; на маленьком экране - мельче, чтобы влезли
+            List<Component> lines = RadarMonitorScreen.describe(be, info);
+            int widest = 1;
+            for (Component c : lines) widest = Math.max(widest, font.width(c));
+            float k = Math.min(1f, boxW / widest);
+            ps.pushPose();
+            ps.translate(0, font.lineHeight + 2, 0);
+            ps.scale(k, k, 1);
+            Matrix4f im = ps.last().pose();
+            float ty = 0;
+            for (Component c : lines) {
+                font.drawInBatch(c, 0, ty, 0xFFFFFFFF, false, im, buffers, Font.DisplayMode.POLYGON_OFFSET, 0x90000000,
+                        LightTexture.FULL_BRIGHT);
+                ty += font.lineHeight + 1;
+            }
+            ps.popPose();
+        }
         String bottom = be.radarCount() == 0 ? Component.translatable("radar_fcs.monitor.no_radar").getString()
                 : Component.translatable("radar_fcs.monitor.radars", be.radarCount()).getString();
         font.drawInBatch(bottom, 0, boxH - font.lineHeight, be.radarCount() == 0 ? 0xFFFF5050 : TEXT, false, tm, buffers,
@@ -123,6 +181,27 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         ps.popPose();
 
         ps.popPose();
+    }
+
+    /** Цвет отметки по её флагам (общий для экрана в мире и окна монитора). */
+    public static int blipColor(Blip b) {
+        int fl = b.flags();
+        if ((fl & RadarMonitorBlockEntity.FLAG_ENGAGED) != 0) return ENGAGED;
+        if ((fl & RadarMonitorBlockEntity.FLAG_FRIENDLY) != 0) return FRIENDLY;
+        if ((fl & RadarMonitorBlockEntity.FLAG_INACTIVE) != 0) return INACTIVE;
+        return (fl & RadarMonitorBlockEntity.FLAG_HOSTILE) != 0 ? HOSTILE : NEUTRAL;
+    }
+
+    /** Куда на экран этого монитора смотрит игрок (локальные X, Y) или null. */
+    private static float[] lookPoint(RadarMonitorBlockEntity be, Direction f, Direction right, int w, int h) {
+        Minecraft mc = Minecraft.getInstance();
+        if (!(mc.hitResult instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK || hit.getDirection() != f) return null;
+        BlockPos d = hit.getBlockPos().subtract(be.getBlockPos());
+        int along = d.getX() * right.getStepX() + d.getZ() * right.getStepZ();
+        int across = d.getX() * f.getStepX() + d.getZ() * f.getStepZ();
+        if (across != 0 || along < 0 || along >= w || d.getY() < 0 || d.getY() >= h) return null;
+        Vec3 rel = hit.getLocation().subtract(Vec3.atCenterOf(be.getBlockPos()));
+        return new float[]{(float) (rel.x * right.getStepX() + rel.z * right.getStepZ()), (float) rel.y};
     }
 
     /** Мировое смещение -> точка экрана; null - за пределами круга. */

@@ -37,8 +37,8 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Радарный линк: стоит на грани одной аппаратуры (FACING - от неё наружу) и связывает её с другой
- * (вычислитель - станок, радар, монитор; монитор - радар). Ставится предметом линка после выбора первой аппаратуры.
+ * Радарный линк: стоит на грани аппаратуры (FACING - от неё наружу) и включает её в радарную сеть
+ * (как складской передатчик Create). Полный сигнал редстоуна отключает линк.
  */
 public class RadarLinkBlock extends BaseEntityBlock {
     public static final MapCodec<RadarLinkBlock> CODEC = simpleCodec(RadarLinkBlock::new);
@@ -96,6 +96,12 @@ public class RadarLinkBlock extends BaseEntityBlock {
         // аппаратуру убрали - линк отваливается
         if (dir == state.getValue(FACING).getOpposite() && !canSurvive(state, level, pos)) return Blocks.AIR.defaultBlockState();
         return super.updateShape(state, dir, neighbor, level, pos, neighborPos);
+    }
+
+    @Override
+    protected void neighborChanged(BlockState state, Level level, BlockPos pos, Block block, BlockPos from, boolean moving) {
+        super.neighborChanged(state, level, pos, block, from, moving);
+        if (!level.isClientSide && level.getBlockEntity(pos) instanceof RadarLinkBlockEntity be) be.refresh();
     }
 
     @Override

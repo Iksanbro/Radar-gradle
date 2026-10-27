@@ -49,6 +49,51 @@ public final class RadarLink {
         return FcsConfig.RADAR_BLOCKS.get().contains(id);
     }
 
+    /** Монитор Create Radars (любой блок стены). */
+    public static boolean isMonitor(BlockEntity be) {
+        if (!Mods.CREATE_RADARS) return false;
+        try {
+            return be instanceof com.happysg.radar.block.monitor.MonitorBlockEntity;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * Цель, выбранная игроком на мониторе Create Radars (id трека: UUID сущности или корабля), или null.
+     * Выбор хранится у ведущего блока монитора: 0.4.9.x - getController(), 5.x - getMonitorControllerPos().
+     */
+    @Nullable
+    public static String monitorSelection(BlockEntity be) {
+        if (!isMonitor(be)) return null;
+        try {
+            com.happysg.radar.block.monitor.MonitorBlockEntity m = (com.happysg.radar.block.monitor.MonitorBlockEntity) be;
+            com.happysg.radar.block.monitor.MonitorBlockEntity master = monitorController(m);
+            String sel = master != null ? master.selectedEntity : m.selectedEntity;
+            return sel == null || sel.isEmpty() ? null : sel;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    @Nullable
+    private static com.happysg.radar.block.monitor.MonitorBlockEntity monitorController(com.happysg.radar.block.monitor.MonitorBlockEntity m) {
+        try {
+            Object c = m.getClass().getMethod("getController").invoke(m);
+            if (c instanceof com.happysg.radar.block.monitor.MonitorBlockEntity mc) return mc;
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // 5.x
+        }
+        try {
+            Object p = m.getClass().getMethod("getMonitorControllerPos").invoke(m);
+            if (p instanceof BlockPos pos && m.getLevel() != null
+                    && m.getLevel().getBlockEntity(pos) instanceof com.happysg.radar.block.monitor.MonitorBlockEntity mc) return mc;
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // нет ведущего
+        }
+        return null;
+    }
+
     public static boolean isRunning(BlockEntity be) {
         if (!Mods.CREATE_RADARS) return false;
         if (apiBroken) return true;

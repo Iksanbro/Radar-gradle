@@ -50,6 +50,9 @@ public final class FireSafety {
         double iff = FcsConfig.IFF_RADIUS.get();
         for (Vec b : IffRegistry.groundBeacons(level, channel)) {
             if (b.distance(muzzle) <= iff) continue;                       // своя база - стреляем изнутри
+            // враг внутри своей базы (зона транспондера его не прикрывает) - стрелять в зону можно; свои на линии
+            // огня проверены выше. Через базу по цели снаружи - нельзя.
+            if (target.pos.distance(b) <= iff) continue;
             if (pathNear(path, b, iff, 0)) return Verdict.FRIENDLY;
         }
 

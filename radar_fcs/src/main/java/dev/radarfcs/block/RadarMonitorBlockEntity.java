@@ -2,6 +2,7 @@ package dev.radarfcs.block;
 
 import dev.radarfcs.FcsConfig;
 import dev.radarfcs.compat.SableCompat;
+import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.core.Vec;
 import dev.radarfcs.fcs.TargetSensor;
@@ -40,8 +41,9 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * Радарный монитор. Нижний левый блок стены мониторов (если смотреть на экран) - ведущий:
- * он собирает отметки радаров канала и рисует общий экран. Показываются только активные чужие цели
- * (свои, неподвижные и не подходящие по настройкам не выводятся), радары канала и назначенная цель.
+ * он собирает отметки радаров своей сети и рисует общий экран: все цели с отметкой свой / чужой / неактивный,
+ * фильтры показа по типам, назначенную цель и цели под огнём. Назначение цели (клик по отметке или экран монитора)
+ * берут вычислители сети - ручное наведение.
  */
 public class RadarMonitorBlockEntity extends BlockEntity {
     /** Масштабы экрана, блоков; 0 - по дальности радаров. */
@@ -50,10 +52,27 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     public static final double PPI_FRACTION = 0.9;
     private static final int MAX_BLIPS = 64;
 
-    public static final int FLAG_ENGAGED = 1, FLAG_DESIGNATED = 2, FLAG_SHIP = 4;
+    public static final int FLAG_ENGAGED = 1, FLAG_DESIGNATED = 2, FLAG_SHIP = 4, FLAG_FRIENDLY = 8, FLAG_INACTIVE = 16,
+            FLAG_HOSTILE = 32;
 
-    /** Отметка на экране: смещение от центра экрана в мире, тип, флаги. */
-    public record Blip(float dx, float dz, float dy, int kind, int flags) {}
+    /** Фильтры показа (биты маски show). */
+    public enum Show { PLAYERS, HOSTILE, PASSIVE, SHIPS, CONTRAPTIONS, PROJECTILES, OTHER, FRIENDLY, INACTIVE;
+        public final int bit = 1 << ordinal();
+        public static final int ALL = (1 << values().length) - 1;
+    }
+
+    /** Отметка на экране: смещение от центра экрана в мире, тип, флаги, id и имя цели, скорость м/с. */
+    public record Blip(float dx, float dz, float dy, int kind, int flags, String id, String name, float speed) {}
+
+    /** Сенсор монитора берёт все типы целей (что показывать - решают фильтры). */
+    private static final EngageSettings SHOW_ALL = showAllSettings();
+
+    private static EngageSettings showAllSettings() {
+        EngageSettings s = new EngageSettings();
+        java.util.Arrays.fill(s.enabled, true);
+        s.hostileOnly = false;
+        return s;
+    }
 
     /** Радар канала на экране. */
     public record Site(float dx, float dz, int type) {}
@@ -64,6 +83,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     @Nullable private UUID owner;
     private String ownerTeam = "";
     private int scaleIndex;
+    private int show = Show.ALL;
 
     // мультиблок
     private BlockPos master;
@@ -71,6 +91,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
 
     // картинка (у ведущего)
     private float displayRange = 64;
+    private Vec3 center = Vec3.ZERO;
     private int radarCount;
     private List<Blip> blips = List.of();
     private List<Site> sites = List.of();
@@ -83,7 +104,9 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     private final Map<UUID, Long> engaged = new HashMap<>();
     /** Цель, назначенная на этом экране (для вычислителей на линках). */
     @Nullable private UUID localTarget;
-    private long localUntil;
+    private long localUntil, localSince;
+    /** Назначенная цель для клиента (подпись на экране). */
+    private String designatedName = "";
 
     public RadarMonitorBlockEntity(BlockPos pos, BlockState state) {
         super(FcsRegistry.RADAR_MONITOR_BE.get(), pos, state);
@@ -137,6 +160,13 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     public DyeColor channel() { return channel; }
 
     public int scaleIndex() { return scaleIndex; }
+
+    public int show() { return show; }
+
+    /** Мировой центр экрана (на клиенте - присланный сервером). */
+    public Vec3 center() { return center; }
+
+    public String designatedName() { return designatedName; }
 
     // ------------------------------------------------------------ мультиблок
 
@@ -252,27 +282,39 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         }
         UUID ship = SableCompat.containingId(level, worldPosition);
         Vec origin = new Vec(center.x, center.y, center.z);
+        this.center = center;
         TargetSensor.Context ctx = new TargetSensor.Context(owner, ownerTeam, channel.getId(), ship == null ? Set.of() : Set.of(ship), origin);
-        sensor.sense(level, radars, ctx, now);
         UUID designated = localDesignation(now);
+        sensor.sense(level, radars, ctx, now, SHOW_ALL, t -> false, designated == null ? null : designated.toString());
+        // назначенная цель пропала (уничтожена, ушла) - назначение снимается
+        if (designated != null && sensor.get(designated.toString()) == null && now - localSince > 40) {
+            localTarget = null;
+            designated = null;
+        }
+        designatedName = "";
         engaged.values().removeIf(until -> until < now);
         List<Target> tl = new ArrayList<>();
         List<Blip> bl = new ArrayList<>();
         double farthest = 0;
-        for (Track t : sensor.active()) {
+        for (Track t : sensor.all()) {
             UUID id;
             try {
                 id = UUID.fromString(t.id);
             } catch (IllegalArgumentException e) {
                 continue;
             }
+            boolean des = id.equals(designated);
+            if (des) designatedName = t.name;
+            if (!des && !shows(show, t)) continue;
             double dx = t.pos.x() - center.x, dz = t.pos.z() - center.z;
             double dist = Math.hypot(dx, dz);
-            farthest = Math.max(farthest, dist);
-            tl.add(new Target(id, t.name, dx, dz, dist));
-            int flags = (engaged.containsKey(id) ? FLAG_ENGAGED : 0)
-                    | (id.equals(designated) ? FLAG_DESIGNATED : 0) | (t.kind == Track.Kind.SHIP ? FLAG_SHIP : 0);
-            bl.add(new Blip((float) dx, (float) dz, (float) (t.pos.y() - center.y), t.kind.ordinal(), flags));
+            if (t.active || des) farthest = Math.max(farthest, dist);
+            if (!t.friendly) tl.add(new Target(id, t.name, dx, dz, dist));
+            int flags = (engaged.containsKey(id) ? FLAG_ENGAGED : 0) | (des ? FLAG_DESIGNATED : 0)
+                    | (t.kind == Track.Kind.SHIP ? FLAG_SHIP : 0) | (t.friendly ? FLAG_FRIENDLY : 0)
+                    | (!t.active && !t.friendly ? FLAG_INACTIVE : 0) | (isThreat(t) ? FLAG_HOSTILE : 0);
+            bl.add(new Blip((float) dx, (float) dz, (float) (t.pos.y() - center.y), t.kind.ordinal(), flags, t.id,
+                    t.name == null ? "?" : t.name, (float) (t.speedPerTick() * 20)));
         }
         // авто: чтобы поместились все цели, но не дальше, чем видят радары
         double coverage = niceRange(reach);
@@ -281,10 +323,40 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         tl.removeIf(t -> t.dist() > displayRange);
         bl.removeIf(b -> Math.hypot(b.dx(), b.dz()) > displayRange);
         tl.sort(Comparator.comparingDouble(Target::dist));
-        bl.sort(Comparator.comparingDouble(b -> Math.hypot(b.dx(), b.dz())));
+        // назначенная и активные - первыми (на экран идёт не больше MAX_BLIPS)
+        bl.sort(Comparator.<Blip>comparingInt(b -> (b.flags() & FLAG_DESIGNATED) != 0 ? 0
+                        : (b.flags() & (FLAG_INACTIVE | FLAG_FRIENDLY)) == 0 ? 1 : 2)
+                .thenComparingDouble(b -> Math.hypot(b.dx(), b.dz())));
         targets = tl;
         blips = bl.size() > MAX_BLIPS ? List.copyOf(bl.subList(0, MAX_BLIPS)) : bl;
         sites = siteList;
+    }
+
+    /** Вид цели для фильтра показа. */
+    public static Show category(Track.Kind kind, boolean hostile) {
+        return switch (kind) {
+            case PLAYER -> Show.PLAYERS;
+            case MOB -> hostile ? Show.HOSTILE : Show.PASSIVE;
+            case SHIP -> Show.SHIPS;
+            case CONTRAPTION -> Show.CONTRAPTIONS;
+            case PROJECTILE -> Show.PROJECTILES;
+            case EXTERNAL -> Show.OTHER;
+        };
+    }
+
+    static boolean shows(int mask, Track t) {
+        if ((mask & category(t.kind, t.hostile).bit) == 0) return false;
+        if (t.friendly) return (mask & Show.FRIENDLY.bit) != 0;
+        return t.active || (mask & Show.INACTIVE.bit) != 0;
+    }
+
+    /** Угроза (рисуется оранжевым): враждебные мобы, игроки, корабли, контрапшены, снаряды; мирные и прочее - голубым. */
+    private static boolean isThreat(Track t) {
+        return switch (t.kind) {
+            case MOB -> t.hostile;
+            case EXTERNAL -> false;
+            default -> true;
+        };
     }
 
     /** Мировая точка на экране, где рисуется отметка цели в мировой точке world (для тестов и отладки). */
@@ -325,13 +397,54 @@ public class RadarMonitorBlockEntity extends BlockEntity {
                 Component.translatable("color.minecraft." + c.getName())), true);
     }
 
-    public void cycleScale(Player p) {
+
+    /** Назначить цель по id (экран монитора); null - снять назначение. */
+    public void designate(@Nullable UUID id, @Nullable Player p) {
         RadarMonitorBlockEntity m = masterBe();
-        if (m == null) return;
-        m.scaleIndex = (m.scaleIndex + 1) % SCALES.length;
+        if (m == null || !(level instanceof ServerLevel sl)) return;
+        long now = sl.getGameTime();
+        Target t = id == null ? null : m.targets.stream().filter(x -> x.id().equals(id)).findFirst().orElse(null);
+        if (t != null) m.setDesignation(t, now, p);
+        else {
+            m.localTarget = null;
+            if (p != null) p.displayClientMessage(Component.translatable("radar_fcs.msg.designation_cleared").withStyle(ChatFormatting.GRAY), true);
+        }
+        m.refresh(sl, now);
+        m.pushToClients(sl);
+    }
+
+    private void setDesignation(Target t, long now, @Nullable Player p) {
+        localTarget = t.id();
+        localSince = now;
+        int ticks = FcsConfig.DESIGNATION_TICKS.get();
+        localUntil = ticks <= 0 ? Long.MAX_VALUE : now + ticks;
+        if (p != null) p.displayClientMessage(Component.translatable("radar_fcs.msg.designated", t.name(),
+                String.format(Locale.ROOT, "%.0f", t.dist())).withStyle(ChatFormatting.YELLOW), true);
+    }
+
+    /** Масштаб с экрана монитора. */
+    public void setScale(int index) {
+        RadarMonitorBlockEntity m = masterBe();
+        if (m == null || !(level instanceof ServerLevel sl)) return;
+        m.scaleIndex = Math.floorMod(index, SCALES.length);
         m.setChanged();
-        p.displayClientMessage(m.scaleIndex == 0 ? Component.translatable("radar_fcs.msg.scale_auto")
-                : Component.translatable("radar_fcs.msg.scale", SCALES[m.scaleIndex]), true);
+        m.refresh(sl, sl.getGameTime());
+        m.pushToClients(sl);
+    }
+
+    /** Фильтры показа с экрана монитора. */
+    public void setShow(int mask) {
+        RadarMonitorBlockEntity m = masterBe();
+        if (m == null || !(level instanceof ServerLevel sl)) return;
+        m.show = mask & Show.ALL;
+        m.setChanged();
+        m.refresh(sl, sl.getGameTime());
+        m.pushToClients(sl);
+    }
+
+    private void pushToClients(ServerLevel sl) {
+        lastSent = clientData();
+        sl.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
     }
 
     /** Клик по экрану: назначить ближайшую к точке клика цель или снять назначение. */
@@ -360,16 +473,14 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         }
         long now = sl.getGameTime();
         if (best != null) {
-            // назначение - вычислителям на линках этого экрана
-            m.localTarget = best.id();
-            m.localUntil = now + FcsConfig.DESIGNATION_TICKS.get();
-            p.displayClientMessage(Component.translatable("radar_fcs.msg.designated", best.name(),
-                    String.format(Locale.ROOT, "%.0f", best.dist())).withStyle(ChatFormatting.YELLOW), true);
+            // назначение - вычислителям сети этого экрана
+            m.setDesignation(best, now, p);
         } else {
             m.localTarget = null;
             p.displayClientMessage(Component.translatable("radar_fcs.msg.designation_cleared").withStyle(ChatFormatting.GRAY), true);
         }
         m.refresh(sl, now);
+        m.pushToClients(sl);
     }
 
     // ------------------------------------------------------------ данные
@@ -381,8 +492,13 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         t.putInt("H", height);
         t.putInt("Channel", channel.getId());
         t.putInt("Scale", scaleIndex);
+        t.putInt("Show", show);
         if (isMaster()) {
             t.putFloat("Range", displayRange);
+            t.putDouble("CX", center.x);
+            t.putDouble("CY", center.y);
+            t.putDouble("CZ", center.z);
+            t.putString("Des", designatedName);
             t.putInt("Radars", radarCount);
             ListTag bl = new ListTag();
             for (Blip b : blips) {
@@ -392,6 +508,9 @@ public class RadarMonitorBlockEntity extends BlockEntity {
                 c.putFloat("y", b.dy());
                 c.putByte("k", (byte) b.kind());
                 c.putByte("f", (byte) b.flags());
+                c.putString("i", b.id());
+                c.putString("n", b.name());
+                c.putFloat("v", b.speed());
                 bl.add(c);
             }
             t.put("Blips", bl);
@@ -413,11 +532,15 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         width = Math.max(1, t.getInt("W"));
         height = Math.max(1, t.getInt("H"));
         displayRange = t.contains("Range") ? t.getFloat("Range") : 64;
+        center = new Vec3(t.getDouble("CX"), t.getDouble("CY"), t.getDouble("CZ"));
+        designatedName = t.getString("Des");
+        show = t.contains("Show") ? t.getInt("Show") : Show.ALL;
         radarCount = t.getInt("Radars");
         List<Blip> bl = new ArrayList<>();
         for (Tag tag : t.getList("Blips", Tag.TAG_COMPOUND)) {
             CompoundTag c = (CompoundTag) tag;
-            bl.add(new Blip(c.getFloat("x"), c.getFloat("z"), c.getFloat("y"), c.getByte("k"), c.getByte("f")));
+            bl.add(new Blip(c.getFloat("x"), c.getFloat("z"), c.getFloat("y"), c.getByte("k"), c.getByte("f") & 0xFF,
+                    c.getString("i"), c.getString("n"), c.getFloat("v")));
         }
         blips = bl;
         List<Site> sl = new ArrayList<>();
@@ -433,6 +556,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         super.saveAdditional(tag, registries);
         tag.putInt("Channel", channel.getId());
         tag.putInt("Scale", scaleIndex);
+        tag.putInt("Show", show);
         if (owner != null) tag.putUUID("Owner", owner);
         tag.putString("OwnerTeam", ownerTeam);
     }
@@ -442,6 +566,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         super.loadAdditional(tag, registries);
         channel = DyeColor.byId(tag.getInt("Channel"));
         scaleIndex = Math.floorMod(tag.getInt("Scale"), SCALES.length);
+        show = tag.contains("Show") ? tag.getInt("Show") & Show.ALL : Show.ALL;
         owner = tag.hasUUID("Owner") ? tag.getUUID("Owner") : null;
         ownerTeam = tag.getString("OwnerTeam");
         if (tag.contains("Screen", Tag.TAG_COMPOUND)) readClientData(tag.getCompound("Screen"));

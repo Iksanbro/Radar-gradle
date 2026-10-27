@@ -34,9 +34,9 @@ import net.minecraft.world.phys.BlockHitResult;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Радарный монитор: круговая развёртка целей канала. Блоки, поставленные стеной, складываются в один экран.
- * ПКМ по отметке - назначить цель вычислителям канала, ПКМ мимо отметок - снять назначение,
- * Shift+ПКМ - масштаб, ПКМ красителем - канал.
+ * Радарный монитор: круговая развёртка целей радаров своей сети. Блоки, поставленные стеной, складываются в один экран.
+ * ПКМ по отметке - назначить цель вычислителям сети (ручное наведение), ПКМ мимо отметок - снять назначение,
+ * Shift+ПКМ - экран монитора (список целей, назначение, фильтры, масштаб), ПКМ красителем - канал свой-чужой.
  */
 public class RadarMonitorBlock extends BaseEntityBlock {
     public static final MapCodec<RadarMonitorBlock> CODEC = simpleCodec(RadarMonitorBlock::new);
@@ -112,9 +112,12 @@ public class RadarMonitorBlock extends BaseEntityBlock {
 
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
-        if (!level.isClientSide && level.getBlockEntity(pos) instanceof RadarMonitorBlockEntity be) {
-            if (player.isShiftKeyDown()) be.cycleScale(player);
-            else be.click(player, hit);
+        if (player.isShiftKeyDown()) {
+            if (level.isClientSide && net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
+                dev.radarfcs.client.FcsClientHooks.openMonitor(pos);
+            }
+        } else if (!level.isClientSide && level.getBlockEntity(pos) instanceof RadarMonitorBlockEntity be) {
+            be.click(player, hit);
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
     }

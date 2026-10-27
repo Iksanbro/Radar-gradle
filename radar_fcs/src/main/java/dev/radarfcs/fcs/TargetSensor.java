@@ -71,16 +71,18 @@ public final class TargetSensor {
     }
 
     public void sense(ServerLevel level, List<BlockEntity> radars, Context ctx, long now) {
-        sense(level, radars, ctx, now, new EngageSettings(), t -> false);
+        sense(level, radars, ctx, now, new EngageSettings(), t -> false, null);
     }
 
     /**
      * @param radars   радары Create Radars на линках
      * @param settings настройки вычислителя: типы целей, окно скорости, стоящие/движущиеся
      * @param dropped  цели, сброшенные вычислителем (после N выстрелов)
+     * @param forcedId цель, назначенная вручную (монитор): сопровождается напрямую, даже если радары её не видят, и
+     *                 берётся в обход типов, списков, скорости и движения (но не своих и не запретов сервера)
      */
     public void sense(ServerLevel level, List<BlockEntity> radars, Context ctx, long now,
-                      EngageSettings settings, java.util.function.Predicate<Track> dropped) {
+                      EngageSettings settings, java.util.function.Predicate<Track> dropped, @Nullable String forcedId) {
         TrackTable.Settings s = new TrackTable.Settings(FcsConfig.TRACK_WINDOW.get(), 0.12);
         Set<String> seen = new HashSet<>();
         contacts = 0;
@@ -99,14 +101,39 @@ public final class TargetSensor {
                 }
             }
         }
+        if (forcedId != null && !seen.contains(forcedId)) trackDirectly(level, forcedId, now, s);
         table.prune(now, FcsConfig.TRACK_TIMEOUT.get());
         liveSeen.removeIf(id -> table.get(id) == null);
         table.classify(FcsConfig.MIN_SPEED.get() / 20.0, FcsConfig.MIN_SAMPLES.get(),
                 t -> isFriendly(level, t, ctx, now),
-                t -> isEligible(t, ctx) && settings.enabled(EngageSettings.Category.of(t.kind))
-                        && settings.speedAllowed(t.speedPerTick() * 20) && !dropped.test(t),
-                ctx.origin(), FcsConfig.MIN_RANGE.get(), FcsConfig.MAX_RANGE.get(), t -> settings.motionAllowed(t));
+                t -> wanted(t, ctx, settings, dropped, forcedId),
+                ctx.origin(), FcsConfig.MIN_RANGE.get(), FcsConfig.MAX_RANGE.get(),
+                t -> t.id.equals(forcedId) || settings.motionAllowed(t));
         active = TrackTable.sortedByDistance(table.active(), ctx.origin());
+    }
+
+    /**
+     * Нужна ли цель вычислителю: разрешена сервером; назначенная вручную - всегда; чёрный список - никогда;
+     * белый список - в обход выбора типов и «только враждебных»; остальное - по типам целей и окну скорости.
+     */
+    private boolean wanted(Track t, Context ctx, EngageSettings settings, java.util.function.Predicate<Track> dropped,
+                           @Nullable String forcedId) {
+        if (!isEligible(t, ctx)) return false;
+        if (t.id.equals(forcedId)) return true;
+        if (TargetLists.matches(settings.blacklist, t) || dropped.test(t)) return false;
+        if (!settings.speedAllowed(t.speedPerTick() * 20)) return false;
+        if (TargetLists.matches(settings.whitelist, t)) return true;
+        if (!settings.enabled(EngageSettings.Category.of(t.kind))) return false;
+        return t.kind != Track.Kind.MOB || !settings.hostileOnly || t.hostile;
+    }
+
+    /** Назначенная вручную цель, которую радары не видят: сопровождать по живой сущности. */
+    private void trackDirectly(ServerLevel level, String id, long now, TrackTable.Settings s) {
+        UUID u = uuid(id);
+        Entity e = u == null ? null : level.getEntity(u);
+        if (e == null || !isCandidateEntity(e)) return;
+        observeEntity(e, id, now, s);
+        liveSeen.add(id);
     }
 
     // ------------------------------------------------------ радар Create Radars
@@ -114,7 +141,7 @@ public final class TargetSensor {
     private void observeContact(ServerLevel level, RadarLink.Contact c, Context ctx, long now, TrackTable.Settings s) {
         String cat = c.category();
         switch (cat) {
-            case "ITEM", "MISC" -> { return; }
+            case "ITEM" -> { return; }
             case "SABLE" -> {
                 UUID id = uuid(c.id());
                 SableCompat.Ship ship = id == null ? null : SableCompat.find(level, id, c.position(), 64);
@@ -133,7 +160,7 @@ public final class TargetSensor {
                 liveSeen.remove(c.id());
                 return;
             }
-            if (isIgnoredEntity(e)) return;
+            if (!isCandidateEntity(e)) return;
             observeEntity(e, c.id(), now, s);
             liveSeen.add(c.id());
             return;
@@ -146,6 +173,7 @@ public final class TargetSensor {
             case "PLAYER" -> Track.Kind.PLAYER;
             case "CONTRAPTION" -> Track.Kind.CONTRAPTION;
             case "PROJECTILE", "MISSILE" -> Track.Kind.PROJECTILE;
+            case "MISC" -> Track.Kind.EXTERNAL;
             default -> Track.Kind.MOB;
         };
         observeRaw(c, kind, "HOSTILE".equals(cat), s);
@@ -159,6 +187,7 @@ public final class TargetSensor {
         if (colon >= 0) name = name.substring(colon + 1);
         Track t = table.observe(c.id(), kind, name, p, 1.0, c.scannedTime(), false, null, s);
         t.hostile = hostile;
+        t.typeId = typeIdOf(c.entityType());
         t.handle = null;
         t.volume = 1;
     }
@@ -185,12 +214,28 @@ public final class TargetSensor {
         for (SableCompat.Ship ship : SableCompat.shipsIn(level, box)) observeShip(level, ship, now, s);
     }
 
-    private static boolean isCandidateEntity(Entity e) {
+    /** Может ли сущность быть целью вообще: живые, игроки, контрапшены, снаряды, транспорт и прочее, кроме служебных. */
+    public static boolean isCandidateEntity(Entity e) {
         if (!e.isAlive() || e.isSpectator() || e.isRemoved()) return false;
         if (e instanceof Player) return true;
         if (ContraptionCompat.isContraption(e)) return !ContraptionCompat.isIgnored(e);
-        if (e instanceof Projectile) return FcsConfig.TARGET_PROJECTILES.get();
-        return e instanceof net.minecraft.world.entity.Mob && !isIgnoredEntity(e);
+        if (e instanceof net.minecraft.world.entity.item.ItemEntity || e instanceof net.minecraft.world.entity.ExperienceOrb
+                || e instanceof net.minecraft.world.entity.decoration.HangingEntity || e instanceof net.minecraft.world.entity.Marker
+                || e instanceof net.minecraft.world.entity.Display || e instanceof net.minecraft.world.entity.Interaction
+                || e instanceof net.minecraft.world.entity.AreaEffectCloud || e instanceof net.minecraft.world.entity.LightningBolt
+                || e instanceof net.minecraft.world.entity.projectile.EvokerFangs || e instanceof net.minecraft.world.entity.projectile.FishingHook) {
+            return false;
+        }
+        return !isIgnoredEntity(e);
+    }
+
+    /** "entity.minecraft.zombie" (имя типа от Create Radars) -> "minecraft:zombie". */
+    @Nullable
+    private static String typeIdOf(String entityType) {
+        if (entityType == null || entityType.isEmpty()) return null;
+        String s = entityType.startsWith("entity.") ? entityType.substring(7) : entityType;
+        int dot = s.indexOf('.');
+        return dot > 0 && s.indexOf(':') < 0 ? s.substring(0, dot) + ":" + s.substring(dot + 1) : s;
     }
 
     /** Сущность из списка игнорируемых (конфиг) или служебный контрапшен. */
@@ -204,7 +249,8 @@ public final class TargetSensor {
         if (e instanceof Player) return Track.Kind.PLAYER;
         if (ContraptionCompat.isContraption(e)) return Track.Kind.CONTRAPTION;
         if (e instanceof Projectile) return Track.Kind.PROJECTILE;
-        return Track.Kind.MOB;
+        if (e instanceof net.minecraft.world.entity.Mob) return Track.Kind.MOB;
+        return Track.Kind.EXTERNAL;
     }
 
     // ------------------------------------------------------------- замеры
@@ -220,6 +266,8 @@ public final class TargetSensor {
                 isGrounded(e), null, s);
         t.handle = e;
         t.hostile = e instanceof Enemy;
+        t.typeId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
+        t.playerName = e instanceof Player p ? p.getGameProfile().getName() : null;
         // габарит сущности - точный прямоугольник по осям, как его проверяет CBC; у контрапшена он лишь описанный
         t.half = kind == Track.Kind.CONTRAPTION ? null : new Vec(bb.getXsize() * 0.5, bb.getYsize() * 0.5, bb.getZsize() * 0.5);
         t.volume = bb.getXsize() * bb.getYsize() * bb.getZsize();
@@ -270,6 +318,8 @@ public final class TargetSensor {
         }
         if (handle instanceof Entity e) {
             if (e instanceof Player p && isFriendlyPlayer(p, ctx)) return true;
+            // транспорт (лодка, вагонетка, контрапшен), в котором сидит свой игрок, - свой
+            for (Entity pass : e.getPassengers()) if (pass instanceof Player pp && isFriendlyPlayer(pp, ctx)) return true;
             if (e instanceof OwnableEntity own && own.getOwnerUUID() != null) {
                 if (own.getOwnerUUID().equals(ctx.owner())) return true;
                 if (own.getOwner() instanceof Player op && isFriendlyPlayer(op, ctx)) return true;
@@ -284,7 +334,14 @@ public final class TargetSensor {
         } else if (kind == Track.Kind.PLAYER && !FcsConfig.TARGET_PLAYERS.get()) {
             return true;
         }
-        return IffRegistry.protectsPoint(level, pos, ch, FcsConfig.IFF_RADIUS.get());
+        // зона наземного транспондера бережёт своё на базе (мирных мобов, транспорт, контрапшены), но не прикрывает
+        // врагов: враждебные мобы, игроки (у них свои правила), снаряды и корабли в зоне - цели
+        boolean zoneProtects = switch (kind) {
+            case MOB -> !(handle instanceof Enemy);
+            case PLAYER, PROJECTILE, SHIP -> false;
+            default -> true;
+        };
+        return zoneProtects && IffRegistry.protectsPoint(level, pos, ch, FcsConfig.IFF_RADIUS.get());
     }
 
     private static boolean isFriendlyPlayer(Player p, Context ctx) {
@@ -302,13 +359,13 @@ public final class TargetSensor {
     /** Подходит ли объект как цель по настройкам (без проверки свой-чужой и скорости). */
     public static boolean isEligible(Track.Kind kind, boolean hostile, Vec pos, Vec vel, Vec origin) {
         return switch (kind) {
-            case MOB -> FcsConfig.TARGET_MOBS.get() && (!FcsConfig.HOSTILE_ONLY.get() || hostile);
+            case MOB -> FcsConfig.TARGET_MOBS.get();
             case PLAYER -> FcsConfig.TARGET_PLAYERS.get();
             case SHIP -> FcsConfig.TARGET_SHIPS.get();
             case CONTRAPTION -> FcsConfig.TARGET_CONTRAPTIONS.get();
             // только приближающиеся снаряды: свои уходящие снаряды не цели
             case PROJECTILE -> FcsConfig.TARGET_PROJECTILES.get() && vel.dot(origin.sub(pos)) > 0;
-            case EXTERNAL -> true;
+            case EXTERNAL -> FcsConfig.TARGET_OTHER.get();
         };
     }
 

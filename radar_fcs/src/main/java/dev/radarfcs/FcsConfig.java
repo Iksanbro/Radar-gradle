@@ -9,15 +9,15 @@ public final class FcsConfig {
     public static final ModConfigSpec SPEC;
 
     // связи
-    public static final ModConfigSpec.IntValue DISCOVER_INTERVAL, LINK_RANGE;
+    public static final ModConfigSpec.IntValue DISCOVER_INTERVAL;
     public static final ModConfigSpec.BooleanValue AUTO_ASSEMBLE, YIELD_TO_RADAR_CONTROLLERS;
     public static final ModConfigSpec.ConfigValue<List<? extends String>> RADAR_BLOCKS, RAPID_CLASS_HINTS;
     // сенсор и треки
     public static final ModConfigSpec.DoubleValue MIN_RANGE, MIN_SPEED;
     public static final ModConfigSpec.IntValue SCAN_INTERVAL, MIN_SAMPLES, TRACK_WINDOW, TRACK_TIMEOUT;
     // цели
-    public static final ModConfigSpec.BooleanValue TARGET_MOBS, HOSTILE_ONLY, TARGET_PLAYERS, TARGET_SHIPS,
-            TARGET_CONTRAPTIONS, TARGET_PROJECTILES;
+    public static final ModConfigSpec.BooleanValue TARGET_MOBS, TARGET_PLAYERS, TARGET_SHIPS,
+            TARGET_CONTRAPTIONS, TARGET_PROJECTILES, TARGET_OTHER;
     public static final ModConfigSpec.ConfigValue<List<? extends String>> IGNORED_ENTITIES, IGNORED_CONTRAPTION_HINTS,
             FRIENDLY_PLAYERS, FRIENDLY_RADAR_IDS;
     // свой-чужой и безопасность
@@ -46,11 +46,9 @@ public final class FcsConfig {
     static {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
 
-        b.comment("Связь вычислителя с пушками, радарами Create Radars и мониторами - только радарным линком").push("links");
+        b.comment("Связь вычислителя с пушками, радарами Create Radars и мониторами - радарными сетями (линками)").push("links");
         DISCOVER_INTERVAL = b.comment("Как часто перепроверять аппаратуру на линках, тиков (поставленный или снятый линк - сразу)")
                 .defineInRange("discoverInterval", 40, 10, 1200);
-        LINK_RANGE = b.comment("Наибольшее расстояние между концами радарного линка, блоков")
-                .defineInRange("radarLinkRange", 64, 4, 512);
         RADAR_BLOCKS = b.comment("Запасной список ID блоков-радаров Create Radars (если его API изменилось)")
                 .defineListAllowEmpty("radarBlocks", List.of("create_radar:radar_bearing", "create_radar:plane_radar",
                         "create_radar:sky_radar"), () -> "", o -> o instanceof String);
@@ -73,13 +71,15 @@ public final class FcsConfig {
         TRACK_TIMEOUT = b.comment("Трек удаляется после стольких тиков без замеров").defineInRange("trackTimeoutTicks", 40, 5, 400);
         b.pop();
 
-        b.comment("Какие цели атаковать").push("targets");
-        TARGET_MOBS = b.define("targetMobs", true);
-        HOSTILE_ONLY = b.comment("Только враждебные мобы").define("hostileOnly", true);
-        TARGET_PLAYERS = b.comment("Атаковать игроков (кроме владельца, его команды и friendlyPlayers)").define("targetPlayers", false);
-        TARGET_SHIPS = b.comment("Физические конструкции Sable / Create Aeronautics").define("targetShips", true);
-        TARGET_CONTRAPTIONS = b.comment("Движущиеся контрапшены Create").define("targetContraptions", true);
-        TARGET_PROJECTILES = b.comment("Снаряды и ракеты (противоракетная оборона)").define("targetProjectiles", false);
+        b.comment("Какие цели вычислителям разрешено атаковать на этом сервере (верхняя граница; что именно атаковать -",
+                "в настройках каждого вычислителя: типы целей, белый и чёрный списки)").push("targets");
+        TARGET_MOBS = b.define("allowMobs", true);
+        TARGET_PLAYERS = b.comment("Игроки (кроме владельца вычислителя, его команды, friendlyPlayers; творческий режим и наблюдатели - не цели)")
+                .define("allowPlayers", true);
+        TARGET_SHIPS = b.comment("Физические конструкции Sable / Create Aeronautics").define("allowShips", true);
+        TARGET_CONTRAPTIONS = b.comment("Движущиеся контрапшены Create").define("allowContraptions", true);
+        TARGET_PROJECTILES = b.comment("Снаряды и ракеты, летящие к вычислителю (противоракетная оборона)").define("allowProjectiles", true);
+        TARGET_OTHER = b.comment("Прочие сущности: лодки, вагонетки, стойки для брони, динамит и т.п.").define("allowOtherEntities", true);
         IGNORED_ENTITIES = b.defineListAllowEmpty("ignoredEntities", List.of("minecraft:bat"), () -> "", o -> o instanceof String);
         IGNORED_CONTRAPTION_HINTS = b.comment("Контрапшены, чьё имя класса содержит эти фрагменты, не цели (поезда, гантри...)")
                 .defineListAllowEmpty("ignoredContraptionHints", List.of("Carriage", "Gantry", "PitchOriented"),
@@ -172,7 +172,8 @@ public final class FcsConfig {
         b.pop();
 
         b.comment("Радарный монитор").push("monitor");
-        DESIGNATION_TICKS = b.comment("Сколько держится назначение цели с монитора, тиков").defineInRange("designationTicks", 1200, 20, 72000);
+        DESIGNATION_TICKS = b.comment("Сколько держится назначение цели с монитора, тиков; 0 - пока его не снимут или цель не пропадёт")
+                .defineInRange("designationTicks", 0, 0, 72000);
         MONITOR_MAX_SIZE = b.comment("Наибольший размер монитора из блоков (ширина и высота)").defineInRange("monitorMaxSize", 6, 1, 16);
         b.pop();
 

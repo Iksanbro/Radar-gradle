@@ -105,27 +105,32 @@ public final class DevScreenshots {
                 be.applySettings(st, null);
             }
         });
-        if (tick >= 470 && tick < 520 && (tick - 470) % 10 == 0) {
+        if (tick >= 470 && tick < 530 && (tick - 470) % 10 == 0) {
             int tab = (tick - 470) / 10;
             if (tab == 0) dev.radarfcs.client.FcsClientHooks.openFcsSettings(base);
-            if (mc.screen instanceof dev.radarfcs.client.FcsSettingsScreen sc) sc.showTab(tab);
+            if (mc.screen instanceof dev.radarfcs.client.FcsSettingsScreen sc) {
+                if (tab == 2) sc.fillListsForScreenshot();
+                sc.showTab(tab);
+            }
         }
-        if (tick >= 475 && tick < 525 && (tick - 475) % 10 == 0) shot(mc, "fcs_settings_" + (tick - 475) / 10);
-        // радарный линк: линк в руке с выбранным вычислителем, взгляд на линк станка
-        if (tick == 530) {
+        if (tick >= 475 && tick < 535 && (tick - 475) % 10 == 0) shot(mc, "fcs_settings_" + (tick - 475) / 10);
+        // радарный линк: настроенный на сеть сцены линк в руке, взгляд на линк станка - вся сеть подсвечена
+        if (tick == 540) {
             if (mc.screen != null) mc.setScreen(null);
             server.execute(() -> {
                 ServerPlayer p = server.getPlayerList().getPlayers().get(0);
-                p.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, new ItemStack(FcsRegistry.RADAR_LINK_ITEM.get(), 8));
-                Vec3 hit = Vec3.atCenterOf(base).add(0, 0.5, 0);
-                p.getMainHandItem().getItem().useOn(new net.minecraft.world.item.context.UseOnContext(p,
-                        net.minecraft.world.InteractionHand.MAIN_HAND, new net.minecraft.world.phys.BlockHitResult(hit, Direction.UP, base, false)));
+                ItemStack st = new ItemStack(FcsRegistry.RADAR_LINK_ITEM.get(), 8);
+                dev.radarfcs.item.RadarLinkItem.tune(st, SCENE_NET);
+                p.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, st);
                 BlockPos link = base.offset(4, 0, -1);
                 look(server, link.getCenter().add(0, 0, 0.3), new Vec3(link.getX() + 1.5, link.getY() + 1.62, link.getZ() - 2.5));
             });
         }
-        if (tick == 570) shot(mc, "radar_link");
-        if (tick == 580) mc.stop();
+        if (tick == 580) shot(mc, "radar_link");
+        // окно монитора: список целей, фильтры
+        if (tick == 590) dev.radarfcs.client.FcsClientHooks.openMonitor(base.offset(-3, 0, -3));
+        if (tick == 600) shot(mc, "monitor_gui");
+        if (tick == 610) mc.stop();
     }
 
     /** Поставить игрока глазами в eye и повернуть к точке target. */
@@ -139,10 +144,13 @@ public final class DevScreenshots {
         p.teleportTo(server.overworld(), eye.x, eye.y - 1.62, eye.z, yaw, pitch);
     }
 
+    /** Все линки сцены - в одной радарной сети. */
+    private static final java.util.UUID SCENE_NET = java.util.UUID.nameUUIDFromBytes("radar_fcs:screenshots".getBytes());
+
     private static void placeLink(ServerLevel level, BlockPos attached, Direction face, BlockPos other) {
         BlockPos at = attached.relative(face);
         level.setBlock(at, FcsRegistry.RADAR_LINK.get().defaultBlockState().setValue(dev.radarfcs.block.RadarLinkBlock.FACING, face), 3);
-        if (level.getBlockEntity(at) instanceof dev.radarfcs.block.RadarLinkBlockEntity be) be.setOther(other);
+        if (level.getBlockEntity(at) instanceof dev.radarfcs.block.RadarLinkBlockEntity be) be.setNetwork(SCENE_NET);
     }
 
     private static void motor(ServerLevel level, BlockPos pos, Direction facing, int rpm) {
@@ -208,8 +216,8 @@ public final class DevScreenshots {
         // монитор 3x2 экраном на запад: линки с радаром и вычислителем
         var mon = FcsRegistry.RADAR_MONITOR.get().defaultBlockState().setValue(dev.radarfcs.block.RadarMonitorBlock.FACING, Direction.WEST);
         for (int dz = -3; dz <= -1; dz++) for (int dy = 0; dy < 2; dy++) level.setBlock(base.offset(-3, dy, dz), mon, 3);
-        placeLink(level, base.offset(0, 0, 3), Direction.NORTH, base.offset(-3, 0, -1));
-        placeLink(level, base, Direction.NORTH, base.offset(-3, 1, -1));
+        placeLink(level, base.offset(-3, 1, -2), Direction.UP, base);
+        placeLink(level, base, Direction.NORTH, base);
         DyeColor[] colors = {DyeColor.WHITE, DyeColor.RED, DyeColor.LIME, DyeColor.BLUE};
         for (int i = 0; i < colors.length; i++) {
             level.setBlock(base.offset(8, 0, -3 - i * 2), FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState()

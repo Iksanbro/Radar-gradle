@@ -40,6 +40,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.BlockHitResult;
@@ -56,6 +57,8 @@ public class LinkGameTests {
 
     @BeforeBatch(batch = "link_mount") public static void b1(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "link_mount") public static void a1(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "link_crmonitor") public static void b2(ServerLevel l) { FcsGameTests.beforeRadar(l); }
+    @AfterBatch(batch = "link_crmonitor") public static void a2(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "link_monitor") public static void b3(ServerLevel l) { FcsGameTests.beforeRadar(l); }
     @AfterBatch(batch = "link_monitor") public static void a3(ServerLevel l) { FcsGameTests.cleanup(l); }
 
@@ -67,8 +70,10 @@ public class LinkGameTests {
     }
 
     /**
-     * Станок в 29 блоках подключён линком, поставленным предметом: вычислитель управляет только им. Станок рядом
-     * без линка не управляется никем (автоподключения нет), второй вычислитель без линков пушек не имеет.
+     * Сеть линков, как у складских передатчиков Create: ненастроенный линк на вычислителе начинает новую сеть, ПКМ по нему
+     * настраивает предмет, линк на станке в 29 блоках встаёт в ту же сеть - вычислитель управляет только этим станком.
+     * Станок рядом без линка не управляется никем (автоподключения нет), второй вычислитель без линков пушек не имеет.
+     * Shift+ПКМ в воздух сбрасывает настройку предмета.
      */
     @GameTest(template = ARENA, batch = "link_mount", timeoutTicks = 500)
     public static void linkedByItem(GameTestHelper h) {
@@ -81,14 +86,34 @@ public class LinkGameTests {
 
         Player p = h.makeMockPlayer(GameType.SURVIVAL);
         p.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(FcsRegistry.RADAR_LINK_ITEM.get(), 4));
-        if (!use(h, p, fcsPos, Direction.UP).consumesAction()) h.fail("selecting the computer failed");
-        if (!h.absolutePos(fcsPos).equals(RadarLinkItem.selection(p.getMainHandItem(), h.getLevel()))) h.fail("computer not selected");
+        // 1. ненастроенный линк на вычислитель - новая сеть
+        if (!use(h, p, fcsPos, Direction.UP).consumesAction()) h.fail("placing the first link failed");
+        BlockPos fcsLink = fcsPos.above();
+        FcsGameTests.CREATED.add(h.absolutePos(fcsLink));
+        if (!(h.getLevel().getBlockEntity(h.absolutePos(fcsLink)) instanceof RadarLinkBlockEntity first) || first.network() == null) {
+            h.fail("first link has no network");
+            return;
+        }
+        UUID net = first.network();
+        if (RadarLinkItem.network(p.getMainHandItem()) != null) h.fail("placing an untuned link must not tune the item");
+        // 2. ПКМ по линку - предмет настроен на его сеть
+        if (!use(h, p, fcsLink, Direction.UP).consumesAction()) h.fail("tuning on the link failed");
+        if (!net.equals(RadarLinkItem.network(p.getMainHandItem()))) h.fail("item not tuned to the network");
+        // 3. линк на дальний станок - в ту же сеть
         if (!use(h, p, farMount, Direction.WEST).consumesAction()) h.fail("placing the link on the mount failed");
         BlockPos linkAt = farMount.relative(Direction.WEST);
         FcsGameTests.CREATED.add(h.absolutePos(linkAt));
-        if (!(h.getLevel().getBlockEntity(h.absolutePos(linkAt)) instanceof RadarLinkBlockEntity)) h.fail("no link block placed");
+        if (!(h.getLevel().getBlockEntity(h.absolutePos(linkAt)) instanceof RadarLinkBlockEntity second) || !net.equals(second.network())) {
+            h.fail("mount link is not in the network");
+            return;
+        }
         if (!LinkRegistry.linked(h.getLevel(), h.absolutePos(fcsPos), h.absolutePos(farMount))) h.fail("link not registered");
-        if (RadarLinkItem.selection(p.getMainHandItem(), h.getLevel()) != null) h.fail("selection not cleared after linking");
+        if (LinkRegistry.linked(h.getLevel(), h.absolutePos(fcsPos), h.absolutePos(nearMount))) h.fail("near mount linked without a link");
+        // 4. Shift+ПКМ в воздух - сброс настройки
+        p.setShiftKeyDown(true);
+        p.getMainHandItem().getItem().use(h.getLevel(), p, InteractionHand.MAIN_HAND);
+        p.setShiftKeyDown(false);
+        if (RadarLinkItem.network(p.getMainHandItem()) != null) h.fail("Shift+use did not clear the tuning");
 
         Mob husk = movingTarget(h, EntityType.HUSK, new Vec3(40.5, 1, 24.5), 0.15, 16);
         AtomicInteger hits = countHits(h, husk);
@@ -103,9 +128,79 @@ public class LinkGameTests {
         });
     }
 
+    /** Полный сигнал редстоуна отключает линк (станок выпадает из сети), снятие сигнала - подключает снова. */
+    @GameTest(template = ARENA, batch = "link_mount", timeoutTicks = 300)
+    public static void redstoneDisablesLink(GameTestHelper h) {
+        floor(h);
+        BlockPos mount = new BlockPos(10, 1, 52), fcsPos = new BlockPos(4, 1, 52);
+        autocannon(h, mount, Direction.EAST, 2, 8);
+        FireControlBlockEntity be = fcsBare(h, fcsPos);
+        RadarLinkBlockEntity link = link(h, mount, Direction.NORTH, fcsPos);
+        BlockPos linkRel = mount.relative(Direction.NORTH), redstone = linkRel.relative(Direction.NORTH);
+        AtomicInteger phase = new AtomicInteger();
+        h.runAtTickTime(40, () -> {
+            if (be.mountStates().size() != 1) h.fail("mount not connected before the signal: " + be.mountStates().size());
+            h.setBlock(redstone, net.minecraft.world.level.block.Blocks.REDSTONE_BLOCK.defaultBlockState());
+            phase.set(1);
+        });
+        h.runAtTickTime(80, () -> {
+            if (LinkRegistry.linked(h.getLevel(), h.absolutePos(fcsPos), h.absolutePos(mount))) h.fail("powered link still connects");
+            if (!be.mountStates().isEmpty()) h.fail("computer still controls the mount of a powered link");
+            if (!link.describe().getString().contains(RadarLinkBlockEntity.shortName(link.network()))) h.fail("no network in the description");
+            h.setBlock(redstone, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+            phase.set(2);
+        });
+        h.succeedWhen(() -> {
+            if (phase.get() < 2) throw new GameTestAssertException("waiting");
+            if (be.mountStates().size() != 1) throw new GameTestAssertException("mount not reconnected yet");
+        });
+    }
+
     /**
-     * Плоский радар Create Radars на линках с двумя вычислителями и монитором; монитор на линке только с вычислителем A.
+     * Ручное наведение с монитора Create Radars: монитор в сети вычислителя, игрок выбрал на нём цель. Радара в сети нет -
+     * вычислитель ведёт выбранную цель сам и попадает; пока цель не выбрана - «нет радара», огня нет.
+     */
+    @GameTest(template = ARENA, batch = "link_crmonitor", timeoutTicks = 500)
+    public static void createRadarsMonitorSelectionAims(GameTestHelper h) {
+        floor(h);
+        BlockPos mount = new BlockPos(10, 1, 32), fcsPos = new BlockPos(6, 1, 28), monPos = new BlockPos(4, 1, 36);
+        autocannon(h, mount, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = FcsGameTests.fcs(h, fcsPos);
+        h.setBlock(monPos, block("create_radar:monitor").defaultBlockState());
+        FcsGameTests.CREATED.add(h.absolutePos(monPos));
+        link(h, monPos, Direction.UP, fcsPos);
+        Mob husk = movingTarget(h, EntityType.HUSK, new Vec3(40.5, 1, 24.5), 0.15, 16);
+        AtomicInteger hits = countHits(h, husk);
+        logEvery(h, be, "link_crmonitor", 40);
+        String id = husk.getUUID().toString();
+        h.runAtTickTime(60, () -> {
+            if (be.mountStates().isEmpty() || be.mountStates().get(0).status != Status.NO_RADAR) {
+                h.fail("expected NO_RADAR before a selection: " + (be.mountStates().isEmpty() ? "no mounts" : be.mountStates().get(0).status));
+            }
+            if (hits.get() > 0) h.fail("fired without a radar or a selection");
+        });
+        // выбор игрока держится на мониторе (Create Radars снимает его, если цели нет в его сети - тест выбирает каждый тик)
+        h.onEachTick(() -> {
+            if (h.getTick() < 70) return;
+            BlockEntity mon = h.getLevel().getBlockEntity(h.absolutePos(monPos));
+            try {
+                if (mon != null) mon.getClass().getField("selectedEntity").set(mon, id);
+            } catch (ReflectiveOperationException e) {
+                h.fail("Create Radars monitor has no selectedEntity: " + e);
+            }
+        });
+        h.succeedWhen(() -> {
+            if (h.getTick() < 70) throw new GameTestAssertException("waiting for the selection");
+            if (!id.equals(be.currentDesignation())) throw new GameTestAssertException("selection not read: " + be.currentDesignation());
+            if (hits.get() == 0) throw new GameTestAssertException("selected target not hit yet");
+            FcsMod.LOG.info("[radar_fcs test] link_crmonitor: Create Radars monitor selection engaged without a radar, hits {}", hits.get());
+        });
+    }
+
+    /**
+     * Плоский радар Create Radars в двух сетях: A (вычислитель A, его станок, монитор) и B (вычислитель B, его станок).
      * Монитор показывает цели радара; назначение цели с монитора получает только A, вычислитель B его не видит.
+     * Снятие назначения с экрана монитора возвращает A к выбору по настройкам.
      */
     @GameTest(template = ARENA, batch = "link_monitor", timeoutTicks = 500)
     public static void monitorDesignatesForLinkedComputer(GameTestHelper h) {
@@ -132,8 +227,7 @@ public class LinkGameTests {
         }
         link(h, radar, Direction.UP, aPos);
         link(h, radar, Direction.NORTH, bPos);
-        link(h, radar, Direction.SOUTH, new BlockPos(3, 2, 44));
-        link(h, aPos, Direction.UP, new BlockPos(2, 3, 44));
+        link(h, new BlockPos(3, 3, 44), Direction.UP, aPos);
         Mob near = movingTarget(h, EntityType.HUSK, new Vec3(28.5, 1, 37.5), 0.1, 6);
         Mob far = movingTarget(h, EntityType.HUSK, new Vec3(44.5, 1, 40.5), 0.1, 6);
         logEvery(h, a, "link_monitor A", 40);
@@ -145,7 +239,9 @@ public class LinkGameTests {
                 return;
             }
             if (m.radarCount() != 1) h.fail("monitor sees " + m.radarCount() + " radars, expected the linked one");
-            if (m.blips().size() < 2) h.fail("monitor shows " + m.blips().size() + " blips, expected 2 targets");
+            long active = m.blips().stream().filter(x -> (x.flags() & (RadarMonitorBlockEntity.FLAG_INACTIVE | RadarMonitorBlockEntity.FLAG_FRIENDLY)) == 0).count();
+            if (active < 2) h.fail("monitor shows " + active + " active blips, expected 2 targets: " + m.blips());
+            if (m.blips().stream().anyMatch(x -> x.name().isEmpty() || x.id().isEmpty())) h.fail("blip without a name or id");
             Vec3 pt = m.screenPointFor(far.getBoundingBox().getCenter());
             BlockPos hitBlock = BlockPos.containing(pt.subtract(0, 0, 0.01));
             if (!(h.getLevel().getBlockEntity(hitBlock) instanceof RadarMonitorBlockEntity clicked)) {
@@ -170,6 +266,12 @@ public class LinkGameTests {
             if (bOnFar.get() > 0) throw new GameTestAssertException("computer B (monitor not linked) followed the designation");
             if (b.mountStates().isEmpty() || b.mountStates().get(0).targetId == null) throw new GameTestAssertException("B has no target");
             if (h.getTick() < 170) throw new GameTestAssertException("watching computer B");
+            // снять назначение (кнопка экрана монитора)
+            if (h.getLevel().getBlockEntity(h.absolutePos(new BlockPos(2, 2, 44))) instanceof RadarMonitorBlockEntity m) {
+                m.designate(null, null);
+                if (m.localDesignation(h.getLevel().getGameTime()) != null) throw new GameTestAssertException("designation not cleared");
+            }
+            if (a.currentDesignation() != null) throw new GameTestAssertException("A still sees a designation");
             FcsMod.LOG.info("[radar_fcs test] link_monitor: designation went to the linked computer only (near {})", near.getUUID());
         });
     }

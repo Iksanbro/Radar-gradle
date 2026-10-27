@@ -214,6 +214,13 @@ public final class CbcMount {
         return be.isRunning();
     }
 
+    /** Разобрать пушку, как снятие сигнала сборки (ствол встаёт в исходное положение и становится блоками). */
+    public void disassemble() {
+        if (!be.isRunning() && be.getContraption() == null) return;
+        be.disassemble();
+        be.sendData();
+    }
+
     /** Почему CBC не смог собрать пушку (для отчёта), или null. */
     @Nullable
     public String assemblyError() {

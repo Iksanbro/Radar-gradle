@@ -25,7 +25,9 @@ public enum Status {
     /** Пауза между одиночными выстрелами или очередями (режим огня). */
     PAUSE(ChatFormatting.YELLOW),
     /** У станка нет контроллера горизонтальной или вертикальной наводки. */
-    NO_CONTROLLER(ChatFormatting.GOLD);
+    NO_CONTROLLER(ChatFormatting.GOLD),
+    /** Пушка разобрана кнопкой «Разобрать»: вычислитель её не собирает, пока не нажата «Собрать». */
+    DISASSEMBLED(ChatFormatting.DARK_GRAY);
 
     public final ChatFormatting color;
 

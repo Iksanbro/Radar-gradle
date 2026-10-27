@@ -20,7 +20,9 @@ public enum LinkKind {
     /** Радар Create Radars. */
     RADAR,
     /** Радарный монитор (любой блок стены). */
-    MONITOR;
+    MONITOR,
+    /** Монитор Create Radars: выбранная на нём цель - ручное наведение для вычислителей сети. */
+    CR_MONITOR;
 
     /** Вид аппаратуры в точке или null (не аппаратура, чанк не загружен). */
     @Nullable
@@ -37,17 +39,11 @@ public enum LinkKind {
         if (CbcMount.of(be) != null) return MOUNT;
         try {
             if (RadarLink.isRadar(be)) return RADAR;
+            if (RadarLink.isMonitor(be)) return CR_MONITOR;
         } catch (Throwable ignored) {
             // конфиг сервера ещё не загружен (клиент в меню) - не радар
         }
         return null;
-    }
-
-    /** Что с чем можно связать: вычислитель - со станком, радаром, монитором; монитор - с радаром. */
-    public static boolean canLink(LinkKind a, LinkKind b) {
-        if (a == FCS) return b == MOUNT || b == RADAR || b == MONITOR;
-        if (b == FCS) return canLink(b, a);
-        return (a == MONITOR && b == RADAR) || (a == RADAR && b == MONITOR);
     }
 
     public Component displayName() {

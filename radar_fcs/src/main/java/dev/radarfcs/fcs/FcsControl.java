@@ -68,6 +68,11 @@ public final class FcsControl {
         if (!d.isAssembled()) {
             setTrigger(m, false);
             m.cmdYaw = Double.NaN;
+            if (!fcs.assembleWanted()) {                           // разобрана кнопкой - не собирать
+                m.note = null;
+                m.status = Status.DISASSEMBLED;
+                return;
+            }
             if (FcsConfig.AUTO_ASSEMBLE.get() && now - m.lastAssembleTry >= 40) {
                 m.lastAssembleTry = now;
                 d.assemble();
@@ -396,6 +401,29 @@ public final class FcsControl {
     }
 
     /** Отпустить станок навсегда (станок отвязан или вычислитель убран). */
+    /** Собрать пушку сейчас (кнопка «Собрать»); true - собрана. */
+    public static boolean assemble(MountState m, long now) {
+        CbcMount d = m.mount;
+        if (d == null || !d.isValid()) return false;
+        if (d.isAssembled()) return true;
+        m.lastAssembleTry = now;
+        boolean ok = d.assemble() && d.isAssembled();
+        m.note = ok ? null : d.assemblyError();
+        return ok;
+    }
+
+    /** Разобрать пушку (кнопка «Разобрать»): сначала отпустить привод и спуск; true - была собрана. */
+    public static boolean disassemble(MountState m) {
+        CbcMount d = m.mount;
+        if (d == null || !d.isValid() || !d.isAssembled()) return false;
+        releaseHardware(m);
+        d.disassemble();
+        m.status = Status.DISASSEMBLED;
+        m.targetId = null;
+        m.targetName = null;
+        return true;
+    }
+
     public static void release(ServerLevel level, FireControlBlockEntity fcs, MountState m) {
         yieldMount(level, fcs, m);
         m.stopListening();

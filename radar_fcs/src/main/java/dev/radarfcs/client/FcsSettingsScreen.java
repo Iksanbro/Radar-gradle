@@ -5,6 +5,7 @@ import dev.radarfcs.block.FireControlBlockEntity;
 import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.core.EngageSettings.Category;
 import dev.radarfcs.fcs.SettingsNbt;
+import dev.radarfcs.net.FcsCommandPayload;
 import dev.radarfcs.net.FcsSettingsPayload;
 import java.util.List;
 import java.util.Locale;
@@ -14,6 +15,7 @@ import java.util.function.Supplier;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
@@ -23,18 +25,20 @@ import net.minecraft.util.FormattedCharSequence;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
- * Экран настроек вычислителя: режим огня, цели, сброс, приоритет и переключение, состояние.
- * Настройки уходят на сервер кнопкой «Сохранить».
+ * Экран настроек вычислителя: режим огня, цели, белый и чёрный списки, сброс, приоритет и переключение, состояние
+ * (сборка и разборка пушек). Настройки уходят на сервер кнопкой «Сохранить», команды сборки - сразу.
  */
 public final class FcsSettingsScreen extends Screen {
-    private enum Tab { FIRE, TARGETS, DROP, PICK, STATUS }
+    private enum Tab { FIRE, TARGETS, LISTS, DROP, PICK, STATUS }
 
-    private static final int W = 320, H = 214, ROW = 22;
+    private static final int W = 360, H = 240, ROW = 22, LIST_ROW = 14;
 
     private final BlockPos pos;
     private final EngageSettings s;
     private Tab tab = Tab.FIRE;
     private int left, top;
+    /** Набранная запись списка (переживает перестройку виджетов). */
+    private String listInput = "";
 
     public FcsSettingsScreen(BlockPos pos, EngageSettings current) {
         super(Component.translatable("radar_fcs.gui.title"));
@@ -56,9 +60,10 @@ public final class FcsSettingsScreen extends Screen {
         switch (tab) {
             case FIRE -> fireTab(y);
             case TARGETS -> targetsTab(y);
+            case LISTS -> listsTab(y);
             case DROP -> dropTab(y);
             case PICK -> pickTab(y);
-            case STATUS -> { }
+            case STATUS -> statusTab(y);
         }
         addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.save"), b -> save())
                 .bounds(left + W - 168, top + H - 24, 80, 20).build());
@@ -69,15 +74,15 @@ public final class FcsSettingsScreen extends Screen {
     // ------------------------------------------------------------------ вкладки
 
     private void fireTab(int y) {
-        cycle(left + 150, y, 160, () -> Component.translatable("radar_fcs.gui.fire." + s.fireMode.name().toLowerCase(Locale.ROOT)),
+        cycle(left + 190, y, 160, () -> Component.translatable("radar_fcs.gui.fire." + s.fireMode.name().toLowerCase(Locale.ROOT)),
                 () -> s.fireMode = next(s.fireMode, EngageSettings.FireMode.values()));
         y += ROW;
         if (s.fireMode == EngageSettings.FireMode.BURST) {
-            number(left + 150, y, () -> s.burstLength, v -> s.burstLength = v, 1, 2, 100, null);
+            number(left + 190, y, () -> s.burstLength, v -> s.burstLength = v, 1, 2, 100, null);
             y += ROW;
         }
         if (s.fireMode != EngageSettings.FireMode.AUTO) {
-            number(left + 150, y, () -> s.pauseTicks, v -> s.pauseTicks = v, 5, 0, 1200, "radar_fcs.gui.ticks");
+            number(left + 190, y, () -> s.pauseTicks, v -> s.pauseTicks = v, 5, 0, 1200, "radar_fcs.gui.ticks");
         }
     }
 
@@ -85,27 +90,76 @@ public final class FcsSettingsScreen extends Screen {
         for (Category c : Category.values()) {
             int i = c.ordinal();
             Component limit = serverLimit(c);
-            Button b = cycle(left + 8, y, 140, () -> {
+            Button b = cycle(left + 8, y, 160, () -> {
                         MutableComponent t = check(s.enabled[i], "radar_fcs.gui.type." + c.name().toLowerCase(Locale.ROOT));
                         return limit == null ? t : t.append(Component.literal(" ⚠").withStyle(ChatFormatting.GOLD));
                     }, () -> s.enabled[i] = !s.enabled[i]);
             if (limit != null) b.setTooltip(Tooltip.create(limit));
-            number(left + 210, y, () -> s.level[i], v -> s.level[i] = v, 1, 1, EngageSettings.MAX_LEVEL, null);
+            number(left + 240, y, () -> s.level[i], v -> s.level[i] = v, 1, 1, EngageSettings.MAX_LEVEL, null);
             y += ROW;
         }
         number(left + 78, y, () -> (int) s.speedMin, v -> s.speedMin = v, 5, 0, 1000, null);
-        number(left + 210, y, () -> (int) s.speedMax, v -> s.speedMax = v, 5, 0, 1000, null);
+        number(left + 240, y, () -> (int) s.speedMax, v -> s.speedMax = v, 5, 0, 1000, null);
+        y += ROW;
+        cycle(left + 8, y, W - 16, () -> check(s.hostileOnly, "radar_fcs.gui.hostile_only"), () -> s.hostileOnly = !s.hostileOnly);
+    }
+
+    /** Белый и чёрный списки: поле ввода, кнопки «в белый» / «в чёрный», записи (клик - убрать). */
+    private void listsTab(int y) {
+        EditBox box = new EditBox(font, left + 8, y, 170, 20, Component.translatable("radar_fcs.gui.list_entry"));
+        box.setMaxLength(EngageSettings.MAX_ENTRY);
+        box.setValue(listInput);
+        box.setResponder(v -> listInput = v);
+        box.setHint(Component.translatable("radar_fcs.gui.list_entry_hint").withStyle(ChatFormatting.DARK_GRAY));
+        box.setTooltip(Tooltip.create(Component.translatable("radar_fcs.gui.lists_hint")));
+        addRenderableWidget(box);
+        addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.to_whitelist"), b -> addEntry(s.whitelist, s.blacklist))
+                .bounds(left + 182, y, 84, 20).build()).active = s.whitelist.size() < EngageSettings.MAX_LIST;
+        addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.to_blacklist"), b -> addEntry(s.blacklist, s.whitelist))
+                .bounds(left + 268, y, 84, 20).build()).active = s.blacklist.size() < EngageSettings.MAX_LIST;
+        y += 38;
+        entries(s.whitelist, left + 8, y, 0xFF8CFF9A);
+        entries(s.blacklist, left + 182, y, 0xFFFF8C8C);
+    }
+
+    private void entries(List<String> list, int x, int y, int color) {
+        for (int i = 0; i < list.size(); i++) {
+            int k = i;
+            Button b = addRenderableWidget(Button.builder(Component.literal("✕ ").withStyle(ChatFormatting.GRAY)
+                            .append(Component.literal(list.get(i)).withColor(color & 0xFFFFFF)),
+                    x0 -> { list.remove(k); rebuildWidgets(); }).bounds(x, y + i * LIST_ROW, 170, LIST_ROW - 1).build());
+            b.setTooltip(Tooltip.create(Component.translatable("radar_fcs.gui.list_remove")));
+        }
+    }
+
+    private void addEntry(List<String> to, List<String> other) {
+        String e = listInput.trim();
+        if (e.isEmpty() || to.size() >= EngageSettings.MAX_LIST) return;
+        other.removeIf(x -> x.equalsIgnoreCase(e));                       // запись - только в одном списке
+        if (to.stream().noneMatch(x -> x.equalsIgnoreCase(e))) to.add(e);
+        listInput = "";
+        rebuildWidgets();
+    }
+
+    /** Сборка и разборка всех пушек вычислителя - сразу, без «Сохранить». */
+    private void statusTab(int y) {
+        addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.assemble"),
+                        b -> PacketDistributor.sendToServer(new FcsCommandPayload(pos, FcsCommandPayload.ASSEMBLE)))
+                .bounds(left + 8, y, 130, 20).tooltip(Tooltip.create(Component.translatable("radar_fcs.gui.assemble_hint"))).build());
+        addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.disassemble"),
+                        b -> PacketDistributor.sendToServer(new FcsCommandPayload(pos, FcsCommandPayload.DISASSEMBLE)))
+                .bounds(left + 142, y, 130, 20).tooltip(Tooltip.create(Component.translatable("radar_fcs.gui.disassemble_hint"))).build());
     }
 
     private void dropTab(int y) {
         cycle(left + 8, y, W - 16, () -> check(s.dropStatic, "radar_fcs.gui.drop_static"), () -> s.dropStatic = !s.dropStatic);
         y += ROW;
-        number(left + 210, y, () -> s.staticTicks, v -> s.staticTicks = v, 2, 0, 1200,
+        number(left + 240, y, () -> s.staticTicks, v -> s.staticTicks = v, 2, 0, 1200,
                 v -> Component.translatable("radar_fcs.gui.seconds_value", String.format(Locale.ROOT, "%.1f", v / 20.0)), true);
         y += ROW;
         cycle(left + 8, y, W - 16, () -> check(s.dropMoving, "radar_fcs.gui.drop_moving"), () -> s.dropMoving = !s.dropMoving);
         y += ROW;
-        number(left + 210, y, () -> s.dropAfterShots, v -> s.dropAfterShots = v, 1, 0, 10000, null);
+        number(left + 240, y, () -> s.dropAfterShots, v -> s.dropAfterShots = v, 1, 0, 10000, null);
     }
 
     /** Что из типа целей запрещено конфигом сервера (null - ничего). */
@@ -113,29 +167,30 @@ public final class FcsSettingsScreen extends Screen {
         String key = switch (c) {
             case SHIPS -> FcsConfig.TARGET_SHIPS.get() ? null : "radar_fcs.gui.server_forbids";
             case PLAYERS -> FcsConfig.TARGET_PLAYERS.get() ? null : "radar_fcs.gui.server_forbids";
-            case MOBS -> !FcsConfig.TARGET_MOBS.get() ? "radar_fcs.gui.server_forbids"
-                    : FcsConfig.HOSTILE_ONLY.get() ? "radar_fcs.gui.server_hostile_only" : null;
-            case ENTITIES -> !FcsConfig.TARGET_CONTRAPTIONS.get() && !FcsConfig.TARGET_PROJECTILES.get() ? "radar_fcs.gui.server_forbids"
+            case MOBS -> FcsConfig.TARGET_MOBS.get() ? null : "radar_fcs.gui.server_forbids";
+            case ENTITIES -> !FcsConfig.TARGET_CONTRAPTIONS.get() && !FcsConfig.TARGET_PROJECTILES.get() && !FcsConfig.TARGET_OTHER.get()
+                    ? "radar_fcs.gui.server_forbids"
                     : !FcsConfig.TARGET_PROJECTILES.get() ? "radar_fcs.gui.server_no_projectiles"
-                    : !FcsConfig.TARGET_CONTRAPTIONS.get() ? "radar_fcs.gui.server_no_contraptions" : null;
+                    : !FcsConfig.TARGET_CONTRAPTIONS.get() ? "radar_fcs.gui.server_no_contraptions"
+                    : !FcsConfig.TARGET_OTHER.get() ? "radar_fcs.gui.server_no_other" : null;
         };
         return key == null ? null : Component.translatable(key);
     }
 
     private void pickTab(int y) {
-        cycle(left + 150, y, 160, () -> Component.translatable("radar_fcs.gui.priority." + s.priority.name().toLowerCase(Locale.ROOT)),
+        cycle(left + 190, y, 160, () -> Component.translatable("radar_fcs.gui.priority." + s.priority.name().toLowerCase(Locale.ROOT)),
                 () -> s.priority = next(s.priority, EngageSettings.Priority.values()));
         y += ROW;
-        cycle(left + 8, y, 302, () -> check(s.switchByPriority, "radar_fcs.gui.switch_by_priority"),
+        cycle(left + 8, y, W - 16, () -> check(s.switchByPriority, "radar_fcs.gui.switch_by_priority"),
                 () -> s.switchByPriority = !s.switchByPriority);
         y += ROW;
-        cycle(left + 150, y, 160, () -> Component.translatable("radar_fcs.gui.switch." + s.switchMode.name().toLowerCase(Locale.ROOT)),
+        cycle(left + 190, y, 160, () -> Component.translatable("radar_fcs.gui.switch." + s.switchMode.name().toLowerCase(Locale.ROOT)),
                 () -> s.switchMode = next(s.switchMode, EngageSettings.SwitchMode.values()));
         y += ROW;
         if (s.switchMode == EngageSettings.SwitchMode.AFTER_SHOTS) {
-            number(left + 150, y, () -> s.switchShots, v -> s.switchShots = v, 1, 1, 10000, null);
+            number(left + 190, y, () -> s.switchShots, v -> s.switchShots = v, 1, 1, 10000, null);
         } else if (s.switchMode == EngageSettings.SwitchMode.AFTER_TIME) {
-            number(left + 150, y, () -> s.switchSeconds, v -> s.switchSeconds = v, 1, 1, 3600, "radar_fcs.gui.seconds");
+            number(left + 190, y, () -> s.switchSeconds, v -> s.switchSeconds = v, 1, 1, 3600, "radar_fcs.gui.seconds");
         }
     }
 
@@ -155,13 +210,22 @@ public final class FcsSettingsScreen extends Screen {
             }
             case TARGETS -> {
                 for (int i = 0; i < EngageSettings.CATEGORIES; i++) {
-                    g.drawString(font, Component.translatable("radar_fcs.gui.level"), left + 156, y, 0xA0A0A0, false);
+                    g.drawString(font, Component.translatable("radar_fcs.gui.level"), left + 186, y, 0xA0A0A0, false);
                     y += ROW;
                 }
                 g.drawString(font, Component.translatable("radar_fcs.gui.speed_from"), left + 8, y, 0xE0E0E0, false);
-                g.drawString(font, Component.translatable("radar_fcs.gui.speed_to"), left + 186, y, 0xE0E0E0, false);
-                y += ROW;
+                g.drawString(font, Component.translatable("radar_fcs.gui.speed_to"), left + 216, y, 0xE0E0E0, false);
+                y += 2 * ROW;
                 hint(g, "radar_fcs.gui.targets_hint", y);
+            }
+            case LISTS -> {
+                int hy = top + 56;
+                g.drawString(font, Component.translatable("radar_fcs.gui.whitelist", s.whitelist.size(), EngageSettings.MAX_LIST),
+                        left + 8, hy, 0x8CFF9A, false);
+                g.drawString(font, Component.translatable("radar_fcs.gui.blacklist", s.blacklist.size(), EngageSettings.MAX_LIST),
+                        left + 182, hy, 0xFF8C8C, false);
+                int rows = Math.max(s.whitelist.size(), s.blacklist.size());
+                if (rows <= 6) hint(g, "radar_fcs.gui.lists_hint", top + 68 + rows * LIST_ROW + 4);
             }
             case DROP -> {
                 y += ROW;
@@ -185,7 +249,7 @@ public final class FcsSettingsScreen extends Screen {
                 List<Component> lines = minecraft != null && minecraft.level != null
                         && minecraft.level.getBlockEntity(pos) instanceof FireControlBlockEntity be
                         ? FireControlBlockEntity.summaryLines(be.summary(), true) : List.of();
-                int ly = top + 30;
+                int ly = top + 56;
                 outer:
                 for (Component c : lines) {
                     for (FormattedCharSequence part : font.split(c, W - 16)) {
@@ -260,6 +324,12 @@ public final class FcsSettingsScreen extends Screen {
     private void save() {
         PacketDistributor.sendToServer(new FcsSettingsPayload(pos, SettingsNbt.write(s.sanitize())));
         onClose();
+    }
+
+    /** Примеры записей списков (скриншоты для документации). */
+    public void fillListsForScreenshot() {
+        if (s.whitelist.isEmpty()) s.whitelist.addAll(List.of("minecraft:pillager", "#minecraft:raiders"));
+        if (s.blacklist.isEmpty()) s.blacklist.addAll(List.of("minecraft:villager", "Steve", "create:*"));
     }
 
     /** Открыть вкладку по номеру (скриншоты для документации). */

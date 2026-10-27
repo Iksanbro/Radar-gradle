@@ -16,6 +16,8 @@ public final class Track {
     public final String id;
     public final Kind kind;
     public String name;
+    /** ID типа сущности (minecraft:zombie) и имя игрока - для белого и чёрного списков; null - неизвестно. */
+    public String typeId, playerName;
     /** Оценка позиции на момент последнего замера. */
     public Vec pos;
     /** Блоков/тик. */

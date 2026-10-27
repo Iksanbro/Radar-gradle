@@ -62,6 +62,14 @@ public final class EngageSettings {
     public final boolean[] enabled = {true, false, true, true};
     /** Уровень приоритета типа цели: 1..MAX_LEVEL, выше - главнее. */
     public final int[] level = {2, 3, 1, 1};
+    /** Мобы: только враждебные (зомби, скелеты...), мирные и нейтральные - не цели. */
+    public boolean hostileOnly = true;
+    /**
+     * Белый список: всегда цели, даже если их тип выключен или моб мирный. Чёрный список: никогда не цели.
+     * Записи: ID типа (minecraft:zombie), тег типа (#minecraft:undead), мод целиком (minecraft:*), имя игрока (Steve).
+     */
+    public final java.util.List<String> whitelist = new java.util.ArrayList<>(), blacklist = new java.util.ArrayList<>();
+    public static final int MAX_LIST = 10, MAX_ENTRY = 64;
     /** Скорость цели от и до, м/с; 0 - без ограничения. */
     public double speedMin = 0, speedMax = 0;
 
@@ -123,6 +131,8 @@ public final class EngageSettings {
         speedMax = Double.isFinite(speedMax) ? Math.max(0, Math.min(1000, speedMax)) : 0;
         dropAfterShots = clamp(dropAfterShots, 0, 10000);
         staticTicks = clamp(staticTicks, 0, 1200);
+        cleanList(whitelist);
+        cleanList(blacklist);
         switchShots = clamp(switchShots, 1, 10000);
         switchSeconds = clamp(switchSeconds, 1, 3600);
         if (fireMode == null) fireMode = FireMode.AUTO;
@@ -142,6 +152,9 @@ public final class EngageSettings {
         s.speedMax = speedMax;
         s.dropStatic = dropStatic;
         s.staticTicks = staticTicks;
+        s.hostileOnly = hostileOnly;
+        s.whitelist.addAll(whitelist);
+        s.blacklist.addAll(blacklist);
         s.dropMoving = dropMoving;
         s.dropAfterShots = dropAfterShots;
         s.priority = priority;
@@ -150,6 +163,19 @@ public final class EngageSettings {
         s.switchShots = switchShots;
         s.switchSeconds = switchSeconds;
         return s;
+    }
+
+    /** Обрезать пробелы, убрать пустые и повторы, не больше MAX_LIST записей по MAX_ENTRY символов. */
+    static void cleanList(java.util.List<String> list) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        for (String e : list) {
+            if (e == null) continue;
+            String t = e.trim();
+            if (t.isEmpty() || t.length() > MAX_ENTRY) continue;
+            if (out.size() < MAX_LIST) out.add(t);
+        }
+        list.clear();
+        list.addAll(out);
     }
 
     private static int clamp(int v, int lo, int hi) {
