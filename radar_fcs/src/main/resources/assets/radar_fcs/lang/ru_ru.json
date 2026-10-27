@@ -79,5 +79,6 @@
   "radar_fcs.monitor.radars": "радаров: %s",
   "radar_fcs.monitor.no_radar": "НЕТ РАДАРА",
   "radar_fcs.status.no_power": "нет вращения на валах станка",
-  "radar_fcs.report.miss": " (промах %s бл)"
+  "radar_fcs.report.miss": " (промах %s бл)",
+  "radar_fcs.report.spread": " [разброс CBC ±%s°: удлините ствол или уменьшите заряд]"
 }

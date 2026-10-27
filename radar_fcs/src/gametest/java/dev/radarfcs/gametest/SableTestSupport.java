@@ -66,6 +66,39 @@ final class SableTestSupport {
         return sub;
     }
 
+    /** Диагностика: поза и габарит корабля, трек вычислителя и снаряды CBC по тикам. */
+    static void probeShip(GameTestHelper h, Object handle, dev.radarfcs.block.FireControlBlockEntity be) {
+        ServerSubLevel sub = (ServerSubLevel) handle;
+        AtomicInteger tick = new AtomicInteger();
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.LevelTickEvent.Pre e) -> {
+            if (e.getLevel() != h.getLevel() || sub.isRemoved() || tick.get() > 60) return;
+            var pp = sub.logicalPose().position();
+            FcsMod.LOG.info("[radar_fcs probe] ship pre t={} pose=({} {} {})", tick.get(), f(pp.x()), f(pp.y()), f(pp.z()));
+        });
+        h.onEachTick(() -> {
+            int t = tick.getAndIncrement();
+            if (sub.isRemoved() || t > 60) return;
+            var b = sub.boundingBox();
+            var pp = sub.logicalPose().position();
+            StringBuilder sb = new StringBuilder();
+            for (var tr : be.sensor().all()) sb.append(String.format(java.util.Locale.ROOT, " track %s pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) last=%d",
+                    tr.name, tr.pos.x(), tr.pos.y(), tr.pos.z(), tr.vel.x(), tr.vel.y(), tr.vel.z(), tr.lastTick));
+            for (AbstractCannonProjectile p : h.getLevel().getEntitiesOfClass(AbstractCannonProjectile.class, new AABB(pp.x(), pp.y(), pp.z(), pp.x(), pp.y(), pp.z()).inflate(80))) {
+                sb.append(String.format(java.util.Locale.ROOT, " proj#%d=(%.2f %.2f %.2f)", p.getId(), p.getX(), p.getY(), p.getZ()));
+                Vec3 v = p.getDeltaMovement();
+                if (v.lengthSqr() > 1e-6) {
+                    Vec3 a = p.position(), bpt = a.add(v.normalize().scale(1.0));
+                    var hit = h.getLevel().clip(new net.minecraft.world.level.ClipContext(a, bpt, net.minecraft.world.level.ClipContext.Block.COLLIDER,
+                            net.minecraft.world.level.ClipContext.Fluid.NONE, net.minecraft.world.phys.shapes.CollisionContext.empty()));
+                    if (hit.getType() != net.minecraft.world.phys.HitResult.Type.MISS)
+                        sb.append(" ahead=").append(h.getLevel().getBlockState(hit.getBlockPos())).append(" at ").append(hit.getBlockPos().toShortString());
+                }
+            }
+            FcsMod.LOG.info("[radar_fcs probe] ship end t={} game={} box=({} {} {}) pose=({} {} {}){}", t, h.getLevel().getGameTime(),
+                    f((b.minX() + b.maxX()) / 2), f((b.minY() + b.maxY()) / 2), f((b.minZ() + b.maxZ()) / 2), f(pp.x()), f(pp.y()), f(pp.z()), sb);
+        });
+    }
+
     private static String f(double v) {
         return String.format(java.util.Locale.ROOT, "%.2f", v);
     }

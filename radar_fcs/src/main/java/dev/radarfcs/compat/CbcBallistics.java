@@ -41,7 +41,20 @@ import rbasamoyai.createbigcannons.munitions.config.components.BallisticProperti
  */
 public final class CbcBallistics {
 
-    public record Estimate(CbcFlightModel model, boolean loaded, String ammo, String fingerprint, boolean exact) {}
+    /**
+     * @param spread разброс CBC (inaccuracy выстрела), NaN - неизвестен
+     * @param reach  на сколько CBC расширяет габарит цели при проверке попадания: половина размера снаряда, блоков
+     */
+    public record Estimate(CbcFlightModel model, boolean loaded, String ammo, String fingerprint, boolean exact,
+                           double spread, double reach) {
+        public static double defaultReach(CbcMount.Kind kind) {
+            return kind == CbcMount.Kind.RAPID ? 0.1 : 0.4;
+        }
+    }
+
+    private static final net.minecraft.tags.TagKey<Block> REDUCES_SPREAD = net.minecraft.tags.TagKey.create(
+            net.minecraft.core.registries.Registries.BLOCK,
+            net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("createbigcannons", "reduces_spread"));
 
     private CbcBallistics() {}
 
@@ -49,14 +62,15 @@ public final class CbcBallistics {
         AbstractMountedCannonContraption c = mount.cannon();
         CbcMount.Kind kind = mount.kind();
         CbcFlightModel fallback = kind == CbcMount.Kind.RAPID ? FcsConfig.rapidFallback() : FcsConfig.bigFallback();
-        if (c == null) return new Estimate(fallback, false, "-", "none", false);
+        double reach0 = Estimate.defaultReach(kind);
+        if (c == null) return new Estimate(fallback, false, "-", "none", false, Double.NaN, reach0);
         try {
             if (c instanceof MountedBigCannonContraption big && kind == CbcMount.Kind.BIG) return bigCannon(level, big, fallback);
             if (kind == CbcMount.Kind.RAPID) return rapid(level, c, fallback);
         } catch (Throwable t) {
             FcsMod.LOG.debug("[radar_fcs] ballistics estimate failed for {}: {}", c.getClass().getName(), t.toString());
         }
-        return new Estimate(fallback, true, "?", c.getClass().getSimpleName(), false);
+        return new Estimate(fallback, true, "?", c.getClass().getSimpleName(), false, Double.NaN, reach0);
     }
 
     // ------------------------------------------------------------ большие пушки
@@ -65,9 +79,14 @@ public final class CbcBallistics {
         Direction o = big.initialOrientation();
         BlockPos cur = big.getStartPos();
         float charges = 0;
+        // разброс как в CBC: каждый заряд добавляет свой, каждый ствол от снаряда до дульного среза убирает
+        double spreadSum = 0;
+        int spreadBarrels = 0;
         List<StructureBlockInfo> projBlocks = new ArrayList<>();
         AbstractBigCannonProjectile projectile = null;
         StringBuilder fp = new StringBuilder("big");
+        // CBC-AT со своей физикой выстрела: параллельно считаем её же классом
+        Object at = CbcAtPhysics.newContext();
         int guard = 0;
         while (guard++ < 128 && big.presentBlockEntities.get(cur) instanceof IBigCannonBlockEntity cbe) {
             StructureBlockInfo info = cbe.cannonBehavior().block();
@@ -77,8 +96,22 @@ public final class CbcBallistics {
                 if (projectile == null && projBlocks.isEmpty()) {
                     charges = Math.max(0, charges - 1);         // каждый пустой блок до снаряда съедает заряд, как в CBC
                 }
+            } else if (projectile == null && b instanceof BigCannonPropellantBlock cp && CbcAtPhysics.isCartridge(b)) {
+                // гильза CBC-AT: заряд и снаряд в одном блоке
+                charges += Math.max(0, cp.getChargePower(info));
+                spreadSum += spreadOf(cp, info);
+                CbcAtPhysics.propellant(at, cp, info, o);
+                projBlocks.add(info);
+                fp.append('|').append(BuiltInRegistries.BLOCK.getKey(b).getPath());
+                projectile = CbcAtPhysics.cartridgeProjectile(b, level, projBlocks);
+                if (projectile != null) {
+                    charges += projectile.addedChargePower();
+                    CbcAtPhysics.addCharge(at, projectile.addedChargePower());
+                }
             } else if (b instanceof BigCannonPropellantBlock p && !(b instanceof ProjectileBlock)) {
                 charges += Math.max(0, p.getChargePower(info));
+                spreadSum += spreadOf(p, info);
+                CbcAtPhysics.propellant(at, p, info, o);
                 fp.append('|').append(BuiltInRegistries.BLOCK.getKey(b).getPath());
             } else if (b instanceof ProjectileBlock<?> pb && projectile == null) {
                 projBlocks.add(info);
@@ -89,17 +122,57 @@ public final class CbcBallistics {
                     } catch (Throwable ignored) {
                         projectile = null;
                     }
-                    if (projectile != null) charges += projectile.addedChargePower();
-                    if (projectile instanceof IntegratedPropellantProjectile ip) charges += Math.max(0, ip.getChargePower());
+                    if (projectile != null) {
+                        charges += projectile.addedChargePower();
+                        CbcAtPhysics.addCharge(at, projectile.addedChargePower());
+                    }
+                    if (projectile instanceof IntegratedPropellantProjectile ip) {
+                        charges += Math.max(0, ip.getChargePower());
+                        try {
+                            spreadSum += ip.getSpread();
+                        } catch (Throwable ignored) {
+                        }
+                    }
                 }
             }
+            if (!projBlocks.isEmpty() && reducesSpread(big, cur)) spreadBarrels++;
+            StructureBlockInfo cannonInfo = big.getBlocks().get(cur);
+            if (cannonInfo != null) CbcAtPhysics.barrel(at, cannonInfo.state().getBlock());
             cur = cur.relative(o);
         }
         boolean loaded = projectile != null && charges > 0;
+        double spread = Double.NaN;
+        Object props = Reflect.call0(Reflect.get(big, "cannonMaterial"), "properties");
+        double perBarrel = Reflect.number(Reflect.call0(props, "spreadReductionPerBarrel"), Double.NaN);
+        double minSpread = Reflect.number(Reflect.call0(props, "minimumSpread"), 0);
+        if (projectile != null && !Double.isNaN(perBarrel)) spread = Math.max(minSpread, spreadSum - perBarrel * spreadBarrels);
+        // скорость выстрела CBC = сумма зарядов; у CBC-AT - своя (газ заряда минус сопротивление стволов)
+        double speed = charges;
+        if (at != null && projectile != null) {
+            double v = CbcAtPhysics.velocity(at), sp = CbcAtPhysics.spread(at);
+            if (Double.isFinite(v) && v > 0) speed = v;
+            if (Double.isFinite(sp)) spread = sp;
+        }
         String ammo = projectile != null ? BuiltInRegistries.ENTITY_TYPE.getKey(projectile.getType()).getPath() : "empty";
-        CbcFlightModel base = projectile != null ? fromProjectile(level, projectile, charges, 600, fallback) : fallback;
-        if (projectile != null && charges > 0) base = base.withSpeed(charges);
-        return new Estimate(base, loaded, ammo + " x" + fmt(charges), fp.toString(), projectile != null);
+        CbcFlightModel base = projectile != null ? fromProjectile(level, projectile, speed, 600, fallback) : fallback;
+        if (projectile != null && speed > 0) base = base.withSpeed(speed);
+        double reach = projectile != null ? reachOf(projectile, 0.4) : 0.4;
+        return new Estimate(base, loaded, ammo + " x" + fmt(charges), fp.toString(), projectile != null, spread, reach);
+    }
+
+    private static double spreadOf(BigCannonPropellantBlock p, StructureBlockInfo info) {
+        try {
+            return Math.max(0, p.getSpread(info));
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    /** Ствол, уменьшающий разброс (тег CBC reduces_spread). */
+    private static boolean reducesSpread(MountedBigCannonContraption big, BlockPos pos) {
+        StructureBlockInfo info = big.getBlocks().get(pos);
+        if (info == null) return false;
+        return info.state().is(REDUCES_SPREAD);
     }
 
     // ------------------------------------------------------------ автопушки
@@ -115,6 +188,8 @@ public final class CbcBallistics {
         double perBarrel = Reflect.number(Reflect.call0(props, "speedIncreasePerBarrel"), 0);
         int maxIncreases = (int) Reflect.number(Reflect.call0(props, "maxSpeedIncreases"), 0);
         int lifetime = (int) Reflect.number(Reflect.call0(props, "projectileLifetime"), fallback.maxTicks());
+        double baseSpread = Reflect.number(Reflect.call0(props, "baseSpread"), Double.NaN);
+        double spreadPerBarrel = Reflect.number(Reflect.call0(props, "spreadReductionPerBarrel"), 0);
 
         int barrels = 0;
         BlockPos cur = start.relative(o);
@@ -123,6 +198,9 @@ public final class CbcBallistics {
             cur = cur.relative(o);
         }
         double speed = Double.isNaN(baseSpeed) ? fallback.speed() : baseSpeed + perBarrel * Math.min(barrels, maxIncreases);
+        // как в CBC: каждый ствол уменьшает разброс, но не ниже нуля
+        double spread = Double.isNaN(baseSpread) ? Double.NaN : Math.max(0, baseSpread - spreadPerBarrel * barrels);
+        double reach = 0.1;
 
         ItemStack round = ItemStack.EMPTY;
         boolean loaded = true;
@@ -147,11 +225,18 @@ public final class CbcBallistics {
             if (proj instanceof AbstractCannonProjectile acp) {
                 base = fromProjectile(level, acp, speed, Math.max(5, lifetime), base);
                 exact = !Double.isNaN(baseSpeed);
+                reach = reachOf(acp, 0.1);
             }
             ammo = BuiltInRegistries.ITEM.getKey(round.getItem()).getPath();
         }
         String fp = c.getClass().getSimpleName() + "|" + barrels + "|" + ammo;
-        return new Estimate(base, loaded, ammo, fp, exact);
+        return new Estimate(base, loaded, ammo, fp, exact, spread, reach);
+    }
+
+    /** Половина размера снаряда: на столько CBC расширяет габарит цели при проверке попадания. */
+    private static double reachOf(Entity projectile, double fallback) {
+        double r = Math.max(projectile.getBbWidth(), projectile.getBbHeight()) * 0.5;
+        return r > 0 && r < 4 ? r : fallback;
     }
 
     // ------------------------------------------------------------ свойства снаряда

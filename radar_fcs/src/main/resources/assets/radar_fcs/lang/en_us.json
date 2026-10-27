@@ -79,5 +79,6 @@
   "radar_fcs.monitor.radars": "radars: %s",
   "radar_fcs.monitor.no_radar": "NO RADAR",
   "radar_fcs.status.no_power": "no rotation on the mount shafts",
-  "radar_fcs.report.miss": " (miss %s b)"
+  "radar_fcs.report.miss": " (miss %s b)",
+  "radar_fcs.report.spread": " [CBC spread ±%s°: longer barrel or fewer charges]"
 }

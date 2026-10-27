@@ -46,8 +46,13 @@ public final class MountState implements ShotObserver.Listener {
     public double aimError = Double.NaN, tolerance = Double.NaN, distance = Double.NaN, flightTicks = Double.NaN;
     /** Расчётный промах выстрела из фактического положения ствола, блоков; tolerance - допустимый промах. */
     public double predictedMiss = Double.NaN;
+    /** Тик (с долей) сближения в расчёте промаха: доля близко к 0 или 1 - встреча на границе тика. */
+    public double predictedMissTick = Double.NaN;
+    /** Точка и направление вылета следующего снаряда в расчёте промаха (для диагностики). */
+    @Nullable public dev.radarfcs.core.Vec predictedLaunch, predictedDir;
     public long safetyTick = Long.MIN_VALUE / 2;
     @Nullable public String safetyTarget;
+    @Nullable public dev.radarfcs.core.Vec safetyAim;
     public FireSafety.Verdict safety = FireSafety.Verdict.CLEAR;
 
     // огонь
@@ -59,6 +64,9 @@ public final class MountState implements ShotObserver.Listener {
     @Nullable public String note;
 
     private boolean listening = true;
+
+    /** Диагностика выстрелов в лог (игровые тесты с -PfcsProbe). */
+    private static final boolean PROBE = Boolean.getBoolean("radarfcs.probe");
 
     public MountState(BlockPos pos) {
         this.pos = pos.immutable();
@@ -103,8 +111,19 @@ public final class MountState implements ShotObserver.Listener {
     @Override
     public void onShotSpawned(Entity projectile, Vec3 spawnPos, Vec3 velocity) {
         shotsSeen++;
+        if (PROBE && predictedDir != null && predictedLaunch != null && velocity.lengthSqr() > 1e-6) {
+            Vec3 pd = new Vec3(predictedDir.x(), predictedDir.y(), predictedDir.z()).normalize();
+            double ang = Math.toDegrees(Math.acos(Math.max(-1, Math.min(1, pd.dot(velocity.normalize())))));
+            Vec3 dl = spawnPos.subtract(predictedLaunch.x(), predictedLaunch.y(), predictedLaunch.z());
+            dev.radarfcs.FcsMod.LOG.info("[radar_fcs probe] shot from {}: direction error {}°, launch error {} (along {}), speed {}",
+                    pos.toShortString(), String.format(java.util.Locale.ROOT, "%.3f", ang), String.format(java.util.Locale.ROOT, "%.3f", dl.length()),
+                    String.format(java.util.Locale.ROOT, "%.3f", dl.dot(pd)), String.format(java.util.Locale.ROOT, "%.3f", velocity.length()));
+        }
         if (shotPivot != null && shotDir != null) {
-            double m = spawnPos.subtract(shotPivot).dot(shotDir);
+            // направление - по скорости самого снаряда: ствол быстро ведущей пушки за тик до выстрела
+            // смотрел иначе, и проекция на его направление занижала вынос дульного среза
+            Vec3 dir = velocity.lengthSqr() > 1e-6 ? velocity.normalize() : shotDir;
+            double m = spawnPos.subtract(shotPivot).dot(dir);
             if (m > 0 && m < 32) {
                 double w = muzzleSamples < 3 ? 1.0 / (muzzleSamples + 1) : 0.2;
                 learnedMuzzle = Double.isNaN(learnedMuzzle) ? m : learnedMuzzle + (m - learnedMuzzle) * w;

@@ -95,7 +95,7 @@ public class SolverTest {
         Random r = new Random(11);
         Vec pivot = new Vec(0, 70, 0);
         BallisticSolver.Muzzle muzzle = BallisticSolver.Muzzle.offset(pivot, 3.0);
-        int n = 0, ok = 0, nosol = 0, agree = 0; double sum = 0;
+        int n = 0, ok = 0, nosol = 0, agree = 0, edge = 0; double sum = 0;
         for (int i = 0; i < 500; i++) {
             double dist = 25 + r.nextDouble() * maxDist, ang = r.nextDouble() * Math.PI * 2;
             Vec p = pivot.add(new Vec(Math.cos(ang) * dist, 5 + r.nextDouble() * 60, Math.sin(ang) * dist));
@@ -107,7 +107,9 @@ public class SolverTest {
             if (s == null) { nosol++; continue; }
             double est = BallisticSolver.miss(s.muzzle(), s.direction(), model, tgt, lag, truth.life, true).distance();
             double m0 = miss(truth, s.muzzle(), s.direction(), tgt, lag, null);
-            if (Math.abs(est - m0) < 0.05) agree++;
+            // оценка может быть осторожнее истины (встреча на границе тика не считается), но не наоборот
+            if (est >= m0 - 0.05) agree++;
+            if (est > m0 + 0.05) edge++;
             // вычислитель ждёт тика, когда выстрел попадёт: пробуем вылет через 0..4 тика
             double m = m0;
             for (int j = 1; j <= 4 && m >= 0.5; j++) {
@@ -117,8 +119,8 @@ public class SolverTest {
             n++; sum += m; if (m < 0.5) ok++;
         }
         double pct = 100.0 * ok / Math.max(1, n), agr = 100.0 * agree / Math.max(1, n);
-        System.out.printf(Locale.ROOT, "%-34s solved %3d (no sol %3d)  hit<0.5 in 5 ticks: %5.1f%%  avg %.3f  miss-estimate agrees %5.1f%%%n",
-                name, n, nosol, pct, sum / Math.max(1, n), agr);
+        System.out.printf(Locale.ROOT, "%-34s solved %3d (no sol %3d)  hit<0.5 in 5 ticks: %5.1f%%  avg %.3f  miss-estimate safe %5.1f%% (tick-edge %4.1f%%)%n",
+                name, n, nosol, pct, sum / Math.max(1, n), agr, 100.0 * edge / Math.max(1, n));
         if (pct < minHitPct || agr < 97) { failures++; System.out.println("  FAIL"); }
     }
 
@@ -211,6 +213,26 @@ public class SolverTest {
         if (Math.abs(t.acc.z() - 0.05) > 0.01) { failures++; System.out.println("  FAIL: acceleration not detected"); }
     }
 
+    /**
+     * Промах до габарита цели: выстрел над центром высокой цели (моб) - попадание, хотя до центра далеко;
+     * сбоку на ту же величину - промах; встреча на самой границе тика не засчитывается.
+     */
+    static void boxMiss() {
+        CbcFlightModel m = CbcFlightModel.ballistic(9, 0, 0, false, 40);
+        Vec half = new Vec(0.3, 0.975, 0.3);
+        TargetMotion still = new TargetMotion(new Vec(40.5, 0, 0), Vec.ZERO, Vec.ZERO, false, 0);
+        double above = BallisticSolver.miss(new Vec(0, 0.8, 0), new Vec(1, 0, 0), m, still, 0, 20, true, half).distance();
+        double aboveC = BallisticSolver.miss(new Vec(0, 0.8, 0), new Vec(1, 0, 0), m, still, 0, 20, true, null).distance();
+        double side = BallisticSolver.miss(new Vec(0, 0, 0.8), new Vec(1, 0, 0), m, still, 0, 20, true, half).distance();
+        // цель поперёк линии огня 4.5 бл/тик: в тик 5 снаряд доходит до x=45, а габарит цели начинается с 44.95 -
+        // отрезок задевает его лишь самым концом
+        TargetMotion edge = new TargetMotion(new Vec(45.25, 0, -22.5), new Vec(0, 0, 4.5), Vec.ZERO, false, 0);
+        double atEdge = BallisticSolver.miss(Vec.ZERO, new Vec(1, 0, 0), m, edge, 0, 20, true, half).distance();
+        boolean ok = above < 1e-6 && Math.abs(aboveC - 0.8) < 1e-6 && Math.abs(side - 0.5) < 1e-6 && atEdge > 0.01;
+        System.out.printf(Locale.ROOT, "box miss: above centre %.2f (centre %.2f), side %.2f, tick edge %.2f%n", above, aboveC, side, atEdge);
+        if (!ok) { failures++; System.out.println("  FAIL"); }
+    }
+
     public static void main(String[] a) {
         ballisticCase("big cannon 4 charges", new Truth(8, -0.05, 0.01, false, 0, 0, 1, 1, 600), 300, false, 97);
         ballisticCase("big cannon 2 charges", new Truth(4, -0.05, 0.01, false, 0, 0, 1, 1, 600), 200, false, 97);
@@ -219,6 +241,7 @@ public class SolverTest {
         ballisticCase("quadratic drag", new Truth(6, -0.05, 0.002, true, 0, 0, 1, 1, 600), 200, false, 97);
         fastCase("fast targets, big cannon 8 b/t", new Truth(8, -0.05, 0.01, false, 0, 0, 1, 1, 600), 200, 97);
         fastCase("fast targets, autocannon 6 b/t", new Truth(6, -0.025, 0.01, false, 0, 0, 1, 1, 60), 150, 97);
+        boxMiss();
         rocketLearning();
         trackFilter();
         maneuver();

@@ -239,6 +239,8 @@ public final class TargetSensor {
                 isGrounded(e), null, s);
         t.handle = e;
         t.hostile = e instanceof Enemy;
+        // габарит сущности - точный прямоугольник по осям, как его проверяет CBC; у контрапшена он лишь описанный
+        t.half = kind == Track.Kind.CONTRAPTION ? null : new Vec(bb.getXsize() * 0.5, bb.getYsize() * 0.5, bb.getZsize() * 0.5);
     }
 
     private void observeShip(ServerLevel level, SableCompat.Ship ship, long now, TrackTable.Settings s) {

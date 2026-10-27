@@ -153,15 +153,18 @@ public final class SableCompat {
         AABB box = new AABB(b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ());
         String name = s.getName();
         if (name == null || name.isBlank()) name = "ship-" + s.getUniqueId().toString().substring(0, 4);
-        // центр масс: к нему относится скорость от физики Sable (центр габарита при вращении «гуляет»)
+        // центр масс: к нему относится скорость от физики Sable (центр габарита при вращении «гуляет»).
+        // Габарит Sable отстаёт от позы на тик: у быстрого корабля центр масс впереди габарита на перемещение
+        // за тик, и центр габарита дал бы цель с опозданием на тик (3.5 блока на 70 м/с)
+        Vec3 vel = velocity(level, s);
         Vec3 center = box.getCenter();
         try {
             Vector3dc rp = s.logicalPose().rotationPoint();
             Vec3 com = s.logicalPose().transformPosition(new Vec3(rp.x(), rp.y(), rp.z()));
-            if (box.inflate(1.0).contains(com)) center = com;
+            if (box.expandTowards(vel).expandTowards(vel.scale(-1)).inflate(1.0).contains(com)) center = com;
         } catch (Throwable ignored) {
         }
-        return new Ship(s.getUniqueId(), name, center, box, velocity(level, s), s);
+        return new Ship(s.getUniqueId(), name, center, box, vel, s);
     }
 
     /** Корабли, пересекающие мировую область. */

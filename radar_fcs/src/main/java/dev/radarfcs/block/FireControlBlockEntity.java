@@ -261,6 +261,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                 if (Double.isFinite(m.predictedMiss)) mt.putFloat("M", (float) m.predictedMiss);
                 if (m.targetId != null) engaged.add(m.targetId);
             }
+            // разброс CBC: отклонение направления до 0.0172*spread рад, т.е. примерно spread градусов
+            if (m.estimate != null && Double.isFinite(m.estimate.spread())) mt.putFloat("P", (float) (m.estimate.spread() * 0.987));
             mt.putInt("L", m.correction.shots());
             if (m.note != null) mt.putString("X", m.note);
             ml.add(mt);
@@ -323,6 +325,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                         String.format(Locale.ROOT, "%.1f", m.getFloat("M"))).withStyle(ChatFormatting.DARK_GRAY));
             }
             if (m.contains("X")) line.append(Component.literal(" (" + m.getString("X") + ")").withStyle(ChatFormatting.DARK_GRAY));
+            if (full && m.contains("P") && m.getFloat("P") >= 0.5f) line.append(Component.translatable("radar_fcs.report.spread",
+                    String.format(Locale.ROOT, "%.1f", m.getFloat("P"))).withStyle(m.getFloat("P") >= 2f ? ChatFormatting.GOLD : ChatFormatting.DARK_GRAY));
             if (full && m.getInt("L") > 0) line.append(Component.translatable("radar_fcs.report.learned", m.getInt("L"))
                     .withStyle(ChatFormatting.DARK_GRAY));
             out.add(line);

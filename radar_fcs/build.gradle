@@ -61,7 +61,8 @@ dependencies {
     // API Sable для игровых тестов (сборка корабля); в основной код не попадает
     gametestSable "maven.modrinth:sable:${sable_version}"
 
-    // -PfcsMinimal: только Create + CBC (проверка без Create Radars и Sable); -PfcsNoRadars: без Create Radars
+    // -PfcsMinimal: только Create + CBC (проверка без Create Radars и Sable); -PfcsNoRadars: без Create Radars;
+    // -PfcsNoCbcAt: без CBC Advanced Technologies
     devMods "maven.modrinth:create:${create_version}"
     devMods "maven.modrinth:create-big-cannons:${cbc_version}"
     devMods "maven.modrinth:rpl:${rpl_version}"
@@ -69,7 +70,7 @@ dependencies {
         if (!project.hasProperty('fcsNoRadars')) devMods "maven.modrinth:create-radars:${radars_runtime_version}"
         devMods "maven.modrinth:sable:${sable_version}"
         devMods "maven.modrinth:create-aeronautics:${aeronautics_version}"
-        devMods "maven.modrinth:create-big-cannons-advanced-technologies:${cbcat_version}"
+        if (!project.hasProperty('fcsNoCbcAt')) devMods "maven.modrinth:create-big-cannons-advanced-technologies:${cbcat_version}"
     }
 }
 
@@ -134,6 +135,7 @@ neoForge {
             type = 'gameTestServer'
             sourceSet = sourceSets.gametest
             systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+            if (project.hasProperty('fcsProbe')) systemProperty 'radarfcs.probe', 'true'
         }
     }
 

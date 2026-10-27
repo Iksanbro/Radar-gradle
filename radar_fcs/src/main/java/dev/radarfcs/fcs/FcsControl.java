@@ -36,6 +36,8 @@ public final class FcsControl {
     private static final DustParticleOptions MARK_TRACKED = new DustParticleOptions(new Vector3f(1.0f, 0.65f, 0.1f), 1.2f);
     private static final DustParticleOptions MARK_ENGAGED = new DustParticleOptions(new Vector3f(1.0f, 0.05f, 0.05f), 1.8f);
     private static final int SAFETY_CACHE_TICKS = 3;
+    /** Смещение точки встречи, после которого проверка линии огня повторяется сразу, блоков. */
+    private static final double SAFETY_RECHECK_BLOCKS = 0.75;
 
     private FcsControl() {}
 
@@ -209,16 +211,43 @@ public final class FcsControl {
         boolean big = kind != CbcMount.Kind.RAPID;
         Vec3 shotL = d.localBarrelDirection(big ? 0.0F : 1.0F);
         Vec3 shotW = shotL == null ? null : SableCompat.dirToWorld(ship, shotL);
-        double allowed = Math.max(target.hitRadius * 0.8 + 0.2,
-                m.distance * Math.tan(Math.toRadians(FcsConfig.FIRE_TOLERANCE.get())));
-        double margin = big ? 0 : FcsConfig.RAPID_SPREAD.get();
-        allowed += margin;
+        // Попадание CBC: отрезок полёта за тик задевает габарит цели, расширенный на половину размера снаряда.
+        // Габарит сущности известен точно - промах считаем до него (с небольшим запасом внутрь);
+        // у кораблей и контрапшенов - до центра с допуском по размеру.
+        CbcBallistics.Estimate est = m.estimate;
+        double reach = est != null ? est.reach() : CbcBallistics.Estimate.defaultReach(kind);
+        // разброс автопушки CBC: отклонение направления до 0.0172*spread рад по каждой оси; запас - половина этого
+        double spread = est != null ? est.spread() : Double.NaN;
+        double spreadBlocks = Double.isNaN(spread) ? 0.3 : 0.5 * 0.0172 * spread * m.distance;
+        double margin = big ? 0 : FcsConfig.RAPID_SPREAD.get() + spreadBlocks;
+        Vec half = null;
+        double allowed;
+        if (target.half != null) {
+            Vec th = target.half;
+            double minHalf = Math.min(th.x(), Math.min(th.y(), th.z())) + reach;
+            // запас внутрь габарита на ошибку прогноза: у автопушки промах стоит один патрон - небольшой;
+            // у большой пушки - на угловой допуск (перезарядка долгая, стрелять «впритирку» невыгодно)
+            double inset = big
+                    ? Math.min(0.5 * minHalf, 0.1 + m.distance * Math.tan(Math.toRadians(FcsConfig.FIRE_TOLERANCE.get())))
+                    : Math.min(0.15, 0.3 * minHalf);
+            double k = reach - inset;
+            half = new Vec(Math.max(0.05, th.x() + k), Math.max(0.05, th.y() + k), Math.max(0.05, th.z() + k));
+            allowed = margin;
+        } else {
+            allowed = Math.max(target.hitRadius * 0.8 + 0.2,
+                    m.distance * Math.tan(Math.toRadians(FcsConfig.FIRE_TOLERANCE.get()))) + margin;
+        }
         double missDist = Double.POSITIVE_INFINITY;
         if (shotW != null) {
             Vec sd = new Vec(shotW.x, shotW.y, shotW.z);
             Vec launch = muzzle.at(sd.normalize());
             int horizonTicks = (int) Math.ceil(sol.flightTicks() * 1.5) + 20;
-            missDist = BallisticSolver.miss(launch, sd, model, motion, big ? age : age + 1, horizonTicks, discrete).distance();
+            BallisticSolver.Miss mm = BallisticSolver.miss(launch, sd, model, motion, big ? age : age + 1, horizonTicks,
+                    discrete, half);
+            missDist = mm.distance();
+            m.predictedMissTick = mm.tick();
+            m.predictedLaunch = launch;
+            m.predictedDir = sd;
             m.aimError = sd.angleTo(sol.direction());
         } else {
             m.aimError = 180;
@@ -231,17 +260,21 @@ public final class FcsControl {
         // молодой трек или резкий манёвр: оценка движения ненадёжна - наводимся, но не стреляем
         if (target.observedSpan() < FcsConfig.FIRE_MIN_TRACK.get()) onTarget = false;
         if (target.residual > Math.max(Track.MANEUVER_RESIDUAL, target.hitRadius * 0.25)) onTarget = false;
-        boolean aligned = onTarget && !outOfArc;
+        // без вращения на нужном валу станок не довернуть: не стреляем, даже если цель случайно на линии огня
+        boolean aligned = onTarget && !outOfArc && !noPower;
         boolean loaded = m.estimate == null || m.estimate.loaded();
 
         FireSafety.Verdict verdict = FireSafety.Verdict.CLEAR;
         if (aligned) {
-            if (now - m.safetyTick >= SAFETY_CACHE_TICKS || !target.id.equals(m.safetyTarget)) {
+            // по быстрой цели точка встречи за тик уходит на блоки: проверку не кэшируем, если она сместилась
+            boolean moved = m.safetyAim == null || m.safetyAim.distance(sol.aimPoint()) > SAFETY_RECHECK_BLOCKS;
+            if (now - m.safetyTick >= SAFETY_CACHE_TICKS || moved || !target.id.equals(m.safetyTarget)) {
                 List<Vec> path = new ArrayList<>();
                 BallisticSolver.trajectory(sol, model, 2, path::add);
                 m.safety = FireSafety.check(level, path, sensor.all(), target, channel, platform);
                 m.safetyTick = now;
                 m.safetyTarget = target.id;
+                m.safetyAim = sol.aimPoint();
             }
             verdict = m.safety;
         }
@@ -260,7 +293,7 @@ public final class FcsControl {
         }
 
         if (outOfArc) m.status = Status.OUT_OF_ARC;
-        else if (!aligned && noPower) m.status = Status.NO_POWER;
+        else if (noPower) m.status = Status.NO_POWER;
         else if (!aligned) m.status = Status.AIMING;
         else if (verdict == FireSafety.Verdict.FRIENDLY) m.status = Status.BLOCKED_FRIENDLY;
         else if (verdict == FireSafety.Verdict.TERRAIN) m.status = Status.BLOCKED_TERRAIN;

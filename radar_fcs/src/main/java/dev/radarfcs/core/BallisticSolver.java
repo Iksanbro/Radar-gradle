@@ -210,8 +210,16 @@ public final class BallisticSolver {
         return best != null ? best : cont;
     }
 
-    /** Промах выстрела: наименьшее расстояние снаряд-цель, тик сближения и вектор от цели к снаряду в этот момент. */
+    /**
+     * Промах выстрела: наименьшее расстояние снаряд-цель (до центра цели или до её габарита), тик сближения
+     * и вектор от центра цели к снаряду в этот момент.
+     */
     public record Miss(double distance, double tick, Vec relative) {}
+
+    public static Miss miss(Vec launch, Vec dir, FlightModel m, TargetMotion target, double lagTicks, int maxTicks,
+                            boolean discrete) {
+        return miss(launch, dir, m, target, lagTicks, maxTicks, discrete, null);
+    }
 
     /**
      * Промах снаряда, вылетевшего из точки launch по направлению dir, по движущейся цели.
@@ -220,9 +228,11 @@ public final class BallisticSolver {
      * относительного движения внутри тика.
      *
      * @param lagTicks через сколько тиков после замера цели снаряд появится в launch
+     * @param half     полуразмеры габарита цели по осям: промах считается до габарита (0 - отрезок его задевает);
+     *                 null - до центра цели
      */
     public static Miss miss(Vec launch, Vec dir, FlightModel m, TargetMotion target, double lagTicks, int maxTicks,
-                            boolean discrete) {
+                            boolean discrete, Vec half) {
         Vec d = dir.normalize();
         Vec h = new Vec(d.x(), 0, d.z());
         double hl = h.length();
@@ -231,9 +241,12 @@ public final class BallisticSolver {
         double pitch = Math.asin(Math.max(-1, Math.min(1, d.y())));
         double vx = s * Math.cos(pitch), vy = s * Math.sin(pitch), x = 0, y = 0;
         Vec prevP = launch, prevT = target.predict(lagTicks);
-        double best = discrete ? Double.MAX_VALUE : prevP.distance(prevT), bestT = 0;
+        double best = discrete ? Double.MAX_VALUE : gap(prevP.sub(prevT), half), bestT = 0;
         Vec bestRel = prevP.sub(prevT);
         double prevGap = prevP.distanceSqr(prevT);
+        double reach = half == null ? 0 : half.length();
+        // допуск положения снаряда вдоль траектории: растёт с дальностью (ошибки скорости и сопротивления)
+        double alongTol = ALONG_TOL + ALONG_TOL_PER_BLOCK * launch.distance(target.predict(lagTicks));
         int away = 0;
         int max = Math.min(Math.max(1, maxTicks), Math.max(1, m.maxTicks()));
         for (int t = 0; t < max; t++) {
@@ -247,33 +260,77 @@ public final class BallisticSolver {
             vy += ay;
             Vec p = launch.add(h.scale(x)).add(new Vec(0, y, 0));
             Vec tp = target.predict(lagTicks + t + 1);
-            Vec c;
-            double u;
-            if (discrete) {
-                Vec seg = p.sub(prevP);
-                double l2 = seg.lengthSqr();
-                u = l2 < 1e-12 ? 1 : Math.max(0, Math.min(1, tp.sub(prevP).dot(seg) / l2));
-                c = prevP.add(seg.scale(u)).sub(tp);
-            } else {
-                Vec r0 = prevP.sub(prevT), r1 = p.sub(tp), seg = r1.sub(r0);
-                double l2 = seg.lengthSqr();
-                u = l2 < 1e-12 ? 0 : Math.max(0, Math.min(1, -r0.dot(seg) / l2));
-                c = r0.add(seg.scale(u));
-            }
+            // отрезок движения снаряда относительно цели за этот тик: r0 -> r1
+            Vec r0 = discrete ? prevP.sub(tp) : prevP.sub(prevT), r1 = p.sub(tp), seg = r1.sub(r0);
+            double l2 = seg.lengthSqr();
+            // Потиково: встреча у самого конца или начала отрезка неустойчива - ошибка положения снаряда
+            // вдоль траектории в доли блока переносит её на соседний тик, где цель уже в другом месте.
+            // Такие точки отрезка не считаем.
+            double e = discrete && l2 > 1e-12 ? Math.min(0.45, alongTol / Math.sqrt(l2)) : 0;
+            double u = l2 < 1e-12 ? 1 : Math.max(e, Math.min(1 - e, -r0.dot(seg) / l2));
+            Vec c = r0.add(seg.scale(u));
             double dist = c.length();
+            if (half != null && dist - reach < best) {
+                // расстояние до прямоугольного габарита выпукло вдоль отрезка: золотое сечение
+                double lo = e, hi = 1 - e;
+                for (int it = 0; it < 30; it++) {
+                    double a1 = hi - (hi - lo) * 0.618034, a2 = lo + (hi - lo) * 0.618034;
+                    if (gap(r0.add(seg.scale(a1)), half) <= gap(r0.add(seg.scale(a2)), half)) hi = a2;
+                    else lo = a1;
+                }
+                u = 0.5 * (lo + hi);
+                c = r0.add(seg.scale(u));
+                dist = gap(c, half);
+            }
             if (dist < best) {
                 best = dist;
                 bestT = t + u;
                 bestRel = c;
             }
-            double gap = p.distanceSqr(tp);
-            away = gap > prevGap ? away + 1 : 0;
+            double gp = p.distanceSqr(tp);
+            away = gp > prevGap ? away + 1 : 0;
             if (away >= 4 && t > 2) break;                         // снаряд уже удаляется от цели
-            prevGap = gap;
+            prevGap = gp;
             prevP = p;
             prevT = tp;
         }
         return new Miss(best, bestT, bestRel);
+    }
+
+    /** Расстояние от точки (относительно центра цели) до габарита с полуразмерами half; без габарита - до центра. */
+    /** Положения снаряда на конец каждого из n тиков полёта (тот же интегратор, что в miss). */
+    public static java.util.List<Vec> positions(Vec launch, Vec dir, FlightModel m, int n) {
+        java.util.List<Vec> out = new java.util.ArrayList<>();
+        Vec d = dir.normalize();
+        Vec h = new Vec(d.x(), 0, d.z());
+        double hl = h.length();
+        h = hl < 1e-9 ? new Vec(1, 0, 0) : h.scale(1 / hl);
+        double s = m.muzzleSpeed(), pitch = Math.asin(Math.max(-1, Math.min(1, d.y())));
+        double vx = s * Math.cos(pitch), vy = s * Math.sin(pitch), x = 0, y = 0;
+        out.add(launch);
+        for (int t = 0; t < n; t++) {
+            double sp = Math.hypot(vx, vy);
+            if (sp < 1e-6) break;
+            double al = m.along(t, sp), g = m.vertical(t);
+            double ax = vx / sp * al, ay = vy / sp * al + g;
+            x += vx + 0.5 * ax;
+            y += vy + 0.5 * ay;
+            vx += ax;
+            vy += ay;
+            out.add(launch.add(h.scale(x)).add(new Vec(0, y, 0)));
+        }
+        return out;
+    }
+
+    /** Допуск положения снаряда вдоль траектории в потиковом расчёте: постоянная часть и рост с дальностью, блоков. */
+    static final double ALONG_TOL = 0.15, ALONG_TOL_PER_BLOCK = 0.002;
+
+    public static double gap(Vec rel, Vec half) {
+        if (half == null) return rel.length();
+        double dx = Math.max(0, Math.abs(rel.x()) - half.x());
+        double dy = Math.max(0, Math.abs(rel.y()) - half.y());
+        double dz = Math.max(0, Math.abs(rel.z()) - half.z());
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     /** Точки траектории решения в мировых координатах (каждые step тиков, включая конечную). */

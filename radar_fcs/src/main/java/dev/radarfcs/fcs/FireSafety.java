@@ -2,6 +2,7 @@ package dev.radarfcs.fcs;
 
 import dev.radarfcs.FcsConfig;
 import dev.radarfcs.compat.SableCompat;
+import dev.radarfcs.core.BallisticSolver;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.core.Vec;
 import dev.radarfcs.iff.IffRegistry;
@@ -79,12 +80,17 @@ public final class FireSafety {
         return false;
     }
 
-    /** Блоки на траектории до цели. Попадание в блок у самой цели (на ней или за ней) не считается помехой. */
+    /**
+     * Блоки на траектории до цели. Попадание в блок у самой цели (на ней или за ней) не считается помехой.
+     * У цели с точным габаритом (мобы, игроки) «у самой цели» - в полублоке от габарита: блок перед ней
+     * (край стены, за которой пролетает цель) - помеха.
+     */
     private static boolean terrainBlocked(ServerLevel level, List<Vec> path, Track target) {
         Vec end = path.get(path.size() - 1);
         double total = 0;
         for (int i = 0; i + 1 < path.size(); i++) total += path.get(i).distance(path.get(i + 1));
-        double allowedNearTarget = target.hitRadius + 2.0;
+        Vec half = target.half;
+        double allowedNearTarget = half != null ? 0.5 + Math.max(half.x(), half.z()) : target.hitRadius + 2.0;
         Vec start = path.get(0);
         Vec first = path.get(1).sub(start);
         double firstLen = first.length();
@@ -98,7 +104,9 @@ public final class FireSafety {
                     ClipContext.Fluid.NONE, CollisionContext.empty()));
             if (hit.getType() == HitResult.Type.BLOCK) {
                 Vec h = new Vec(hit.getLocation().x, hit.getLocation().y, hit.getLocation().z);
-                if (h.distance(end) > allowedNearTarget && travelled + a.distance(h) < total - allowedNearTarget) return true;
+                double nearEnd = half != null ? BallisticSolver.gap(h.sub(end), half) : h.distance(end);
+                double nearAllowed = half != null ? 0.5 : allowedNearTarget;
+                if (nearEnd > nearAllowed && travelled + a.distance(h) < total - allowedNearTarget) return true;
             }
             travelled += a.distance(b);
             a = b;

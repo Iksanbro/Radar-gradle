@@ -337,7 +337,8 @@ public class FcsGameTests {
                 sb.append(String.format(" [%s %s yaw=%.1f pitch=%.1f err=%.2f miss=%.2f allowed=%.2f dist=%.1f learned=%d shots=%d muzzle=%.2f ammo=%s note=%s speedx=%.3f]",
                         m.mount == null ? "?" : m.mount.typeName(), m.status, m.cmdYaw, m.cmdPitch, m.aimError, m.predictedMiss, m.tolerance,
                         m.distance, m.correction.shots(), m.shotsSeen, m.learnedMuzzle,
-                        m.estimate == null ? "-" : m.estimate.ammo() + (m.estimate.loaded() ? "" : "(empty)") + " v=" + String.format("%.2f", m.estimate.model().muzzleSpeed()),
+                        m.estimate == null ? "-" : m.estimate.ammo() + (m.estimate.loaded() ? "" : "(empty)") + " v=" + String.format("%.2f", m.estimate.model().muzzleSpeed())
+                                + " spread=" + String.format("%.2f", m.estimate.spread()) + " reach=" + String.format("%.2f", m.estimate.reach()),
                         m.note, m.correction.speedRatio()));
             }
             FcsMod.LOG.info("[radar_fcs test] {} t={} targets={} tracks={}{}", name, t, be.sensor().active().size(),
@@ -513,6 +514,106 @@ public class FcsGameTests {
         return n;
     }
 
+    /**
+     * Диагностика: для каждого снаряда - расчётный промах и тик встречи на момент выстрела, фактический путь
+     * против положений цели, попадание (по событию урона), ошибка расчётного пути вдоль и поперёк траектории
+     * и блок, в который снаряд упёрся при промахе.
+     */
+    static void shotDirectionProbe(GameTestHelper h, FireControlBlockEntity be, BlockPos mountRel, Mob target) {
+        java.util.ArrayDeque<double[]> hist = new java.util.ArrayDeque<>();     // {predictedMiss, predictedTick}
+        java.util.Map<Integer, java.util.List<Vec3>> paths = new java.util.HashMap<>();
+        java.util.Map<Integer, Integer> spawnTick = new java.util.HashMap<>();
+        java.util.Map<Integer, double[]> pred = new java.util.HashMap<>();
+        java.util.Map<Integer, AABB> boxes = new java.util.HashMap<>();       // габарит цели в конце тика
+        java.util.Map<Integer, java.util.List<dev.radarfcs.core.Vec>> predPath = new java.util.HashMap<>();
+        dev.radarfcs.core.Vec[] prevLaunch = new dev.radarfcs.core.Vec[2];
+        Vec3 c = h.absoluteVec(Vec3.atCenterOf(mountRel));
+        AtomicInteger tick = new AtomicInteger();
+        java.util.Map<Integer, String> hitInfo = new java.util.HashMap<>();
+        onProjectileHit(target, () -> {
+            AbstractCannonProjectile best = nearestProjectile(h, target);
+            if (best == null) return;
+            java.util.List<Vec3> path = paths.get(best.getId());
+            Integer s0 = spawnTick.get(best.getId());
+            hitInfo.put(best.getId(), String.format(java.util.Locale.ROOT, "HIT in tick %d (seg %d, path %s) at %s v %s box %s", tick.get(),
+                    s0 == null ? -1 : tick.get() - s0, path == null ? "?" : String.valueOf(path.size()), best.position(),
+                    best.getDeltaMovement(), target.getBoundingBox()));
+        });
+        h.onEachTick(() -> {
+            int t = tick.getAndIncrement();
+            if (be.mountStates().isEmpty()) return;
+            MountState m = be.mountStates().get(0);
+            boxes.put(t, target.getBoundingBox());
+            for (AbstractCannonProjectile p : h.getLevel().getEntitiesOfClass(AbstractCannonProjectile.class, new AABB(c, c).inflate(120))) {
+                paths.computeIfAbsent(p.getId(), k -> {
+                    spawnTick.put(k, t);
+                    double[] prev = hist.peekFirst();
+                    pred.put(k, prev == null ? new double[]{-1, -1} : prev.clone());
+                    predPath.put(k, prevLaunch[0] == null ? null : dev.radarfcs.core.BallisticSolver.positions(prevLaunch[0], prevLaunch[1], m.flightModel(), 12));
+                    return new java.util.ArrayList<>();
+                }).add(p.position());
+            }
+            paths.entrySet().removeIf(en -> {
+                if (h.getLevel().getEntity(en.getKey()) != null) return false;
+                int s0 = spawnTick.get(en.getKey());
+                java.util.List<Vec3> path = en.getValue();
+                // сегмент k (из позиции конца тика s0+k-1 в s0+k) против цели в конце тика s0+k-1+d, d = -1..1
+                StringBuilder sb = new StringBuilder();
+                for (int d = -1; d <= 1; d++) {
+                    double best = Double.MAX_VALUE;
+                    int bestK = -1;
+                    for (int k = 1; k < path.size(); k++) {
+                        AABB box = boxes.get(s0 + k - 1 + d);
+                        if (box == null) continue;
+                        Vec3 a = path.get(k - 1), b = path.get(k);
+                        for (int i = 0; i <= 20; i++) {
+                            Vec3 q = a.lerp(b, i / 20.0);
+                            double dx = Math.max(0, Math.max(box.minX - q.x, q.x - box.maxX));
+                            double dy = Math.max(0, Math.max(box.minY - q.y, q.y - box.maxY));
+                            double dz = Math.max(0, Math.max(box.minZ - q.z, q.z - box.maxZ));
+                            double g = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                            if (g < best) { best = g; bestK = k; }
+                        }
+                    }
+                    sb.append(String.format(java.util.Locale.ROOT, " d=%d gap %.2f (seg %d);", d, best, bestK));
+                }
+                double[] pr = pred.get(en.getKey());
+                FcsMod.LOG.info("[radar_fcs test] probe round #{} spawned t={}: predicted miss {} at {} |{} {}", en.getKey(), s0,
+                        String.format(java.util.Locale.ROOT, "%.2f", pr[0]), String.format(java.util.Locale.ROOT, "%.2f", pr[1]), sb,
+                        hitInfo.getOrDefault(en.getKey(), "miss"));
+                java.util.List<dev.radarfcs.core.Vec> pp = predPath.get(en.getKey());
+                if (pp != null) {
+                    // ошибка расчётного положения снаряда: вдоль траектории и поперёк, по тикам (k=0 - точка появления)
+                    StringBuilder eb = new StringBuilder();
+                    for (int k = 0; k < Math.min(path.size(), pp.size()); k++) {
+                        Vec3 a = path.get(k);
+                        dev.radarfcs.core.Vec q = pp.get(k);
+                        Vec3 dq = new Vec3(a.x - q.x(), a.y - q.y(), a.z - q.z());
+                        Vec3 dirk = k + 1 < pp.size() ? new Vec3(pp.get(k + 1).x() - q.x(), pp.get(k + 1).y() - q.y(), pp.get(k + 1).z() - q.z()).normalize()
+                                : new Vec3(q.x() - pp.get(k - 1).x(), q.y() - pp.get(k - 1).y(), q.z() - pp.get(k - 1).z()).normalize();
+                        double along = dq.dot(dirk), across = dq.subtract(dirk.scale(along)).length();
+                        eb.append(String.format(java.util.Locale.ROOT, " %d:%+.2f/%.2f", k, along, across));
+                    }
+                    FcsMod.LOG.info("[radar_fcs test] probe   path error along/across:{}", eb);
+                    if (!hitInfo.containsKey(en.getKey()) && path.size() >= 2) {
+                        Vec3 a = path.get(path.size() - 2), b = path.get(path.size() - 1);
+                        Vec3 far = a.add(b.subtract(a).normalize().scale(12));
+                        var bh = h.getLevel().clip(new net.minecraft.world.level.ClipContext(a, far,
+                                net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE,
+                                net.minecraft.world.phys.shapes.CollisionContext.empty()));
+                        FcsMod.LOG.info("[radar_fcs test] probe   miss end {} -> block {} at {} ({}), target box {}", b, bh.getType(),
+                                bh.getLocation(), h.getLevel().getBlockState(bh.getBlockPos()), target.getBoundingBox());
+                    }
+                }
+                return true;
+            });
+            hist.addFirst(new double[]{m.predictedMiss, m.predictedMissTick});
+            prevLaunch[0] = m.predictedLaunch;
+            prevLaunch[1] = m.predictedDir;
+            while (hist.size() > 4) hist.removeLast();
+        });
+    }
+
     /** Попадания по цели: события урона от снарядов CBC. */
     static AtomicInteger countHits(GameTestHelper h, Mob target) {
         AtomicInteger hits = new AtomicInteger();
@@ -524,7 +625,29 @@ public class FcsGameTests {
     static final java.util.Map<net.minecraft.world.entity.Entity, java.util.function.Consumer<net.minecraft.world.entity.Entity>> HITS =
             java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
+    /** Обработчики попадания снаряда CBC по цели (вызываются во время тика снаряда - он ещё рядом с целью). */
+    static final java.util.Map<net.minecraft.world.entity.Entity, java.util.List<Runnable>> PROBE_HITS =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    static void onProjectileHit(net.minecraft.world.entity.Entity target, Runnable r) {
+        PROBE_HITS.computeIfAbsent(target, k -> new java.util.ArrayList<>()).add(r);
+    }
+
+    /** Снаряд CBC, ближайший к цели (в момент урона это тот, что попал). */
+    @org.jetbrains.annotations.Nullable
+    static AbstractCannonProjectile nearestProjectile(GameTestHelper h, net.minecraft.world.entity.Entity target) {
+        AbstractCannonProjectile best = null;
+        for (AbstractCannonProjectile p : h.getLevel().getEntitiesOfClass(AbstractCannonProjectile.class, target.getBoundingBox().inflate(12))) {
+            if (best == null || p.distanceToSqr(target) < best.distanceToSqr(target)) best = p;
+        }
+        return best;
+    }
+
     static void onDamage(net.neoforged.neoforge.event.entity.living.LivingDamageEvent.Post e) {
+        if (e.getSource().getMsgId().startsWith("createbigcannons")) {
+            var rs = PROBE_HITS.get(e.getEntity());
+            if (rs != null) for (Runnable r : java.util.List.copyOf(rs)) r.run();
+        }
         var l = HITS.get(e.getEntity());
         if (l == null) return;
         // урон снарядов CBC приходит без прямой сущности; удушье в блоках и пр. не считаем
@@ -535,11 +658,42 @@ public class FcsGameTests {
      * Автопушка по живучей цели (здоровье 2000), летящей по прямой туда-обратно: 300 тиков огня,
      * в лог - доля попаданий. Тест проходит, если попала хотя бы четверть снарядов (и не меньше 3).
      */
+    /**
+     * Убрать барьеры в зоне полёта (координаты площадки): игровые тесты огораживают свои площадки барьерами,
+     * и старые площадки остаются в мире. Быстрая цель-манекен летит далеко за край площадки сквозь эти стены,
+     * а снаряды в них упираются (в игре цель сквозь блоки не летает).
+     */
+    static void removeBarriers(GameTestHelper h, BlockPos fromRel, BlockPos toRel) {
+        BlockPos a = h.absolutePos(fromRel), b = h.absolutePos(toRel);
+        ServerLevel l = h.getLevel();
+        int x0 = Math.min(a.getX(), b.getX()), x1 = Math.max(a.getX(), b.getX());
+        int y0 = Math.min(a.getY(), b.getY()), y1 = Math.max(a.getY(), b.getY());
+        int z0 = Math.min(a.getZ(), b.getZ()), z1 = Math.max(a.getZ(), b.getZ());
+        BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
+        for (int cx = x0 >> 4; cx <= x1 >> 4; cx++) for (int cz = z0 >> 4; cz <= z1 >> 4; cz++) {
+            var chunk = l.getChunk(cx, cz);
+            for (int sy = l.getSectionIndex(y0); sy <= l.getSectionIndex(y1); sy++) {
+                if (sy < 0 || sy >= chunk.getSections().length) continue;
+                var section = chunk.getSections()[sy];
+                if (section.hasOnlyAir() || !section.maybeHas(st -> st.is(Blocks.BARRIER))) continue;
+                int by = l.getSectionYFromSectionIndex(sy) << 4;
+                for (int x = Math.max(x0, cx << 4); x <= Math.min(x1, (cx << 4) + 15); x++)
+                    for (int z = Math.max(z0, cz << 4); z <= Math.min(z1, (cz << 4) + 15); z++)
+                        for (int y = Math.max(y0, by); y <= Math.min(y1, by + 15); y++) {
+                            p.set(x, y, z);
+                            if (l.getBlockState(p).is(Blocks.BARRIER)) l.setBlock(p, Blocks.AIR.defaultBlockState(), 2);
+                        }
+            }
+        }
+    }
+
     private static void fastAutocannon(GameTestHelper h, String name, Vec3 startRel, Vec3 vel, int leg) {
         floor(h);
         autocannon(h, new BlockPos(10, 1, 32), Direction.EAST, 4, 512);
         FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 28));
         Vec3 endRel = startRel.add(vel.scale(leg));
+        removeBarriers(h, BlockPos.containing(Math.min(0, Math.min(startRel.x, endRel.x)) - 4, 1, Math.min(startRel.z, endRel.z) - 8),
+                BlockPos.containing(Math.max(startRel.x, endRel.x) + 8, Math.max(startRel.y, endRel.y) + 6, Math.max(startRel.z, endRel.z) + 8));
         forceArea(h, BlockPos.containing(Math.min(startRel.x, endRel.x) - 16, 0, Math.min(startRel.z, endRel.z) - 16),
                 BlockPos.containing(Math.max(startRel.x, endRel.x) + 16, 0, Math.max(startRel.z, endRel.z) + 16));
         Mob target = linearTarget(h, EntityType.HUSK, startRel, vel, leg);
@@ -548,10 +702,37 @@ public class FcsGameTests {
         target.setHealth(target.getMaxHealth());
         logEvery(h, be, name, 10);
         AtomicInteger hits = countHits(h, target), rounds = countRounds(h, new BlockPos(10, 1, 32));
+        // подробный разбор каждого снаряда (расчёт против факта): ./gradlew runGameTestServer -PfcsProbe
+        if (Boolean.getBoolean("radarfcs.probe")) shotDirectionProbe(h, be, new BlockPos(10, 1, 32), target);
+        // Цель-манекен разворачивается мгновенно (настоящая так не умеет): снаряды, которые в этот момент уже
+        // летят, промахиваются при любом расчёте. Отдельно считаем снаряды, выпущенные не в такой момент.
+        java.util.Map<Integer, Integer> spawned = new java.util.HashMap<>();
+        java.util.Set<Integer> hitIds = new java.util.HashSet<>();
+        AtomicInteger tick = new AtomicInteger();
+        Vec3 mc = h.absoluteVec(Vec3.atCenterOf(new BlockPos(10, 1, 32)));
+        h.onEachTick(() -> {
+            int t = tick.getAndIncrement();
+            for (AbstractCannonProjectile p : h.getLevel().getEntitiesOfClass(AbstractCannonProjectile.class, new AABB(mc, mc).inflate(160)))
+                spawned.putIfAbsent(p.getId(), t);
+        });
+        onProjectileHit(target, () -> {
+            AbstractCannonProjectile p = nearestProjectile(h, target);
+            if (p != null) hitIds.add(p.getId());
+        });
         h.runAtTickTime(300, () -> {
             double rate = rounds.get() == 0 ? 0 : 100.0 * hits.get() / rounds.get();
-            FcsMod.LOG.info("[radar_fcs test] {}: {} hits of {} rounds ({}%) on a {} m/s target", name, hits.get(), rounds.get(),
-                    String.format(java.util.Locale.ROOT, "%.0f", rate), Math.round(vel.length() * 20));
+            int clear = 0, clearHits = 0;
+            for (var en : spawned.entrySet()) {
+                int s0 = en.getValue();
+                boolean reversal = false;
+                for (int r = leg; r <= 300 + leg; r += leg) if (r >= s0 - 1 && r <= s0 + 12) reversal = true;
+                if (reversal) continue;
+                clear++;
+                if (hitIds.contains(en.getKey())) clearHits++;
+            }
+            FcsMod.LOG.info("[radar_fcs test] {}: {} hits of {} rounds ({}%) on a {} m/s target; fired clear of target reversals: {} of {} ({}%)",
+                    name, hits.get(), rounds.get(), String.format(java.util.Locale.ROOT, "%.0f", rate), Math.round(vel.length() * 20),
+                    clearHits, clear, String.format(java.util.Locale.ROOT, "%.0f", clear == 0 ? 0 : 100.0 * clearHits / clear));
             if (hits.get() < 3 || rate < 25) h.fail(name + ": " + hits.get() + " hits of " + rounds.get() + " rounds");
             h.succeed();
         });
@@ -586,18 +767,25 @@ public class FcsGameTests {
             return;
         }
         floor(h);
+        removeBarriers(h, new BlockPos(0, 1, -80), new BlockPos(70, 24, 130));
         for (int z : new int[]{20, 32, 44}) bigCannon(h, new BlockPos(10, 1, z), Direction.EAST, 4, 4, true);
         FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 30));
         forceArea(h, new BlockPos(30, 0, -80), new BlockPos(60, 0, 130));
         Object sub = SableTestSupport.ship(h, new BlockPos(45, 9, -60), 3, new Vec3(0, 0, 3.5), 175, false);
         logEvery(h, be, "fastship", 5);
         AtomicInteger hits = SableTestSupport.watchShipHits(h, sub, "fastship");
+        if (Boolean.getBoolean("radarfcs.probe")) SableTestSupport.probeShip(h, sub, be);
         AtomicInteger tick = new AtomicInteger();
         h.onEachTick(tick::incrementAndGet);
+        // ждём, пока выстрелят все три пушки и долетят снаряды (полёт - до 10 тиков), затем считаем попадания
+        AtomicInteger allFiredAt = new AtomicInteger(-1);
         h.succeedWhen(() -> {
             int fired = 0;
             for (MountState m : be.mountStates()) if (m.shotsSeen > 0) fired++;
-            if (hits.get() == 0 || (fired < 3 && tick.get() < 250)) throw new GameTestAssertException("fast ship: hits " + hits.get());
+            if (fired >= 3 && allFiredAt.get() < 0) allFiredAt.set(tick.get());
+            boolean settled = allFiredAt.get() >= 0 && tick.get() - allFiredAt.get() >= 20;
+            if (!settled && tick.get() < 300) throw new GameTestAssertException("fast ship: waiting for shots, fired " + fired);
+            if (hits.get() == 0) throw new GameTestAssertException("fast ship: hits 0 of " + fired);
             FcsMod.LOG.info("[radar_fcs test] fastship: {} hits of {} shots on a 70 m/s ship", hits.get(), fired);
         });
     }
