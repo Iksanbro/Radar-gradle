@@ -103,6 +103,10 @@ public final class Track {
 
     /** Взвешенная средняя невязка замеров окна относительно текущей оценки (у наземных целей - по горизонтали). */
     private double residual(int windowTicks) {
+        return residualOf(pos, fitVel, acc, windowTicks);
+    }
+
+    private double residualOf(Vec p0, Vec v, Vec a, int windowTicks) {
         int last = (head - 1 + CAP) % CAP;
         long t0 = ht[last];
         double tau = Math.max(2.0, windowTicks * 0.5), sw = 0, sr = 0;
@@ -112,10 +116,9 @@ public final class Track {
             double dt = ht[i] - t0;
             if (-dt > windowTicks && n >= 2) break;
             double w = Math.exp(dt / tau);
-            double px = pos.x() + fitVel.x() * dt + 0.5 * acc.x() * dt * dt;
-            double py = pos.y() + fitVel.y() * dt + 0.5 * acc.y() * dt * dt;
-            double pz = pos.z() + fitVel.z() * dt + 0.5 * acc.z() * dt * dt;
-            double ex = hx[i] - px, ey = grounded ? 0 : hy[i] - py, ez = hz[i] - pz;
+            double ex = hx[i] - (p0.x() + v.x() * dt + 0.5 * a.x() * dt * dt);
+            double ey = grounded ? 0 : hy[i] - (p0.y() + v.y() * dt + 0.5 * a.y() * dt * dt);
+            double ez = hz[i] - (p0.z() + v.z() * dt + 0.5 * a.z() * dt * dt);
             sr += w * (ex * ex + ey * ey + ez * ez);
             sw += w;
             n++;
@@ -123,6 +126,11 @@ public final class Track {
         return n < 3 || sw <= 0 ? 0 : Math.sqrt(sr / sw);
     }
 
+    /**
+     * Взвешенный МНК по окну. Считаются две модели - равномерное движение и движение с ускорением;
+     * ускорение берётся, только если оно заметно лучше объясняет замеры (иначе это шум, а не манёвр:
+     * экстраполяция шумового ускорения на время полёта снаряда уводит прицел на блоки).
+     */
     private void fitWindow(int windowTicks, double maxAccel) {
         int last = (head - 1 + CAP) % CAP;
         long t0 = ht[last];
@@ -146,13 +154,20 @@ public final class Track {
             n++;
         }
         long span = t0 - minT;
-        if (n < 2 || span <= 0) {
+        double det = s0 * s2 - s1 * s1;
+        if (n < 2 || span <= 0 || Math.abs(det) < 1e-12) {
+            fitVel = Vec.ZERO;
             vel = knownVel != null ? knownVel : Vec.ZERO;
             acc = Vec.ZERO;
             return;
         }
+        // равномерное движение
+        double vx = (s0 * rx1 - s1 * rx0) / det, vy = (s0 * ry1 - s1 * ry0) / det, vz = (s0 * rz1 - s1 * rz0) / det;
+        Vec cvPos = new Vec(bx + (rx0 - vx * s1) / s0, by + (ry0 - vy * s1) / s0, bz + (rz0 - vz * s1) / s0);
+        Vec cvVel = new Vec(vx, vy, vz);
+        Vec p = cvPos, v = cvVel, a = Vec.ZERO;
         if (n >= 5 && span >= 6) {
-            // базис (1, t, t²/2): решаем 3x3 систему нормальных уравнений
+            // с ускорением: базис (1, t, t²/2), 3x3 система нормальных уравнений
             double[][] m = {
                     {s0, s1, s2 / 2},
                     {s1, s2, s3 / 2},
@@ -161,28 +176,24 @@ public final class Track {
             double[] py = solve3(m, ry0, ry1, ry2 / 2);
             double[] pz = solve3(m, rz0, rz1, rz2 / 2);
             if (px != null && py != null && pz != null) {
-                pos = new Vec(bx + px[0], by + py[0], bz + pz[0]);
-                vel = new Vec(px[1], py[1], pz[1]);
-                fitVel = vel;
-                Vec a = new Vec(px[2], py[2], pz[2]);
-                double al = a.length();
-                acc = al > maxAccel ? a.scale(maxAccel / al) : a;
-                if (knownVel != null) vel = knownVel;
-                return;
+                Vec caPos = new Vec(bx + px[0], by + py[0], bz + pz[0]);
+                Vec caVel = new Vec(px[1], py[1], pz[1]);
+                Vec caAcc = new Vec(px[2], py[2], pz[2]);
+                double al = caAcc.length();
+                if (al > maxAccel) caAcc = caAcc.scale(maxAccel / al);
+                double rcv = residualOf(cvPos, cvVel, Vec.ZERO, windowTicks);
+                double rca = residualOf(caPos, caVel, caAcc, windowTicks);
+                if (rcv > 0.05 && rca < 0.6 * rcv) {
+                    p = caPos;
+                    v = caVel;
+                    a = caAcc;
+                }
             }
         }
-        double det = s0 * s2 - s1 * s1;
-        if (Math.abs(det) < 1e-12) {
-            vel = knownVel != null ? knownVel : Vec.ZERO;
-            acc = Vec.ZERO;
-            return;
-        }
-        double vx = (s0 * rx1 - s1 * rx0) / det, vy = (s0 * ry1 - s1 * ry0) / det, vz = (s0 * rz1 - s1 * rz0) / det;
-        double px = (rx0 - vx * s1) / s0, py = (ry0 - vy * s1) / s0, pz = (rz0 - vz * s1) / s0;
-        pos = new Vec(bx + px, by + py, bz + pz);
-        fitVel = new Vec(vx, vy, vz);
-        vel = knownVel != null ? knownVel : fitVel;
-        acc = Vec.ZERO;
+        pos = p;
+        fitVel = v;
+        acc = a;
+        vel = knownVel != null ? knownVel : v;
     }
 
     private static double[] solve3(double[][] a, double b0, double b1, double b2) {

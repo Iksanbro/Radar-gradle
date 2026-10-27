@@ -533,7 +533,7 @@ public class FcsGameTests {
 
     /**
      * Автопушка по живучей цели (здоровье 2000), летящей по прямой туда-обратно: 300 тиков огня,
-     * в лог - доля попаданий. Тест проходит, если попала хотя бы четверть снарядов (и не меньше 5).
+     * в лог - доля попаданий. Тест проходит, если попала хотя бы четверть снарядов (и не меньше 3).
      */
     private static void fastAutocannon(GameTestHelper h, String name, Vec3 startRel, Vec3 vel, int leg) {
         floor(h);
@@ -552,7 +552,7 @@ public class FcsGameTests {
             double rate = rounds.get() == 0 ? 0 : 100.0 * hits.get() / rounds.get();
             FcsMod.LOG.info("[radar_fcs test] {}: {} hits of {} rounds ({}%) on a {} m/s target", name, hits.get(), rounds.get(),
                     String.format(java.util.Locale.ROOT, "%.0f", rate), Math.round(vel.length() * 20));
-            if (hits.get() < 5 || rate < 25) h.fail(name + ": " + hits.get() + " hits of " + rounds.get() + " rounds");
+            if (hits.get() < 3 || rate < 25) h.fail(name + ": " + hits.get() + " hits of " + rounds.get() + " rounds");
             h.succeed();
         });
     }

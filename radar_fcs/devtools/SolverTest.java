@@ -199,6 +199,16 @@ public class SolverTest {
         }
         System.out.printf(Locale.ROOT, "maneuver: reversal at 5 b/t, velocity recovered after %d ticks, flagged %d ticks%n", recovered, flagged);
         if (recovered < 0 || recovered > 8) { failures++; System.out.println("  FAIL: slow recovery after reversal"); }
+        // настоящее ускорение (разгон 0.05 бл/тик²) должно распознаваться, несмотря на выбор модели
+        table.clear();
+        Random r = new Random(5);
+        for (int tick = 1; tick <= 20; tick++) {
+            double z = 1.0 * tick + 0.5 * 0.05 * tick * tick;
+            t = table.observe("a", Track.Kind.MOB, "a", p.add(new Vec(r.nextGaussian() * 0.02, 0, z + r.nextGaussian() * 0.02)), 0.5, tick,
+                    false, null, TrackTable.Settings.DEFAULT);
+        }
+        System.out.printf(Locale.ROOT, "acceleration: estimated %.4f (true 0.0500), velocity %.3f (true %.3f)%n", t.acc.z(), t.vel.z(), 1.0 + 0.05 * 20);
+        if (Math.abs(t.acc.z() - 0.05) > 0.01) { failures++; System.out.println("  FAIL: acceleration not detected"); }
     }
 
     public static void main(String[] a) {
