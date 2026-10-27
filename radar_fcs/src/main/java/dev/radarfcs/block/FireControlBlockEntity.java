@@ -253,10 +253,12 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             mt.putInt("S", m.status.ordinal());
             mt.putString("N", m.mount == null ? "?" : m.mount.typeName());
             if (m.targetName != null && (m.status == Status.FIRE || m.status == Status.AIMING || m.status == Status.HOLD
-                    || m.status == Status.BLOCKED_FRIENDLY || m.status == Status.BLOCKED_TERRAIN || m.status == Status.NO_AMMO)) {
+                    || m.status == Status.BLOCKED_FRIENDLY || m.status == Status.BLOCKED_TERRAIN || m.status == Status.NO_AMMO
+                    || m.status == Status.NO_POWER)) {
                 mt.putString("T", m.targetName);
                 mt.putFloat("D", (float) m.distance);
                 mt.putFloat("E", (float) m.aimError);
+                if (Double.isFinite(m.predictedMiss)) mt.putFloat("M", (float) m.predictedMiss);
                 if (m.targetId != null) engaged.add(m.targetId);
             }
             mt.putInt("L", m.correction.shots());
@@ -317,8 +319,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             if (m.contains("T")) {
                 line.append(Component.translatable("radar_fcs.report.engaging", m.getString("T"),
                         String.format(Locale.ROOT, "%.0f", m.getFloat("D"))).withStyle(ChatFormatting.WHITE));
-                if (full) line.append(Component.literal(String.format(Locale.ROOT, " (%.2f°)", m.getFloat("E")))
-                        .withStyle(ChatFormatting.DARK_GRAY));
+                if (full && m.contains("M")) line.append(Component.translatable("radar_fcs.report.miss",
+                        String.format(Locale.ROOT, "%.1f", m.getFloat("M"))).withStyle(ChatFormatting.DARK_GRAY));
             }
             if (m.contains("X")) line.append(Component.literal(" (" + m.getString("X") + ")").withStyle(ChatFormatting.DARK_GRAY));
             if (full && m.getInt("L") > 0) line.append(Component.translatable("radar_fcs.report.learned", m.getInt("L"))

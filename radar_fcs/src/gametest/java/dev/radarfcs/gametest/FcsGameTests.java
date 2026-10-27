@@ -69,7 +69,22 @@ public class FcsGameTests {
     /** Вычислители, созданные тестами: после партии их убираем, чтобы они не стреляли по соседним тестам. */
     static final java.util.List<BlockPos> CREATED = new java.util.ArrayList<>();
 
+    /** Чанки, загруженные тестами принудительно (трассы быстрых целей выходят за площадку теста); остаются загруженными. */
+    static final java.util.List<long[]> FORCED = new java.util.ArrayList<>();
+
+    static void forceArea(GameTestHelper h, BlockPos fromRel, BlockPos toRel) {
+        BlockPos a = h.absolutePos(fromRel), b = h.absolutePos(toRel);
+        ServerLevel l = h.getLevel();
+        for (int cx = Math.min(a.getX(), b.getX()) >> 4; cx <= Math.max(a.getX(), b.getX()) >> 4; cx++) {
+            for (int cz = Math.min(a.getZ(), b.getZ()) >> 4; cz <= Math.max(a.getZ(), b.getZ()) >> 4; cz++) {
+                if (l.setChunkForced(cx, cz, true)) FORCED.add(new long[]{cx, cz});
+            }
+        }
+    }
+
     static void cleanup(ServerLevel level) {
+        // принудительную загрузку не снимаем: те же чанки могут уже принадлежать площадке следующего теста
+        FORCED.clear();
         // блоки мода (вычислители, радары, мониторы): иначе они работают и в соседних тестах
         for (BlockPos p : CREATED) {
             if (FcsMod.MODID.equals(BuiltInRegistries.BLOCK.getKey(level.getBlockState(p).getBlock()).getNamespace())) {
@@ -109,6 +124,17 @@ public class FcsGameTests {
     @BeforeBatch(batch = "shipiff") public static void b8(ServerLevel l) { direct(l); }
     @AfterBatch(batch = "shipiff") public static void a8(ServerLevel l) { cleanup(l); }
 
+    @BeforeBatch(batch = "fastauto") public static void b9(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @AfterBatch(batch = "fastauto") public static void a9(ServerLevel l) { cleanup(l); }
+    @BeforeBatch(batch = "fastauto100") public static void b12(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @AfterBatch(batch = "fastauto100") public static void a12(ServerLevel l) { cleanup(l); }
+    @BeforeBatch(batch = "fastdive") public static void b13(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @AfterBatch(batch = "fastdive") public static void a13(ServerLevel l) { cleanup(l); }
+    @BeforeBatch(batch = "fastship") public static void b10(ServerLevel l) { direct(l); FcsConfig.SENSOR_RANGE.set(160.0); }
+    @AfterBatch(batch = "fastship") public static void a10(ServerLevel l) { cleanup(l); }
+    @BeforeBatch(batch = "nopower") public static void b11(ServerLevel l) { direct(l); }
+    @AfterBatch(batch = "nopower") public static void a11(ServerLevel l) { cleanup(l); }
+
     @BeforeBatch(batch = "radar")
     public static void beforeRadar(ServerLevel level) {
         cleanup(level);
@@ -135,8 +161,33 @@ public class FcsGameTests {
      * Пушка смотрит в сторону dir. Станок в mount, ось вращения на 2 блока выше.
      */
     static void bigCannon(GameTestHelper h, BlockPos mount, Direction dir, int chambers, int barrels, boolean load) {
+        bigCannon(h, mount, dir, chambers, barrels, load, true);
+    }
+
+    /**
+     * Вращение на валы станка: снизу - поворот, сбоку (по оси наклона) - наклон. Творческие моторы, rpm об/мин.
+     * Без вращения вычислитель не наводит (requireRotation).
+     */
+    static void powerMount(GameTestHelper h, BlockPos mount, Direction dir, int rpm) {
+        motor(h, mount.below(), Direction.UP, rpm);
+        Direction side = dir.getClockWise();
+        motor(h, mount.relative(side), side.getOpposite(), rpm);
+    }
+
+    static void motor(GameTestHelper h, BlockPos rel, Direction facing, int rpm) {
+        h.setBlock(rel, block("create:creative_motor").defaultBlockState().setValue(BlockStateProperties.FACING, facing));
+        if (h.getLevel().getBlockEntity(h.absolutePos(rel))
+                instanceof com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity m) {
+            m.generatedSpeed.setValue(rpm);
+        } else {
+            throw new GameTestAssertException("creative motor missing at " + rel);
+        }
+    }
+
+    static void bigCannon(GameTestHelper h, BlockPos mount, Direction dir, int chambers, int barrels, boolean load, boolean power) {
         h.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState()
                 .setValue(BlockStateProperties.HORIZONTAL_FACING, dir));
+        if (power) powerMount(h, mount, dir, 256);
         BlockPos pivot = mount.above(2);
         Direction facing = dir.getOpposite();
         h.setBlock(pivot.relative(dir, -chambers), block("createbigcannons:cast_iron_cannon_end").defaultBlockState()
@@ -190,6 +241,7 @@ public class FcsGameTests {
     private static void autocannon(GameTestHelper h, BlockPos mount, Direction dir, int barrels, int rounds) {
         h.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState()
                 .setValue(BlockStateProperties.HORIZONTAL_FACING, dir));
+        powerMount(h, mount, dir, 256);
         BlockPos pivot = mount.above(2);
         h.setBlock(pivot.relative(dir, -1), block("createbigcannons:cast_iron_autocannon_breech").defaultBlockState()
                 .setValue(BlockStateProperties.FACING, dir));
@@ -224,6 +276,7 @@ public class FcsGameTests {
         }
         h.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState()
                 .setValue(BlockStateProperties.HORIZONTAL_FACING, dir));
+        powerMount(h, mount, dir, 256);
         BlockPos pivot = mount.above(2);
         h.setBlock(pivot.relative(dir, -1), breechBlock.defaultBlockState().trySetValue(BlockStateProperties.FACING, dir));
         for (int i = 0; i < rails; i++) {
@@ -281,8 +334,8 @@ public class FcsGameTests {
             if (t % period != 0) return;
             StringBuilder sb = new StringBuilder();
             for (MountState m : be.mountStates()) {
-                sb.append(String.format(" [%s %s yaw=%.1f pitch=%.1f err=%.2f tol=%.2f dist=%.1f learned=%d shots=%d muzzle=%.2f ammo=%s note=%s speedx=%.3f]",
-                        m.mount == null ? "?" : m.mount.typeName(), m.status, m.cmdYaw, m.cmdPitch, m.aimError, m.tolerance,
+                sb.append(String.format(" [%s %s yaw=%.1f pitch=%.1f err=%.2f miss=%.2f allowed=%.2f dist=%.1f learned=%d shots=%d muzzle=%.2f ammo=%s note=%s speedx=%.3f]",
+                        m.mount == null ? "?" : m.mount.typeName(), m.status, m.cmdYaw, m.cmdPitch, m.aimError, m.predictedMiss, m.tolerance,
                         m.distance, m.correction.shots(), m.shotsSeen, m.learnedMuzzle,
                         m.estimate == null ? "-" : m.estimate.ammo() + (m.estimate.loaded() ? "" : "(empty)") + " v=" + String.format("%.2f", m.estimate.model().muzzleSpeed()),
                         m.note, m.correction.speedRatio()));
@@ -424,6 +477,150 @@ public class FcsGameTests {
             FcsMod.LOG.info("[radar_fcs test] rocket: HIT, health {} -> {}, learned shots {}, learned ticks {}, speed x{}",
                     max, husk.getHealth(), m == null ? -1 : m.correction.shots(), m == null ? -1 : m.correction.learnedTicks(),
                     m == null ? -1 : m.correction.speedRatio());
+        });
+    }
+
+    /** Летящая цель без ИИ и гравитации: туда-обратно по прямой со скоростью velPerTick, legTicks тиков в одну сторону. */
+    static Mob linearTarget(GameTestHelper h, EntityType<? extends Mob> type, Vec3 startRel, Vec3 velPerTick, int legTicks) {
+        Mob mob = h.spawn(type, startRel);
+        mob.setNoAi(true);
+        mob.setNoGravity(true);
+        mob.setPersistenceRequired();
+        Vec3 start = h.absoluteVec(startRel);
+        AtomicInteger tick = new AtomicInteger();
+        h.onEachTick(() -> {
+            if (!mob.isAlive()) return;
+            int t = tick.getAndIncrement();
+            int ph = t % (2 * legTicks);
+            double k = ph < legTicks ? ph : 2 * legTicks - ph;
+            Vec3 p = start.add(velPerTick.scale(k));
+            mob.setPos(p.x, p.y, p.z);
+            mob.setDeltaMovement(Vec3.ZERO);
+        });
+        return mob;
+    }
+
+    /** Снаряды, вылетевшие из пушки (новые снаряды CBC рядом со станком). */
+    static AtomicInteger countRounds(GameTestHelper h, BlockPos mountRel) {
+        AtomicInteger n = new AtomicInteger();
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        Vec3 c = h.absoluteVec(Vec3.atCenterOf(mountRel));
+        h.onEachTick(() -> {
+            for (AbstractCannonProjectile p : h.getLevel().getEntitiesOfClass(AbstractCannonProjectile.class, new AABB(c, c).inflate(160))) {
+                if (seen.add(p.getId())) n.incrementAndGet();
+            }
+        });
+        return n;
+    }
+
+    /** Попадания по цели: события урона от снарядов CBC. */
+    static AtomicInteger countHits(GameTestHelper h, Mob target) {
+        AtomicInteger hits = new AtomicInteger();
+        HITS.put(target, src -> hits.incrementAndGet());
+        return hits;
+    }
+
+    /** Слушатели урона по тестовым целям. */
+    static final java.util.Map<net.minecraft.world.entity.Entity, java.util.function.Consumer<net.minecraft.world.entity.Entity>> HITS =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    static void onDamage(net.neoforged.neoforge.event.entity.living.LivingDamageEvent.Post e) {
+        var l = HITS.get(e.getEntity());
+        if (l == null) return;
+        // урон снарядов CBC приходит без прямой сущности; удушье в блоках и пр. не считаем
+        if (e.getSource().getMsgId().startsWith("createbigcannons")) l.accept(null);
+    }
+
+    /**
+     * Автопушка по живучей цели (здоровье 2000), летящей по прямой туда-обратно: 300 тиков огня,
+     * в лог - доля попаданий. Тест проходит, если попала хотя бы четверть снарядов (и не меньше 5).
+     */
+    private static void fastAutocannon(GameTestHelper h, String name, Vec3 startRel, Vec3 vel, int leg) {
+        floor(h);
+        autocannon(h, new BlockPos(10, 1, 32), Direction.EAST, 4, 512);
+        FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 28));
+        Vec3 endRel = startRel.add(vel.scale(leg));
+        forceArea(h, BlockPos.containing(Math.min(startRel.x, endRel.x) - 16, 0, Math.min(startRel.z, endRel.z) - 16),
+                BlockPos.containing(Math.max(startRel.x, endRel.x) + 16, 0, Math.max(startRel.z, endRel.z) + 16));
+        Mob target = linearTarget(h, EntityType.HUSK, startRel, vel, leg);
+        var hp = target.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
+        if (hp != null) hp.setBaseValue(1024);
+        target.setHealth(target.getMaxHealth());
+        logEvery(h, be, name, 10);
+        AtomicInteger hits = countHits(h, target), rounds = countRounds(h, new BlockPos(10, 1, 32));
+        h.runAtTickTime(300, () -> {
+            double rate = rounds.get() == 0 ? 0 : 100.0 * hits.get() / rounds.get();
+            FcsMod.LOG.info("[radar_fcs test] {}: {} hits of {} rounds ({}%) on a {} m/s target", name, hits.get(), rounds.get(),
+                    String.format(java.util.Locale.ROOT, "%.0f", rate), Math.round(vel.length() * 20));
+            if (hits.get() < 5 || rate < 25) h.fail(name + ": " + hits.get() + " hits of " + rounds.get() + " rounds");
+            h.succeed();
+        });
+    }
+
+    /** Автопушка по летящей цели со скоростью 3.5 бл/тик (70 м/с), курс поперёк линии огня. */
+    @GameTest(template = ARENA, batch = "fastauto", timeoutTicks = 400)
+    public static void autocannonHitsFastTarget(GameTestHelper h) {
+        fastAutocannon(h, "fastauto", new Vec3(46.5, 9, -37.5), new Vec3(0, 0, 3.5), 40);
+    }
+
+    /** То же на 5 бл/тик (100 м/с). */
+    @GameTest(template = ARENA, batch = "fastauto100", timeoutTicks = 400)
+    public static void autocannonHits100msTarget(GameTestHelper h) {
+        fastAutocannon(h, "fastauto100", new Vec3(50.5, 12, -42.5), new Vec3(0, 0, 5.0), 30);
+    }
+
+    /** Пикирующая цель 70 м/с: сближается, снижается и смещается вбок одновременно. */
+    @GameTest(template = ARENA, batch = "fastdive", timeoutTicks = 400)
+    public static void autocannonHitsDivingTarget(GameTestHelper h) {
+        fastAutocannon(h, "fastdive", new Vec3(110.5, 40, -20.5), new Vec3(-2.0, -1.0, 2.7), 30);
+    }
+
+    /**
+     * Три большие пушки по одному выстрелу (8 бл/тик) по кораблю Sable 3x3x3, летящему со скоростью 3.5 бл/тик (70 м/с).
+     * У CBC есть собственный случайный разброс снарядов, поэтому требуется хотя бы одно попадание из трёх.
+     */
+    @GameTest(template = ARENA, batch = "fastship", timeoutTicks = 400)
+    public static void bigCannonHitsFastShip(GameTestHelper h) {
+        if (!ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        for (int z : new int[]{20, 32, 44}) bigCannon(h, new BlockPos(10, 1, z), Direction.EAST, 4, 4, true);
+        FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 30));
+        forceArea(h, new BlockPos(30, 0, -80), new BlockPos(60, 0, 130));
+        Object sub = SableTestSupport.ship(h, new BlockPos(45, 9, -60), 3, new Vec3(0, 0, 3.5), 175, false);
+        logEvery(h, be, "fastship", 5);
+        AtomicInteger hits = SableTestSupport.watchShipHits(h, sub, "fastship");
+        AtomicInteger tick = new AtomicInteger();
+        h.onEachTick(tick::incrementAndGet);
+        h.succeedWhen(() -> {
+            int fired = 0;
+            for (MountState m : be.mountStates()) if (m.shotsSeen > 0) fired++;
+            if (hits.get() == 0 || (fired < 3 && tick.get() < 250)) throw new GameTestAssertException("fast ship: hits " + hits.get());
+            FcsMod.LOG.info("[radar_fcs test] fastship: {} hits of {} shots on a 70 m/s ship", hits.get(), fired);
+        });
+    }
+
+    /** Без вращения на валах станка наведения нет (статус «нет вращения»); с вращением - попадание. */
+    @GameTest(template = ARENA, batch = "nopower", timeoutTicks = 600)
+    public static void noRotationNoAiming(GameTestHelper h) {
+        floor(h);
+        BlockPos mount = new BlockPos(10, 1, 32);
+        bigCannon(h, mount, Direction.EAST, 2, 4, true, false);
+        FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 28));
+        Mob husk = movingTarget(h, EntityType.HUSK, new Vec3(48.5, 1, 22.5), 0.12, 18);
+        float max = husk.getMaxHealth();
+        logEvery(h, be, "nopower", 20);
+        AtomicReference<Boolean> sawNoPower = new AtomicReference<>(false);
+        h.runAtTickTime(80, () -> {
+            for (MountState m : be.mountStates()) if (m.status == Status.NO_POWER) sawNoPower.set(true);
+            if (husk.getHealth() < max) h.fail("fired without rotation");
+            powerMount(h, mount, Direction.EAST, 256);
+        });
+        h.succeedWhen(() -> {
+            if (!sawNoPower.get()) throw new GameTestAssertException("NO_POWER status not observed without rotation");
+            if (husk.isAlive() && husk.getHealth() >= max) throw new GameTestAssertException("target not hit yet");
         });
     }
 

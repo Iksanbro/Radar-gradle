@@ -32,12 +32,4 @@ public final class Aim {
         if (Math.abs(e) <= deadband) return current;
         return current + clamp(e, -slew, slew);
     }
-
-    /**
-     * Допуск на огонь, градусы: не меньше заданного и не меньше углового размера цели
-     * (с запасом на рассеивание ствола).
-     */
-    public static double fireTolerance(double minTolDeg, double hitRadius, double distance) {
-        return Math.max(minTolDeg, Math.toDegrees(Math.atan2(Math.max(0.1, hitRadius), Math.max(1.0, distance))));
-    }
 }

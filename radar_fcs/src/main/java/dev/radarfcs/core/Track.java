@@ -8,7 +8,10 @@ package dev.radarfcs.core;
 public final class Track {
     public enum Kind { MOB, PLAYER, CONTRAPTION, SHIP, PROJECTILE, EXTERNAL }
 
-    private static final int CAP = 16;
+    private static final int CAP = 24;
+    /** Средняя невязка подгонки, блоков: выше - цель маневрирует, окно оценки укорачивается. */
+    public static final double MANEUVER_RESIDUAL = 0.2;
+    private static final int MIN_WINDOW = 6;
 
     public final String id;
     public final Kind kind;
@@ -24,6 +27,10 @@ public final class Track {
     public int samples;
     public double hitRadius = 1;
     public boolean grounded;
+    /** Невязка оценки движения (блоков): большая - манёвр, по такой цели лучше не стрелять. */
+    public double residual;
+    /** Скорость, подогнанная по замерам (до замены точной скоростью от источника): по ней считается невязка. */
+    private Vec fitVel = Vec.ZERO;
     public boolean hostile;
     public boolean moving;
     public boolean friendly;
@@ -80,8 +87,43 @@ public final class Track {
         pos = p;
     }
 
-    /** Пересчитать оценку по окну последних windowTicks тиков. */
+    /**
+     * Пересчитать оценку по окну последних windowTicks тиков. Если модель плохо описывает замеры
+     * (резкий манёвр, разворот), окно укорачивается: оценка быстрее отражает новое движение.
+     */
     void fit(int windowTicks, double maxAccel) {
+        int w = windowTicks;
+        while (true) {
+            fitWindow(w, maxAccel);
+            residual = residual(w);
+            if (residual <= MANEUVER_RESIDUAL || w <= MIN_WINDOW) return;
+            w = Math.max(MIN_WINDOW, w / 2);
+        }
+    }
+
+    /** Взвешенная средняя невязка замеров окна относительно текущей оценки (у наземных целей - по горизонтали). */
+    private double residual(int windowTicks) {
+        int last = (head - 1 + CAP) % CAP;
+        long t0 = ht[last];
+        double tau = Math.max(2.0, windowTicks * 0.5), sw = 0, sr = 0;
+        int n = 0;
+        for (int k = 0; k < size; k++) {
+            int i = (last - k + CAP) % CAP;
+            double dt = ht[i] - t0;
+            if (-dt > windowTicks && n >= 2) break;
+            double w = Math.exp(dt / tau);
+            double px = pos.x() + fitVel.x() * dt + 0.5 * acc.x() * dt * dt;
+            double py = pos.y() + fitVel.y() * dt + 0.5 * acc.y() * dt * dt;
+            double pz = pos.z() + fitVel.z() * dt + 0.5 * acc.z() * dt * dt;
+            double ex = hx[i] - px, ey = grounded ? 0 : hy[i] - py, ez = hz[i] - pz;
+            sr += w * (ex * ex + ey * ey + ez * ez);
+            sw += w;
+            n++;
+        }
+        return n < 3 || sw <= 0 ? 0 : Math.sqrt(sr / sw);
+    }
+
+    private void fitWindow(int windowTicks, double maxAccel) {
         int last = (head - 1 + CAP) % CAP;
         long t0 = ht[last];
         double bx = hx[last], by = hy[last], bz = hz[last];
@@ -121,6 +163,7 @@ public final class Track {
             if (px != null && py != null && pz != null) {
                 pos = new Vec(bx + px[0], by + py[0], bz + pz[0]);
                 vel = new Vec(px[1], py[1], pz[1]);
+                fitVel = vel;
                 Vec a = new Vec(px[2], py[2], pz[2]);
                 double al = a.length();
                 acc = al > maxAccel ? a.scale(maxAccel / al) : a;
@@ -137,7 +180,8 @@ public final class Track {
         double vx = (s0 * rx1 - s1 * rx0) / det, vy = (s0 * ry1 - s1 * ry0) / det, vz = (s0 * rz1 - s1 * rz0) / det;
         double px = (rx0 - vx * s1) / s0, py = (ry0 - vy * s1) / s0, pz = (rz0 - vz * s1) / s0;
         pos = new Vec(bx + px, by + py, bz + pz);
-        vel = knownVel != null ? knownVel : new Vec(vx, vy, vz);
+        fitVel = new Vec(vx, vy, vz);
+        vel = knownVel != null ? knownVel : fitVel;
         acc = Vec.ZERO;
     }
 

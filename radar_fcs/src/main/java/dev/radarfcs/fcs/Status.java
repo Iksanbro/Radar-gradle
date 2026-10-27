@@ -19,7 +19,9 @@ public enum Status {
     OTHER_FCS(ChatFormatting.AQUA),
     UNSUPPORTED(ChatFormatting.DARK_GRAY),
     NO_RADAR(ChatFormatting.DARK_RED),
-    LOST(ChatFormatting.DARK_GRAY);
+    LOST(ChatFormatting.DARK_GRAY),
+    /** Наведение требует вращения, а на валы станка оно не подано. */
+    NO_POWER(ChatFormatting.GOLD);
 
     public final ChatFormatting color;
 

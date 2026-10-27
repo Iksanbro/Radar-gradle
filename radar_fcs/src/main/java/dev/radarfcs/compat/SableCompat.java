@@ -153,7 +153,15 @@ public final class SableCompat {
         AABB box = new AABB(b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ());
         String name = s.getName();
         if (name == null || name.isBlank()) name = "ship-" + s.getUniqueId().toString().substring(0, 4);
-        return new Ship(s.getUniqueId(), name, box.getCenter(), box, velocity(level, s), s);
+        // центр масс: к нему относится скорость от физики Sable (центр габарита при вращении «гуляет»)
+        Vec3 center = box.getCenter();
+        try {
+            Vector3dc rp = s.logicalPose().rotationPoint();
+            Vec3 com = s.logicalPose().transformPosition(new Vec3(rp.x(), rp.y(), rp.z()));
+            if (box.inflate(1.0).contains(com)) center = com;
+        } catch (Throwable ignored) {
+        }
+        return new Ship(s.getUniqueId(), name, center, box, velocity(level, s), s);
     }
 
     /** Корабли, пересекающие мировую область. */

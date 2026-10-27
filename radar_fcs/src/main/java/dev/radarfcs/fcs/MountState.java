@@ -44,6 +44,8 @@ public final class MountState implements ShotObserver.Listener {
     @Nullable public String targetName;
     public double hintPitch = Double.NaN;
     public double aimError = Double.NaN, tolerance = Double.NaN, distance = Double.NaN, flightTicks = Double.NaN;
+    /** Расчётный промах выстрела из фактического положения ствола, блоков; tolerance - допустимый промах. */
+    public double predictedMiss = Double.NaN;
     public long safetyTick = Long.MIN_VALUE / 2;
     @Nullable public String safetyTarget;
     public FireSafety.Verdict safety = FireSafety.Verdict.CLEAR;

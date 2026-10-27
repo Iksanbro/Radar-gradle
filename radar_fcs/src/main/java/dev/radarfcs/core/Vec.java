@@ -15,6 +15,7 @@ public record Vec(double x, double y, double z) {
     public double length() { return Math.sqrt(dot(this)); }
     public double horizontalLength() { return Math.hypot(x, z); }
     public double distance(Vec o) { return sub(o).length(); }
+    public double distanceSqr(Vec o) { return sub(o).lengthSqr(); }
     public Vec horizontal() { return new Vec(x, 0, z); }
 
     public Vec normalize() {

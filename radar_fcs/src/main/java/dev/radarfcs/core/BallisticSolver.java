@@ -32,11 +32,23 @@ public final class BallisticSolver {
     private final double minPitch;
     private final double maxPitch;
     private final boolean highArc;
+    private boolean discrete = true;
 
     public BallisticSolver(double minPitchDeg, double maxPitchDeg, boolean highArc) {
         this.minPitch = Math.toRadians(Math.min(minPitchDeg, maxPitchDeg));
         this.maxPitch = Math.toRadians(Math.max(minPitchDeg, maxPitchDeg));
         this.highArc = highArc;
+    }
+
+    /**
+     * Потиковый перехват (по умолчанию). В Minecraft попадание проверяется раз в тик: отрезок, который снаряд
+     * прошёл за тик, против цели в её положении на конец этого тика. Поэтому целимся не в точку непрерывной
+     * встречи, а в положение цели на конец того тика, в котором снаряд проходит эту точку.
+     * Для целей, проходящих за тик больше своего размера, разница решает, будет ли попадание.
+     */
+    public BallisticSolver discrete(boolean on) {
+        this.discrete = on;
+        return this;
     }
 
     /** @return {высота на дальности horiz, время полёта} или null, если снаряд не долетает */
@@ -108,34 +120,160 @@ public final class BallisticSolver {
     }
 
     /**
-     * @param lagTicks   задержка: возраст замера + реакция системы до выстрела
+     * Решение с упреждением: время полёта t такое, что снаряд долетает до позиции цели через lag + t тиков.
+     * Корень g(t) = полёт(цель(lag + t)) - t ищется методом секущих (сходится и для целей, чья скорость
+     * сравнима со скоростью снаряда, где простая итерация колеблется).
+     *
+     * @param lagTicks   через сколько тиков после замера цели снаряд появится у дульного среза
      * @param hintPitch  прошлое решение по этой цели (радианы) или NaN
      * @param maxRange   предельная горизонтальная дальность
      */
     public Solution solve(Muzzle muzzle, TargetMotion target, double lagTicks, FlightModel m,
                           int iterations, double hintPitch, double maxRange) {
         Vec dir = target.pos().sub(muzzle.at(Vec.ZERO)).normalize();
-        double ttf = target.pos().distance(muzzle.at(dir)) / Math.max(0.05, m.muzzleSpeed());
-        double hint = hintPitch, pitch = Double.NaN, yaw = 0, horiz = 0;
-        Vec aim = target.pos(), mz = muzzle.at(dir);
-        int iters = Math.max(1, iterations);
+        double t = target.pos().distance(muzzle.at(dir)) / Math.max(0.05, m.muzzleSpeed());
+        double hint = hintPitch;
+        double tPrev = Double.NaN, gPrev = Double.NaN;
+        Solution best = null;
+        double bestG = Double.MAX_VALUE;
+        int iters = Math.max(2, iterations);
         for (int i = 0; i < iters; i++) {
-            mz = muzzle.at(dir);
-            aim = target.predict(lagTicks + ttf);
+            Vec mz = muzzle.at(dir);
+            Vec aim = target.predict(lagTicks + t);
             Vec d = aim.sub(mz);
-            horiz = d.horizontalLength();
+            double horiz = d.horizontalLength();
             if (horiz < 0.5 || horiz > maxRange) return null;
             double[] s = solvePitch(horiz, d.y(), m, hint);
             if (s == null) return null;
-            pitch = s[0];
-            yaw = Math.toDegrees(Math.atan2(-d.x(), d.z()));
+            double pitch = s[0];
+            double yaw = Math.toDegrees(Math.atan2(-d.x(), d.z()));
             dir = Vec.fromAngles(yaw, Math.toDegrees(pitch));
             hint = pitch;
-            boolean converged = i > 0 && Math.abs(s[1] - ttf) < 0.02;
-            ttf = s[1];
-            if (converged) break;
+            double g = s[1] - t;
+            if (Math.abs(g) < bestG) {
+                bestG = Math.abs(g);
+                best = new Solution(yaw, Math.toDegrees(pitch), s[1], aim, mz, horiz, dir);
+            }
+            if (Math.abs(g) < 0.01) break;
+            double next = s[1];                                   // простая итерация
+            if (!Double.isNaN(gPrev) && Math.abs(g - gPrev) > 1e-9) {
+                double sec = t - g * (t - tPrev) / (g - gPrev);   // секущая
+                if (sec > 0 && sec < 4.0 * m.maxTicks()) next = sec;
+            }
+            tPrev = t;
+            gPrev = g;
+            t = next;
         }
-        return new Solution(yaw, Math.toDegrees(pitch), ttf, aim, mz, horiz, dir);
+        // не сошлось (цель уходит быстрее снаряда) - решения нет
+        if (best == null || bestG >= 1.0) return null;
+        return discrete ? snapshot(best, muzzle, target, lagTicks, m, maxRange) : best;
+    }
+
+    /**
+     * Потиковое решение: точка прицеливания - положение цели на конец тика k, причём снаряд проходит её
+     * в течение этого тика (время полёта в (k-1, k]).
+     */
+    private Solution snapshot(Solution cont, Muzzle muzzle, TargetMotion target, double lagTicks, FlightModel m, double maxRange) {
+        int k = Math.max(1, (int) Math.ceil(cont.flightTicks() - 1e-6));
+        Vec dir = cont.direction();
+        double hint = Math.toRadians(cont.pitchDeg());
+        Solution best = null;
+        double bestViolation = Double.MAX_VALUE;
+        java.util.Set<Integer> tried = new java.util.HashSet<>();
+        for (int j = 0; j < 10; j++) {
+            Vec q = target.predict(lagTicks + k);
+            Vec mz = muzzle.at(dir);
+            Vec d = q.sub(mz);
+            double horiz = d.horizontalLength();
+            if (horiz < 0.5 || horiz > maxRange) break;
+            double[] s = solvePitch(horiz, d.y(), m, hint);
+            if (s == null) break;
+            double yaw = Math.toDegrees(Math.atan2(-d.x(), d.z()));
+            Vec nd = Vec.fromAngles(yaw, Math.toDegrees(s[0]));
+            boolean muzzleMoved = nd.angleTo(dir) > 0.05;
+            dir = nd;
+            hint = s[0];
+            if (muzzleMoved && j < 9) continue;                            // уточнить точку вылета
+            // время полёта должно попасть в (k-1, k]: снаряд проходит точку в тике k
+            double violation = Math.max(0, s[1] - k) + Math.max(0, (k - 1) - s[1]);
+            if (violation < bestViolation) {
+                bestViolation = violation;
+                best = new Solution(yaw, Math.toDegrees(s[0]), s[1], q, mz, horiz, dir);
+            }
+            if (violation < 1e-6) return best;
+            tried.add(k);
+            int next = s[1] > k ? k + 1 : k - 1;
+            // цель приближается так быстро, что подходящего тика нет (проскок между тиками): берём ближайший
+            if (next < 1 || tried.contains(next)) break;
+            k = next;
+        }
+        return best != null ? best : cont;
+    }
+
+    /** Промах выстрела: наименьшее расстояние снаряд-цель, тик сближения и вектор от цели к снаряду в этот момент. */
+    public record Miss(double distance, double tick, Vec relative) {}
+
+    /**
+     * Промах снаряда, вылетевшего из точки launch по направлению dir, по движущейся цели.
+     * Снаряд считается тем же интегратором, что в CBC (тик за тиком). Потиково (как проверяет Minecraft):
+     * расстояние от цели на конец тика до отрезка, пройденного снарядом за этот тик; иначе - ближайшее сближение
+     * относительного движения внутри тика.
+     *
+     * @param lagTicks через сколько тиков после замера цели снаряд появится в launch
+     */
+    public static Miss miss(Vec launch, Vec dir, FlightModel m, TargetMotion target, double lagTicks, int maxTicks,
+                            boolean discrete) {
+        Vec d = dir.normalize();
+        Vec h = new Vec(d.x(), 0, d.z());
+        double hl = h.length();
+        h = hl < 1e-9 ? new Vec(1, 0, 0) : h.scale(1 / hl);
+        double s = m.muzzleSpeed();
+        double pitch = Math.asin(Math.max(-1, Math.min(1, d.y())));
+        double vx = s * Math.cos(pitch), vy = s * Math.sin(pitch), x = 0, y = 0;
+        Vec prevP = launch, prevT = target.predict(lagTicks);
+        double best = discrete ? Double.MAX_VALUE : prevP.distance(prevT), bestT = 0;
+        Vec bestRel = prevP.sub(prevT);
+        double prevGap = prevP.distanceSqr(prevT);
+        int away = 0;
+        int max = Math.min(Math.max(1, maxTicks), Math.max(1, m.maxTicks()));
+        for (int t = 0; t < max; t++) {
+            double sp = Math.hypot(vx, vy);
+            if (sp < 1e-6) break;
+            double al = m.along(t, sp), g = m.vertical(t);
+            double ax = vx / sp * al, ay = vy / sp * al + g;
+            x += vx + 0.5 * ax;
+            y += vy + 0.5 * ay;
+            vx += ax;
+            vy += ay;
+            Vec p = launch.add(h.scale(x)).add(new Vec(0, y, 0));
+            Vec tp = target.predict(lagTicks + t + 1);
+            Vec c;
+            double u;
+            if (discrete) {
+                Vec seg = p.sub(prevP);
+                double l2 = seg.lengthSqr();
+                u = l2 < 1e-12 ? 1 : Math.max(0, Math.min(1, tp.sub(prevP).dot(seg) / l2));
+                c = prevP.add(seg.scale(u)).sub(tp);
+            } else {
+                Vec r0 = prevP.sub(prevT), r1 = p.sub(tp), seg = r1.sub(r0);
+                double l2 = seg.lengthSqr();
+                u = l2 < 1e-12 ? 0 : Math.max(0, Math.min(1, -r0.dot(seg) / l2));
+                c = r0.add(seg.scale(u));
+            }
+            double dist = c.length();
+            if (dist < best) {
+                best = dist;
+                bestT = t + u;
+                bestRel = c;
+            }
+            double gap = p.distanceSqr(tp);
+            away = gap > prevGap ? away + 1 : 0;
+            if (away >= 4 && t > 2) break;                         // снаряд уже удаляется от цели
+            prevGap = gap;
+            prevP = p;
+            prevT = tp;
+        }
+        return new Miss(best, bestT, bestRel);
     }
 
     /** Точки траектории решения в мировых координатах (каждые step тиков, включая конечную). */

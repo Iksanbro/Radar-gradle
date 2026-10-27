@@ -14,6 +14,12 @@ public final class DevAutostop {
 
     private DevAutostop() {}
 
+    /** Урон по тестовым целям - для подсчёта попаданий в игровых тестах. */
+    @SubscribeEvent
+    public static void onDamage(net.neoforged.neoforge.event.entity.living.LivingDamageEvent.Post event) {
+        FcsGameTests.onDamage(event);
+    }
+
     @SubscribeEvent
     public static void onTick(ServerTickEvent.Post event) {
         if (!Boolean.getBoolean("radar_fcs.autostop")) return;

@@ -93,10 +93,6 @@ public final class FcsControl {
         Vec3 pivotLocal = d.localPivot();
         Vec3 pivotW = SableCompat.toWorld(level, pivotLocal);
         Vec pivot = new Vec(pivotW.x, pivotW.y, pivotW.z);
-        Vec3 barrelLocal = d.localBarrelDirection();
-        Vec3 barrelW = barrelLocal == null ? null : SableCompat.dirToWorld(ship, barrelLocal);
-        Vec3 prevLocal = d.localBarrelDirection(0.0F);
-        Vec3 prevW = prevLocal == null ? null : SableCompat.dirToWorld(ship, prevLocal);
         Vec platformVel = Vec.ZERO;
         if (ship != null && FcsConfig.INHERIT_PLATFORM_VELOCITY.get()) {
             Vec3 pv = SableCompat.pointVelocity(level, ship, pivotLocal);
@@ -118,7 +114,9 @@ public final class FcsControl {
         FlightModel model = m.flightModel();
         double muzzleDist = m.muzzleDistance(d.muzzleDistance());
         BallisticSolver.Muzzle muzzle = BallisticSolver.Muzzle.offset(pivot, muzzleDist);
-        BallisticSolver solver = new BallisticSolver(-d.maxDepression(), d.maxElevation(), FcsConfig.HIGH_ARC.get());
+        boolean discrete = FcsConfig.DISCRETE_INTERCEPT.get();
+        BallisticSolver solver = new BallisticSolver(-d.maxDepression(), d.maxElevation(), FcsConfig.HIGH_ARC.get())
+                .discrete(discrete);
 
         // приоритет - ближайшая к этой пушке цель; текущую держим, пока новая не заметно ближе
         List<Track> cands = TrackTable.sortedByDistance(active, pivot);
@@ -135,18 +133,23 @@ public final class FcsControl {
             Track des = sensor.get(designated);
             if (des != null && des.active && cands.remove(des)) cands.add(0, des);
         }
+        // Команда станку исполнится к следующему тику: решаем для снаряда, вылетающего через тик.
         BallisticSolver.Solution sol = null;
         Track target = null;
+        TargetMotion motion = null;
+        double age = 0;
         for (int i = 0; i < Math.min(3, cands.size()); i++) {
             Track t = cands.get(i);
             double horizon = FcsConfig.USE_ACCELERATION.get() && !t.grounded ? FcsConfig.ACCEL_HORIZON.get() : 0;
             TargetMotion mo = t.motion(horizon);
             if (platformVel.lengthSqr() > 0) mo = new TargetMotion(mo.pos(), mo.vel().sub(platformVel), mo.acc(), mo.grounded(), mo.accelHorizon());
-            double lag = (now - t.lastTick) + FcsConfig.LATENCY.get();
+            double a = (now - t.lastTick) + FcsConfig.LATENCY.get();
             double hint = t.id.equals(m.targetId) ? m.hintPitch : Double.NaN;
-            sol = solver.solve(muzzle, mo, lag, model, FcsConfig.LEAD_ITERATIONS.get(), hint, FcsConfig.MAX_RANGE.get());
+            sol = solver.solve(muzzle, mo, a + 1, model, FcsConfig.LEAD_ITERATIONS.get(), hint, FcsConfig.MAX_RANGE.get());
             if (sol != null) {
                 target = t;
+                motion = mo;
+                age = a;
                 break;
             }
         }
@@ -158,7 +161,10 @@ public final class FcsControl {
             syncIfNeeded(d, m, now);
             return;
         }
-        if (!target.id.equals(m.targetId)) m.safetyTick = Long.MIN_VALUE / 2;
+        if (!target.id.equals(m.targetId)) {
+            m.safetyTick = Long.MIN_VALUE / 2;
+            if (kind == CbcMount.Kind.RAPID) setTrigger(m, false);
+        }
         m.targetId = target.id;
         m.targetName = target.name;
         m.hintPitch = Math.toRadians(sol.pitchDeg());
@@ -175,12 +181,18 @@ public final class FcsControl {
         boolean outOfArc = wantPitch < lo - 0.5 || wantPitch > hi + 0.5;
         wantPitch = Aim.clamp(wantPitch, lo, hi);
 
-        double slewYaw = FcsConfig.SLEW.get(), slewPitch = slewYaw;
-        if (FcsConfig.REQUIRE_SHAFT_POWER.get()) {
-            slewYaw = Math.min(slewYaw, d.shaftYawRate());
-            slewPitch = Math.min(slewPitch, d.shaftPitchRate());
+        // скорость поворота: от валов станка (как в CBC) или без кинетики
+        double slewYaw, slewPitch;
+        if (FcsConfig.REQUIRE_ROTATION.get()) {
+            double k = FcsConfig.SHAFT_SPEED.get();
+            slewYaw = d.shaftYawRate() * k;
+            slewPitch = d.shaftPitchRate() * k;
+        } else {
+            slewYaw = slewPitch = FcsConfig.SLEW.get();
         }
         double db = FcsConfig.DEADBAND.get();
+        boolean noPower = (slewYaw <= 0 && Math.abs(Aim.wrap180(wantYaw - m.cmdYaw)) > db)
+                || (slewPitch <= 0 && Math.abs(wantPitch - m.cmdPitch) > db);
         double ny = Aim.wrap180(Aim.stepAngle(m.cmdYaw, wantYaw, slewYaw, db));
         double np = Aim.stepLinear(m.cmdPitch, wantPitch, slewPitch, db);
         if (ny != m.cmdYaw || np != m.cmdPitch) {
@@ -191,14 +203,33 @@ public final class FcsControl {
         }
         syncIfNeeded(d, m, now);
 
-        // допуск по фактическому стволу: не абсолютная точность, а размер цели или заданный минимум
-        double err = barrelW == null ? 180 : new Vec(barrelW.x, barrelW.y, barrelW.z).angleTo(sol.direction());
-        // CBC стреляет по положению ствола прошлого тика: оно тоже должно быть в допуске
-        if (prevW != null) err = Math.max(err, new Vec(prevW.x, prevW.y, prevW.z).angleTo(sol.direction()));
-        double tol = Aim.fireTolerance(FcsConfig.AIM_TOLERANCE.get(), target.hitRadius, m.distance);
-        m.aimError = err;
-        m.tolerance = tol;
-        boolean aligned = err <= tol && !outOfArc;
+        // Проверка выстрела фактическим положением ствола, которое возьмёт CBC:
+        // большая пушка стреляет сразу - по положению на начало тика, снаряд появляется сейчас;
+        // автопушка стреляет в следующем тике - по только что выставленным углам, снаряд на тик позже.
+        boolean big = kind != CbcMount.Kind.RAPID;
+        Vec3 shotL = d.localBarrelDirection(big ? 0.0F : 1.0F);
+        Vec3 shotW = shotL == null ? null : SableCompat.dirToWorld(ship, shotL);
+        double allowed = Math.max(target.hitRadius * 0.8 + 0.2,
+                m.distance * Math.tan(Math.toRadians(FcsConfig.FIRE_TOLERANCE.get())));
+        if (!big) allowed += FcsConfig.RAPID_SPREAD.get();
+        double missDist = Double.POSITIVE_INFINITY;
+        if (shotW != null) {
+            Vec sd = new Vec(shotW.x, shotW.y, shotW.z);
+            Vec launch = muzzle.at(sd.normalize());
+            int horizonTicks = (int) Math.ceil(sol.flightTicks() * 1.5) + 20;
+            missDist = BallisticSolver.miss(launch, sd, model, motion, big ? age : age + 1, horizonTicks, discrete).distance();
+            m.aimError = sd.angleTo(sol.direction());
+        } else {
+            m.aimError = 180;
+        }
+        m.predictedMiss = missDist;
+        m.tolerance = allowed;
+        // очередь автопушки не рвём на мелких колебаниях: продолжаем, пока промах меньше удвоенного порога
+        boolean onTarget = missDist <= allowed || (!big && m.triggerOn && missDist <= allowed * 2);
+        // молодой трек или резкий манёвр: оценка движения ненадёжна - наводимся, но не стреляем
+        if (target.observedSpan() < FcsConfig.FIRE_MIN_TRACK.get()) onTarget = false;
+        if (target.residual > Math.max(Track.MANEUVER_RESIDUAL, target.hitRadius * 0.25)) onTarget = false;
+        boolean aligned = onTarget && !outOfArc;
         boolean loaded = m.estimate == null || m.estimate.loaded();
 
         FireSafety.Verdict verdict = FireSafety.Verdict.CLEAR;
@@ -214,16 +245,20 @@ public final class FcsControl {
         }
         boolean fire = aligned && loaded && verdict == FireSafety.Verdict.CLEAR && !hold;
         boolean wasOn = m.triggerOn;
-        fireControl(level, d, m, kind, fire, model, pivotW, barrelW, muzzleDist, now);
-        if (FcsConfig.LOG_SHOTS.get() && m.triggerOn && !wasOn) {
-            FcsMod.LOG.info("[radar_fcs] FIRE {} at {} pos={} vel={} acc={} lag={} aim={} ttf={} pitch={} yaw={} err={} speed={} muzzle={}",
-                    d.typeName(), target.name, target.pos, target.vel, target.acc, now - target.lastTick,
+        long lastFireBefore = m.lastFire;
+        fireControl(level, d, m, kind, fire, pivotW, shotW, muzzleDist, now);
+        boolean shot = big ? m.lastFire != lastFireBefore : m.triggerOn && !wasOn;
+        if (FcsConfig.LOG_SHOTS.get() && shot) {
+            FcsMod.LOG.info("[radar_fcs] FIRE {} at {} pos={} vel={} acc={} res={} age={} aim={} ttf={} pitch={} yaw={} err={} miss={} allowed={} speed={} muzzle={}",
+                    d.typeName(), target.name, target.pos, target.vel, target.acc, String.format("%.3f", target.residual),
+                    now - target.lastTick,
                     sol.aimPoint(), String.format("%.2f", sol.flightTicks()), String.format("%.2f", sol.pitchDeg()),
-                    String.format("%.2f", sol.yawDeg()), String.format("%.3f", err),
-                    String.format("%.3f", model.muzzleSpeed()), String.format("%.2f", muzzleDist));
+                    String.format("%.2f", sol.yawDeg()), String.format("%.3f", m.aimError), String.format("%.2f", missDist),
+                    String.format("%.2f", allowed), String.format("%.3f", model.muzzleSpeed()), String.format("%.2f", muzzleDist));
         }
 
         if (outOfArc) m.status = Status.OUT_OF_ARC;
+        else if (!aligned && noPower) m.status = Status.NO_POWER;
         else if (!aligned) m.status = Status.AIMING;
         else if (verdict == FireSafety.Verdict.FRIENDLY) m.status = Status.BLOCKED_FRIENDLY;
         else if (verdict == FireSafety.Verdict.TERRAIN) m.status = Status.BLOCKED_TERRAIN;
@@ -233,7 +268,7 @@ public final class FcsControl {
     }
 
     private static void fireControl(ServerLevel level, CbcMount d, MountState m, CbcMount.Kind kind, boolean fire,
-                                    FlightModel model, Vec3 pivotW, Vec3 barrelW, double muzzleDist, long now) {
+                                    Vec3 pivotW, Vec3 barrelW, double muzzleDist, long now) {
         boolean learn = FcsConfig.LEARN_FROM_SHOTS.get() && barrelW != null && m.estimate != null;
         if (kind == CbcMount.Kind.RAPID) {
             if (fire) {

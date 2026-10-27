@@ -34,11 +34,11 @@ public final class FcsConfig {
     public static final ModConfigSpec.DoubleValue IFF_RADIUS, SAFETY_CONE, SAFETY_MARGIN;
     public static final ModConfigSpec.BooleanValue REQUIRE_LOS;
     // наведение
-    public static final ModConfigSpec.DoubleValue AIM_TOLERANCE, DEADBAND, SLEW, LATENCY, ACCEL_HORIZON, YAW_OFFSET,
-            TARGET_SWITCH_RATIO;
-    public static final ModConfigSpec.IntValue LEAD_ITERATIONS;
-    public static final ModConfigSpec.BooleanValue REQUIRE_SHAFT_POWER, USE_ACCELERATION, HIGH_ARC, INVERT_PITCH,
-            INHERIT_PLATFORM_VELOCITY;
+    public static final ModConfigSpec.DoubleValue FIRE_TOLERANCE, DEADBAND, SLEW, SHAFT_SPEED, LATENCY, ACCEL_HORIZON, YAW_OFFSET,
+            TARGET_SWITCH_RATIO, RAPID_SPREAD;
+    public static final ModConfigSpec.IntValue LEAD_ITERATIONS, FIRE_MIN_TRACK;
+    public static final ModConfigSpec.BooleanValue REQUIRE_ROTATION, USE_ACCELERATION, HIGH_ARC, INVERT_PITCH,
+            INHERIT_PLATFORM_VELOCITY, DISCRETE_INTERCEPT;
     // огонь
     public static final ModConfigSpec.IntValue BIG_PULSE_INTERVAL, RAPID_FIRE_POWER;
     public static final ModConfigSpec.BooleanValue LEARN_FROM_SHOTS;
@@ -90,7 +90,8 @@ public final class FcsConfig {
         MIN_RANGE = b.comment("Ближе этой дистанции огонь не ведётся").defineInRange("minRange", 6.0, 0.0, 64.0);
         MIN_SPEED = b.comment("Минимальная скорость цели, блоков/сек. Медленнее - цель неактивна: нет огня и отметки")
                 .defineInRange("minSpeed", 0.6, 0.0, 50.0);
-        SCAN_INTERVAL = b.comment("Период замеров позиции целей, тиков").defineInRange("scanInterval", 2, 1, 20);
+        SCAN_INTERVAL = b.comment("Период замеров позиции целей, тиков (1 - каждый тик, нужно для быстрых целей)")
+                .defineInRange("scanIntervalTicks", 1, 1, 20);
         MIN_SAMPLES = b.comment("Сколько замеров нужно, прежде чем цель станет активной").defineInRange("minSamples", 3, 2, 20);
         TRACK_WINDOW = b.comment("Окно оценки скорости и ускорения, тиков").defineInRange("trackWindowTicks", 16, 4, 80);
         TRACK_TIMEOUT = b.comment("Трек удаляется после стольких тиков без замеров").defineInRange("trackTimeoutTicks", 40, 5, 400);
@@ -123,15 +124,29 @@ public final class FcsConfig {
         b.pop();
 
         b.comment("Наведение").push("aiming");
-        AIM_TOLERANCE = b.comment("Минимальный допуск наведения, градусов. Реальный допуск не меньше углового размера цели")
-                .defineInRange("aimTolerance", 0.75, 0.05, 10.0);
+        FIRE_TOLERANCE = b.comment("Допуск выстрела, градусов. Огонь, когда снаряд из фактического положения ствола пройдёт от цели",
+                        "не дальше её размера или этого угла на дальности до цели (что больше)")
+                .defineInRange("fireToleranceDeg", 0.2, 0.0, 10.0);
+        RAPID_SPREAD = b.comment("Автопушки: очередь начинается при расчётном промахе до размера цели + этого запаса, блоков,",
+                        "и продолжается, пока промах меньше удвоенного порога")
+                .defineInRange("rapidFireMarginBlocks", 0.5, 0.0, 8.0);
         DEADBAND = b.comment("Изменения угла меньше этого не отрабатываются: нет дрожания и бесконечного доводения")
-                .defineInRange("deadband", 0.15, 0.0, 5.0);
-        SLEW = b.comment("Максимальная скорость поворота станка, градусов/тик").defineInRange("slewDegPerTick", 6.0, 0.2, 90.0);
-        REQUIRE_SHAFT_POWER = b.comment("Поворот не быстрее, чем позволяют валы станка (нужна кинетика, как у CC:CBC)")
-                .define("requireShaftPower", false);
-        LATENCY = b.comment("Дополнительное упреждение на задержку выстрела, тиков").defineInRange("latencyTicks", 1.0, 0.0, 20.0);
-        LEAD_ITERATIONS = b.defineInRange("leadIterations", 8, 1, 20);
+                .defineInRange("deadband", 0.1, 0.0, 5.0);
+        REQUIRE_ROTATION = b.comment("Станок поворачивается только при поданном вращении: на вал поворота (снизу) и вал наклона (сбоку).",
+                        "Скорость поворота - как от валов CBC (256 об/мин = 9.6 град/тик) x shaftSpeedMultiplier.",
+                        "false - поворот без кинетики со скоростью slewDegPerTick")
+                .define("requireRotation", true);
+        SHAFT_SPEED = b.comment("Множитель скорости поворота от валов (1 = как у CBC)").defineInRange("shaftSpeedMultiplier", 1.0, 0.05, 20.0);
+        SLEW = b.comment("Скорость поворота станка без кинетики (requireRotation = false), градусов/тик")
+                .defineInRange("slewDegPerTick", 6.0, 0.2, 90.0);
+        LATENCY = b.comment("Дополнительная задержка выстрела для упреждения, тиков (обычно 0: задержки CBC учтены)")
+                .defineInRange("extraLatencyTicks", 0.0, -5.0, 20.0);
+        LEAD_ITERATIONS = b.comment("Итерации расчёта упреждения (метод секущих)").defineInRange("leadIterations", 16, 2, 40);
+        DISCRETE_INTERCEPT = b.comment("Потиковое упреждение: целиться в положение цели на конец тика, в котором снаряд проходит точку",
+                        "(так Minecraft проверяет попадание). Нужно для быстрых мелких целей")
+                .define("discreteIntercept", true);
+        FIRE_MIN_TRACK = b.comment("Огонь только по цели, которую сопровождаем не меньше стольких тиков (оценка скорости устоялась)")
+                .defineInRange("fireMinTrackTicks", 6, 0, 100);
         USE_ACCELERATION = b.comment("Учитывать ускорение летящих целей (манёвр, разгон)").define("useAcceleration", true);
         ACCEL_HORIZON = b.comment("Сколько тиков вперёд доверять оценке ускорения").defineInRange("accelHorizonTicks", 20.0, 0.0, 200.0);
         TARGET_SWITCH_RATIO = b.comment("Переключаться на новую цель, только если она ближе текущей в это число раз")

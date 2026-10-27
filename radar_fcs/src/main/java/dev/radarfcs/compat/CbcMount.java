@@ -128,10 +128,24 @@ public final class CbcMount {
 
     public double shaftPitchRate() { return Math.abs(be.getAngularSpeed(be.getPitchSpeed(), 0.0F)); }
 
+    /**
+     * Углы станка. Сразу переносятся и на контрапшен (как это делает станок в своём тике): тогда задержка
+     * от команды до выстрела не зависит от порядка тиков блоков - автопушка следующим тиком стреляет
+     * по этим углам, большая пушка (выстрел сразу по сигналу) - по углам прошлой команды.
+     */
     public void setAngles(double yaw, double pitch) {
         double lo = -maxDepression(), hi = maxElevation();
-        be.setYaw((float) yaw);
-        be.setPitch((float) Math.max(lo, Math.min(hi, pitch)));
+        float y = (float) yaw, p = (float) Math.max(lo, Math.min(hi, pitch));
+        be.setYaw(y);
+        be.setPitch(p);
+        PitchOrientedContraptionEntity e = entity();
+        AbstractMountedCannonContraption c = cannon();
+        if (e != null && c != null && c.canBeTurnedByController(be)) {
+            Direction dir = e.getInitialOrientation();
+            boolean flag = (dir.getAxisDirection() == Direction.AxisDirection.POSITIVE) == (dir.getAxis() == Direction.Axis.X);
+            e.pitch = p * (flag ? 1.0F : -1.0F);
+            e.yaw = y;
+        }
     }
 
     public void sync() {
@@ -146,8 +160,9 @@ public final class CbcMount {
     }
 
     /**
-     * Направление ствола. partialTicks = 0 даёт положение прошлого тика: именно по нему CBC считает
-     * направление выстрела (toGlobalVector(..., 0)), поэтому огонь разрешается, только когда в допуске оба.
+     * Направление ствола. partialTicks = 0 - положение на начало тика: по нему CBC считает направление выстрела
+     * (toGlobalVector(..., 0)). Большая пушка стреляет сразу по сигналу - значит, по положению на начало тика;
+     * автопушка стреляет в тике контрапшена следующего тика - по текущему положению (partialTicks = 1).
      */
     @Nullable
     public Vec3 localBarrelDirection(float partialTicks) {

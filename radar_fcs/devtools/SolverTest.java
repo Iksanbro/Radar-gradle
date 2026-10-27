@@ -36,10 +36,10 @@ public class SolverTest {
             Vec a = p.accel(t, vel);
             Vec np = pos.add(vel).add(a.scale(0.5));
             Vec tp = target.predict(lag + t), ntp = target.predict(lag + t + 1);
-            for (int i = 0; i <= 10; i++) {
-                double f = i / 10.0;
-                best = Math.min(best, pos.lerp(np, f).distance(tp.lerp(ntp, f)));
-            }
+            // как в Minecraft: отрезок снаряда за тик против цели на конец тика
+            Vec seg = np.sub(pos);
+            double f = seg.lengthSqr() < 1e-12 ? 1 : Math.max(0, Math.min(1, ntp.sub(pos).dot(seg) / seg.lengthSqr()));
+            best = Math.min(best, pos.add(seg.scale(f)).distance(ntp));
             pos = np;
             vel = vel.add(a);
             if (velOut != null) velOut.add(vel);
@@ -83,6 +83,43 @@ public class SolverTest {
         System.out.printf(Locale.ROOT, "%-34s solved %3d (no sol %3d)  miss<1: %5.1f%%  avg %.3f  worst %.3f  %.0f us/solve%n",
                 name, n, nosol, pct, sum / Math.max(1, n), worst, ns / 1000.0 / 500);
         if (pct < minHitPct) { failures++; System.out.println("  FAIL: expected >= " + minHitPct + "%"); }
+    }
+
+    /**
+     * Быстрые цели (1.5..4 бл/тик = 30..80 м/с), любые направления, включая догон и встречный курс:
+     * решатель должен сходиться, а оценка промаха BallisticSolver.miss - совпадать с «истинной» 3D-симуляцией.
+     */
+    static void fastCase(String name, Truth truth, double maxDist, double minHitPct) {
+        BallisticSolver solver = new BallisticSolver(-30, 85, false);
+        FlightModel model = modelOf(truth);
+        Random r = new Random(11);
+        Vec pivot = new Vec(0, 70, 0);
+        BallisticSolver.Muzzle muzzle = BallisticSolver.Muzzle.offset(pivot, 3.0);
+        int n = 0, ok = 0, nosol = 0, agree = 0; double sum = 0;
+        for (int i = 0; i < 500; i++) {
+            double dist = 25 + r.nextDouble() * maxDist, ang = r.nextDouble() * Math.PI * 2;
+            Vec p = pivot.add(new Vec(Math.cos(ang) * dist, 5 + r.nextDouble() * 60, Math.sin(ang) * dist));
+            double spd = 1.5 + r.nextDouble() * 2.5, va = r.nextDouble() * Math.PI * 2;
+            Vec v = new Vec(Math.cos(va) * spd, (r.nextDouble() - 0.5) * 0.4, Math.sin(va) * spd);
+            TargetMotion tgt = new TargetMotion(p, v, Vec.ZERO, false, 0);
+            double lag = 1 + r.nextInt(2);
+            BallisticSolver.Solution s = solver.solve(muzzle, tgt, lag, model, 16, Double.NaN, 2000);
+            if (s == null) { nosol++; continue; }
+            double est = BallisticSolver.miss(s.muzzle(), s.direction(), model, tgt, lag, truth.life, true).distance();
+            double m0 = miss(truth, s.muzzle(), s.direction(), tgt, lag, null);
+            if (Math.abs(est - m0) < 0.05) agree++;
+            // вычислитель ждёт тика, когда выстрел попадёт: пробуем вылет через 0..4 тика
+            double m = m0;
+            for (int j = 1; j <= 4 && m >= 0.5; j++) {
+                BallisticSolver.Solution sj = solver.solve(muzzle, tgt, lag + j, model, 16, Double.NaN, 2000);
+                if (sj != null) m = Math.min(m, miss(truth, sj.muzzle(), sj.direction(), tgt, lag + j, null));
+            }
+            n++; sum += m; if (m < 0.5) ok++;
+        }
+        double pct = 100.0 * ok / Math.max(1, n), agr = 100.0 * agree / Math.max(1, n);
+        System.out.printf(Locale.ROOT, "%-34s solved %3d (no sol %3d)  hit<0.5 in 5 ticks: %5.1f%%  avg %.3f  miss-estimate agrees %5.1f%%%n",
+                name, n, nosol, pct, sum / Math.max(1, n), agr);
+        if (pct < minHitPct || agr < 97) { failures++; System.out.println("  FAIL"); }
     }
 
     static void rocketLearning() {
@@ -148,14 +185,33 @@ public class SolverTest {
         if (t.active) failures++;
     }
 
+    /** Разворот цели на 5 бл/тик: окно оценки укорачивается, скорость восстанавливается за несколько тиков. */
+    static void maneuver() {
+        TrackTable table = new TrackTable();
+        Vec p = new Vec(0, 80, 0);
+        Track t = null;
+        int recovered = -1, flagged = 0;
+        for (int tick = 1; tick <= 60; tick++) {
+            double z = tick <= 30 ? 5.0 * tick : 150 - 5.0 * (tick - 30);
+            t = table.observe("m", Track.Kind.MOB, "m", p.add(new Vec(0, 0, z)), 0.5, tick, false, null, TrackTable.Settings.DEFAULT);
+            if (tick > 30 && t.residual > Track.MANEUVER_RESIDUAL) flagged++;
+            if (tick > 30 && recovered < 0 && Math.abs(t.vel.z() + 5.0) < 0.1 && t.residual <= Track.MANEUVER_RESIDUAL) recovered = tick - 30;
+        }
+        System.out.printf(Locale.ROOT, "maneuver: reversal at 5 b/t, velocity recovered after %d ticks, flagged %d ticks%n", recovered, flagged);
+        if (recovered < 0 || recovered > 8) { failures++; System.out.println("  FAIL: slow recovery after reversal"); }
+    }
+
     public static void main(String[] a) {
         ballisticCase("big cannon 4 charges", new Truth(8, -0.05, 0.01, false, 0, 0, 1, 1, 600), 300, false, 97);
         ballisticCase("big cannon 2 charges", new Truth(4, -0.05, 0.01, false, 0, 0, 1, 1, 600), 200, false, 97);
         ballisticCase("big cannon, accelerating target", new Truth(8, -0.05, 0.01, false, 0, 0, 1, 1, 600), 250, true, 95);
         ballisticCase("autocannon (lifetime 40)", new Truth(7.5, -0.025, 0.01, false, 0, 0, 1, 1, 40), 200, false, 97);
         ballisticCase("quadratic drag", new Truth(6, -0.05, 0.002, true, 0, 0, 1, 1, 600), 200, false, 97);
+        fastCase("fast targets, big cannon 8 b/t", new Truth(8, -0.05, 0.01, false, 0, 0, 1, 1, 600), 200, 97);
+        fastCase("fast targets, autocannon 6 b/t", new Truth(6, -0.025, 0.01, false, 0, 0, 1, 1, 60), 150, 97);
         rocketLearning();
         trackFilter();
+        maneuver();
         if (failures > 0) {
             System.out.println("FAILURES: " + failures);
             System.exit(1);
