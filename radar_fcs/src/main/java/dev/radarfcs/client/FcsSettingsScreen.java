@@ -100,6 +100,9 @@ public final class FcsSettingsScreen extends Screen {
     private void dropTab(int y) {
         cycle(left + 8, y, W - 16, () -> check(s.dropStatic, "radar_fcs.gui.drop_static"), () -> s.dropStatic = !s.dropStatic);
         y += ROW;
+        number(left + 210, y, () -> s.staticTicks, v -> s.staticTicks = v, 2, 0, 1200,
+                v -> Component.translatable("radar_fcs.gui.seconds_value", String.format(Locale.ROOT, "%.1f", v / 20.0)), true);
+        y += ROW;
         cycle(left + 8, y, W - 16, () -> check(s.dropMoving, "radar_fcs.gui.drop_moving"), () -> s.dropMoving = !s.dropMoving);
         y += ROW;
         number(left + 210, y, () -> s.dropAfterShots, v -> s.dropAfterShots = v, 1, 0, 10000, null);
@@ -161,6 +164,8 @@ public final class FcsSettingsScreen extends Screen {
                 hint(g, "radar_fcs.gui.targets_hint", y);
             }
             case DROP -> {
+                y += ROW;
+                label(g, "radar_fcs.gui.static_time", y);
                 y += 2 * ROW;
                 label(g, "radar_fcs.gui.drop_after", y);
                 y += ROW;
@@ -224,16 +229,21 @@ public final class FcsSettingsScreen extends Screen {
 
     /** Число: «−» значение «+», с Shift шаг x10. */
     private void number(int x, int y, IntSupplier get, IntConsumer set, int step, int min, int max, String unitKey) {
-        Button value = Button.builder(numberText(get.getAsInt(), min, unitKey), b -> { }).bounds(x + 22, y, 56, 20).build();
+        number(x, y, get, set, step, min, max, v -> numberText(v, min, unitKey), true);
+    }
+
+    private void number(int x, int y, IntSupplier get, IntConsumer set, int step, int min, int max,
+                        java.util.function.IntFunction<Component> format, boolean formatted) {
+        Button value = Button.builder(format.apply(get.getAsInt()), b -> { }).bounds(x + 22, y, 56, 20).build();
         value.active = false;
         addRenderableWidget(Button.builder(Component.literal("−"), b -> {
             set.accept(Math.max(min, get.getAsInt() - step * (hasShiftDown() ? 10 : 1)));
-            value.setMessage(numberText(get.getAsInt(), min, unitKey));
+            value.setMessage(format.apply(get.getAsInt()));
         }).bounds(x, y, 20, 20).build());
         addRenderableWidget(value);
         addRenderableWidget(Button.builder(Component.literal("+"), b -> {
             set.accept(Math.min(max, get.getAsInt() + step * (hasShiftDown() ? 10 : 1)));
-            value.setMessage(numberText(get.getAsInt(), min, unitKey));
+            value.setMessage(format.apply(get.getAsInt()));
         }).bounds(x + 80, y, 20, 20).build());
     }
 

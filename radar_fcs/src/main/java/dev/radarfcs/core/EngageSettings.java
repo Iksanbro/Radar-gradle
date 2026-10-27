@@ -67,6 +67,11 @@ public final class EngageSettings {
 
     /** Сбрасывать (не брать) цели, которые стоят. */
     public boolean dropStatic = true;
+    /**
+     * Сколько цель, которая двигалась, должна простоять на месте, чтобы считаться статичной (сброс, переключение
+     * «при остановке»), тиков. Короткая остановка (разворот) - ещё не статичная. Не двигавшаяся ни разу - статичная сразу.
+     */
+    public int staticTicks = 20;
     /** Сбрасывать цели, которые движутся. */
     public boolean dropMoving = false;
     /** Сбросить цель после стольких выстрелов по ней (0 - нет). */
@@ -89,9 +94,15 @@ public final class EngageSettings {
         return !(speedMax > 0 && metersPerSecond > speedMax);
     }
 
-    /** Подходит ли цель по движению: стоящие и движущиеся можно сбрасывать отдельно. */
-    public boolean motionAllowed(boolean moving) {
-        return moving ? !dropMoving : !dropStatic;
+    /** Цель статична: стоит на месте не меньше staticTicks (или не двигалась ни разу). */
+    public boolean isStatic(Track t) {
+        if (t.moving) return false;
+        return t.lastMovingTick == Long.MIN_VALUE || t.lastTick - t.lastMovingTick >= staticTicks;
+    }
+
+    /** Подходит ли цель по движению: статичные и движущиеся можно сбрасывать отдельно. */
+    public boolean motionAllowed(Track t) {
+        return isStatic(t) ? !dropStatic : !dropMoving;
     }
 
     /** Выстрелов подряд до паузы: 1 у одиночного, длина очереди у очереди, без ограничения у автоматического. */
@@ -111,6 +122,7 @@ public final class EngageSettings {
         speedMin = Double.isFinite(speedMin) ? Math.max(0, Math.min(1000, speedMin)) : 0;
         speedMax = Double.isFinite(speedMax) ? Math.max(0, Math.min(1000, speedMax)) : 0;
         dropAfterShots = clamp(dropAfterShots, 0, 10000);
+        staticTicks = clamp(staticTicks, 0, 1200);
         switchShots = clamp(switchShots, 1, 10000);
         switchSeconds = clamp(switchSeconds, 1, 3600);
         if (fireMode == null) fireMode = FireMode.AUTO;
@@ -129,6 +141,7 @@ public final class EngageSettings {
         s.speedMin = speedMin;
         s.speedMax = speedMax;
         s.dropStatic = dropStatic;
+        s.staticTicks = staticTicks;
         s.dropMoving = dropMoving;
         s.dropAfterShots = dropAfterShots;
         s.priority = priority;

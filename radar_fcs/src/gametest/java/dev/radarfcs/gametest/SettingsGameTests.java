@@ -63,6 +63,8 @@ public class SettingsGameTests {
     @AfterBatch(batch = "set_burst_rotary") public static void a8(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "set_burst_medium") public static void b9(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "set_burst_medium") public static void a9(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "set_static_time") public static void b10(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "set_static_time") public static void a10(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "set_switch") public static void b7(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "set_switch") public static void a7(ServerLevel l) { FcsGameTests.cleanup(l); }
 
@@ -278,6 +280,41 @@ public class SettingsGameTests {
                     farHits.get(), nearHits.get(), nearTicks.get(), violations.get());
             if (farHits.get() == 0) h.fail("far target not hit");
             if (violations.get() > 0) h.fail("mount aimed at the near target while the far one was available");
+            h.succeed();
+        });
+    }
+
+    /**
+     * Время стояния до сброса (1 с по умолчанию): цель остановилась на 8 тиков - остаётся целью; стоит дольше - сброшена.
+     * Движение: 60 тиков вперёд, 8 стоит, 60 вперёд, дальше стоит.
+     */
+    @GameTest(template = ARENA, batch = "set_static_time", timeoutTicks = 300)
+    public static void briefStopIsNotStatic(GameTestHelper h) {
+        floor(h);
+        autocannon(h, MOUNT, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcs(h, FCS);
+        Mob husk = tough(h.spawn(EntityType.HUSK, new Vec3(40.5, 1, 22.5)));
+        husk.setNoAi(true);
+        Vec3 start = h.absoluteVec(new Vec3(40.5, 1, 22.5));
+        String id = husk.getUUID().toString();
+        AtomicInteger lostOnBriefStop = new AtomicInteger(), keptWhenParked = new AtomicInteger(), activeTicks = new AtomicInteger();
+        h.onEachTick(() -> {
+            long t = h.getTick();
+            double moved = t < 60 ? t : t < 68 ? 60 : t < 128 ? t - 8 : 120;
+            husk.setPos(start.x, start.y, start.z + 0.15 * moved);
+            husk.setDeltaMovement(Vec3.ZERO);
+            boolean active = false;
+            for (var tr : be.sensor().active()) if (tr.id.equals(id)) active = true;
+            if (active) activeTicks.incrementAndGet();
+            if (t >= 45 && t < 128 && !active) lostOnBriefStop.incrementAndGet();
+            if (t >= 165 && active) keptWhenParked.incrementAndGet();
+        });
+        logEvery(h, be, "set_static_time", 20);
+        h.runAtTickTime(280, () -> {
+            FcsMod.LOG.info("[radar_fcs test] set_static_time: active {} ticks, lost during brief stop {}, active when parked {}",
+                    activeTicks.get(), lostOnBriefStop.get(), keptWhenParked.get());
+            if (lostOnBriefStop.get() > 0) h.fail("target dropped during a brief stop for " + lostOnBriefStop.get() + " ticks");
+            if (keptWhenParked.get() > 0) h.fail("parked target still active for " + keptWhenParked.get() + " ticks");
             h.succeed();
         });
     }

@@ -1,5 +1,7 @@
 package dev.radarfcs.gametest;
 
+import net.minecraft.world.phys.Vec3;
+
 import dev.radarfcs.FcsMod;
 import dev.radarfcs.block.FireControlBlock;
 import dev.radarfcs.block.IffTransponderBlock;
@@ -123,7 +125,34 @@ public final class DevScreenshots {
             if (mc.screen instanceof dev.radarfcs.client.FcsSettingsScreen sc) sc.showTab(tab);
         }
         if (tick >= 695 && tick < 745 && (tick - 695) % 10 == 0) shot(mc, "fcs_settings_" + (tick - 695) / 10);
-        if (tick == 750) mc.stop();
+        // радарный линк: станок и радар Create Radars связаны с вычислителем; линк в руке с выбранным вычислителем
+        if (tick == 750) {
+            if (mc.screen != null) mc.setScreen(null);
+            server.execute(() -> {
+                ServerLevel level = server.overworld();
+                ServerPlayer p = server.getPlayerList().getPlayers().get(0);
+                BlockPos mount = base.offset(4, 0, 0);
+                placeLink(level, mount, Direction.SOUTH, base);
+                if (level.getBlockEntity(base.offset(0, 0, 3)) != null) placeLink(level, base, Direction.UP, base.offset(0, 0, 3));
+                p.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, new ItemStack(FcsRegistry.RADAR_LINK_ITEM.get(), 8));
+                Vec3 hit = Vec3.atCenterOf(base).add(0, 0.5, 0);
+                p.getMainHandItem().getItem().useOn(new net.minecraft.world.item.context.UseOnContext(p,
+                        net.minecraft.world.InteractionHand.MAIN_HAND, new net.minecraft.world.phys.BlockHitResult(hit, Direction.UP, base, false)));
+                Vec3 eye = new Vec3(mount.getX() + 1.5, mount.getY() + 1.62, mount.getZ() + 3.5);
+                Vec3 look = Vec3.atCenterOf(mount.relative(Direction.SOUTH)).add(0, 0, -0.3).subtract(eye);
+                float yaw = (float) Math.toDegrees(Math.atan2(-look.x, look.z));
+                float pitch = (float) -Math.toDegrees(Math.atan2(look.y, look.horizontalDistance()));
+                p.teleportTo(level, eye.x, eye.y - 1.62, eye.z, yaw, pitch);
+            });
+        }
+        if (tick == 790) shot(mc, "radar_link");
+        if (tick == 800) mc.stop();
+    }
+
+    private static void placeLink(ServerLevel level, BlockPos attached, Direction face, BlockPos other) {
+        BlockPos at = attached.relative(face);
+        level.setBlock(at, FcsRegistry.RADAR_LINK.get().defaultBlockState().setValue(dev.radarfcs.block.RadarLinkBlock.FACING, face), 3);
+        if (level.getBlockEntity(at) instanceof dev.radarfcs.block.RadarLinkBlockEntity be) be.setOther(other);
     }
 
     private static void buildRadars(ServerLevel level, ServerPlayer player) {

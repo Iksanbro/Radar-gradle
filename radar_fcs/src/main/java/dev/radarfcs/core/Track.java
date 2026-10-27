@@ -37,6 +37,8 @@ public final class Track {
     private Vec fitVel = Vec.ZERO;
     public boolean hostile;
     public boolean moving;
+    /** Последний тик, в который цель двигалась (Long.MIN_VALUE - не двигалась ни разу). */
+    public long lastMovingTick = Long.MIN_VALUE;
     public boolean friendly;
     public boolean active;
     /** Точная скорость от источника (например, физика Sable), иначе null. */

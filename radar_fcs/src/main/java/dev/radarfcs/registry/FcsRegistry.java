@@ -19,7 +19,10 @@ import dev.radarfcs.block.RadarDomeBlock;
 import dev.radarfcs.block.RadarDomeBlockEntity;
 import dev.radarfcs.block.RadarMonitorBlock;
 import dev.radarfcs.block.RadarMonitorBlockEntity;
+import dev.radarfcs.block.RadarLinkBlock;
+import dev.radarfcs.block.RadarLinkBlockEntity;
 import dev.radarfcs.block.RadarReceiverBlock;
+import dev.radarfcs.item.RadarLinkItem;
 import dev.radarfcs.compat.FcsDisplaySource;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -70,7 +73,12 @@ public final class FcsRegistry {
     public static final DeferredBlock<RadarMonitorBlock> RADAR_MONITOR = BLOCKS.register("radar_monitor",
             () -> new RadarMonitorBlock(metal(MapColor.COLOR_BLACK, 2.0f).lightLevel(s -> 6)));
 
+    public static final DeferredBlock<RadarLinkBlock> RADAR_LINK = BLOCKS.register("radar_link",
+            () -> new RadarLinkBlock(metal(MapColor.COLOR_LIGHT_BLUE, 1.5f).noOcclusion().lightLevel(s -> 4)));
+
     public static final DeferredItem<BlockItem> FIRE_CONTROL_ITEM = ITEMS.registerSimpleBlockItem(FIRE_CONTROL);
+    public static final DeferredItem<RadarLinkItem> RADAR_LINK_ITEM = ITEMS.register("radar_link",
+            () -> new RadarLinkItem(RADAR_LINK.get(), new net.minecraft.world.item.Item.Properties()));
     public static final DeferredItem<BlockItem> IFF_TRANSPONDER_ITEM = ITEMS.registerSimpleBlockItem(IFF_TRANSPONDER);
     public static final DeferredItem<BlockItem> RADAR_BEARING_ITEM = ITEMS.registerSimpleBlockItem(RADAR_BEARING);
     public static final DeferredItem<BlockItem> RADAR_RECEIVER_ITEM = ITEMS.registerSimpleBlockItem(RADAR_RECEIVER);
@@ -102,6 +110,10 @@ public final class FcsRegistry {
             BLOCK_ENTITIES.register("radar_monitor",
                     () -> BlockEntityType.Builder.of(RadarMonitorBlockEntity::new, RADAR_MONITOR.get()).build(null));
 
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<RadarLinkBlockEntity>> RADAR_LINK_BE =
+            BLOCK_ENTITIES.register("radar_link",
+                    () -> BlockEntityType.Builder.of(RadarLinkBlockEntity::new, RADAR_LINK.get()).build(null));
+
     public static final DeferredHolder<DisplaySource, FcsDisplaySource> FCS_DISPLAY_SOURCE =
             DISPLAY_SOURCES.register("fire_control", FcsDisplaySource::new);
 
@@ -111,6 +123,7 @@ public final class FcsRegistry {
                     .icon(() -> new ItemStack(FIRE_CONTROL_ITEM.get()))
                     .displayItems((params, out) -> {
                         out.accept(FIRE_CONTROL_ITEM.get());
+                        out.accept(RADAR_LINK_ITEM.get());
                         out.accept(IFF_TRANSPONDER_ITEM.get());
                         out.accept(RADAR_MONITOR_ITEM.get());
                         out.accept(RADAR_DOME_ITEM.get());

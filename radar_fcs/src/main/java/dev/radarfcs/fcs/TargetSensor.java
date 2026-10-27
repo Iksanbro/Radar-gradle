@@ -128,7 +128,7 @@ public final class TargetSensor {
                 t -> isFriendly(level, t, ctx, now),
                 t -> isEligible(t, ctx) && settings.enabled(EngageSettings.Category.of(t.kind))
                         && settings.speedAllowed(t.speedPerTick() * 20) && !dropped.test(t),
-                ctx.origin(), FcsConfig.MIN_RANGE.get(), FcsConfig.MAX_RANGE.get(), t -> settings.motionAllowed(t.moving));
+                ctx.origin(), FcsConfig.MIN_RANGE.get(), FcsConfig.MAX_RANGE.get(), t -> settings.motionAllowed(t));
         active = TrackTable.sortedByDistance(table.active(), ctx.origin());
     }
 

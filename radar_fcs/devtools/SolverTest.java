@@ -360,6 +360,9 @@ public class SolverTest {
         a.moving = true;
         expect("on stop: moving", first(all, pivot, s, st, 100), "A");
         a.moving = false;
+        a.lastMovingTick = a.lastTick - 5;                     // только что остановилась (разворот) - ещё не стоит
+        expect("on stop: brief stop", first(all, pivot, s, st, 100), "A");
+        a.lastMovingTick = a.lastTick - s.staticTicks;
         expect("on stop: stopped", first(all, pivot, s, st, 100), "B");
         s.switchMode = EngageSettings.SwitchMode.NONE;
 
@@ -371,10 +374,19 @@ public class SolverTest {
         // фильтры и режимы огня
         EngageSettings f = new EngageSettings();
         f.speedMin = 10; f.speedMax = 50;
+        // стоящая с начала, движущаяся, на миг остановившаяся, давно стоящая
+        Track still = table.observe("S1", Track.Kind.MOB, "S1", new Vec(5, 64, 0), 0.5, 50, false, null, TrackTable.Settings.DEFAULT);
+        Track mov = table.observe("S2", Track.Kind.MOB, "S2", new Vec(6, 64, 0), 0.5, 50, false, null, TrackTable.Settings.DEFAULT);
+        Track brief = table.observe("S3", Track.Kind.MOB, "S3", new Vec(7, 64, 0), 0.5, 50, false, null, TrackTable.Settings.DEFAULT);
+        Track parked = table.observe("S4", Track.Kind.MOB, "S4", new Vec(8, 64, 0), 0.5, 50, false, null, TrackTable.Settings.DEFAULT);
+        mov.moving = true; brief.lastMovingTick = 45; parked.lastMovingTick = 20;
+        f.staticTicks = 20;
         boolean ok = !f.speedAllowed(5) && f.speedAllowed(30) && !f.speedAllowed(60)
-                && !f.motionAllowed(false) && f.motionAllowed(true);
+                && !f.motionAllowed(still) && f.motionAllowed(mov) && f.motionAllowed(brief) && !f.motionAllowed(parked);
         f.dropStatic = false; f.dropMoving = true;
-        ok &= f.motionAllowed(false) && !f.motionAllowed(true);
+        ok &= f.motionAllowed(still) && !f.motionAllowed(mov) && !f.motionAllowed(brief) && f.motionAllowed(parked);
+        f.staticTicks = 0;
+        ok &= f.motionAllowed(brief);
         f.fireMode = EngageSettings.FireMode.SINGLE;
         ok &= f.roundsPerSalvo() == 1;
         f.fireMode = EngageSettings.FireMode.BURST; f.burstLength = 7;

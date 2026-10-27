@@ -25,11 +25,19 @@ public final class FcsMod {
         modBus.addListener(dev.radarfcs.net.FcsSettingsPayload::register);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onEntityJoin);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onLevelTick);
+        // радарный линк в руке: ПКМ по аппаратуре - работа предмета (выбор, установка), а не блока (экран, назначение цели)
+        NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock.class, e -> {
+            if (e.getItemStack().getItem() instanceof dev.radarfcs.item.RadarLinkItem
+                    && dev.radarfcs.link.LinkKind.at(e.getLevel(), e.getPos()) != null) {
+                e.setUseBlock(net.neoforged.neoforge.common.util.TriState.FALSE);
+            }
+        });
         NeoForge.EVENT_BUS.addListener(ServerStoppedEvent.class, e -> {
             ShotObserver.clear();
             IffRegistry.clear();
             dev.radarfcs.fcs.FcsControl.clearClaims();
             dev.radarfcs.radar.RadarNetwork.clear();
+            dev.radarfcs.link.LinkRegistry.clear();
         });
     }
 }

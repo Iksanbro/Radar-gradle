@@ -9,6 +9,7 @@
     "radar_fcs:phased_array_controller",
     "radar_fcs:phased_array_panel",
     "radar_fcs:radar_dome",
-    "radar_fcs:radar_monitor"
+    "radar_fcs:radar_monitor",
+    "radar_fcs:radar_link"
   ]
 }

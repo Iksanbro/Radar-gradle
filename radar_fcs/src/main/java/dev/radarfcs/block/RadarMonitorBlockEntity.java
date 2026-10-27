@@ -6,6 +6,7 @@ import dev.radarfcs.core.Track;
 import dev.radarfcs.core.Vec;
 import dev.radarfcs.fcs.TargetSensor;
 import dev.radarfcs.radar.RadarContact;
+import dev.radarfcs.link.LinkRegistry;
 import dev.radarfcs.radar.RadarEmitter;
 import dev.radarfcs.radar.RadarInfo;
 import dev.radarfcs.radar.RadarNetwork;
@@ -79,6 +80,11 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     private List<Target> targets = List.of();
     private CompoundTag lastSent = new CompoundTag();
     private long lastCluster = Long.MIN_VALUE / 2;
+    /** Вычислители, подключённые к экрану радарными линками: назначение цели идёт только им. */
+    private int linkedFcs;
+    /** Цель, назначенная на этом экране (для вычислителей, подключённых линком). */
+    @Nullable private UUID localTarget;
+    private long localUntil;
 
     public RadarMonitorBlockEntity(BlockPos pos, BlockState state) {
         super(FcsRegistry.RADAR_MONITOR_BE.get(), pos, state);
@@ -182,6 +188,27 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         return d.getX() * dir.getStepX() + d.getZ() * dir.getStepZ();
     }
 
+    /** Ведущий блок экрана (у него картинка и назначение цели). */
+    public RadarMonitorBlockEntity master() {
+        RadarMonitorBlockEntity m = masterBe();
+        return m == null ? this : m;
+    }
+
+    /** Цель, назначенная на этом экране, или null. */
+    @Nullable
+    public UUID localDesignation(long now) {
+        RadarMonitorBlockEntity m = master();
+        return m.localTarget != null && m.localUntil >= now ? m.localTarget : null;
+    }
+
+    /** Блоки стены экрана (линк может стоять на любом). */
+    private List<BlockPos> wallPositions() {
+        Direction right = facing().getCounterClockWise();
+        List<BlockPos> out = new ArrayList<>();
+        for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) out.add(worldPosition.relative(right, x).above(y));
+        return out;
+    }
+
     @Nullable
     private RadarMonitorBlockEntity masterBe() {
         if (isMaster() || level == null) return this;
@@ -201,7 +228,25 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     private void refresh(ServerLevel level, long now) {
         Vec3 center = screenCenter(level);
         int ch = channel.getId();
-        List<RadarEmitter> radars = RadarNetwork.linked(level, center, ch, FcsConfig.NETWORK_RANGE.get());
+        // радары и вычислители, подключённые линками к любому блоку экрана; без линков на радары - радары канала
+        List<RadarEmitter> linkedRadars = new ArrayList<>();
+        int fcsLinks = 0;
+        for (BlockPos p : wallPositions()) {
+            for (BlockPos q : LinkRegistry.linkedTo(level, p)) {
+                if (!level.isLoaded(q)) continue;
+                BlockEntity be = level.getBlockEntity(q);
+                if (be instanceof RadarEmitter e && !e.isRadarRemoved()) linkedRadars.add(e);
+                else if (be instanceof FireControlBlockEntity) fcsLinks++;
+            }
+        }
+        linkedFcs = fcsLinks;
+        List<RadarEmitter> radars;
+        if (linkedRadars.isEmpty()) {
+            radars = RadarNetwork.linked(level, center, ch, FcsConfig.NETWORK_RANGE.get());
+        } else {
+            radars = new ArrayList<>();
+            for (RadarEmitter r : linkedRadars) if (r.radarRunning() && !radars.contains(r)) radars.add(r);
+        }
         radarCount = radars.size();
         double reach = 0;
         List<Site> siteList = new ArrayList<>();
@@ -218,7 +263,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         UUID ship = SableCompat.containingId(level, worldPosition);
         Vec origin = new Vec(center.x, center.y, center.z);
         TargetSensor.Context ctx = new TargetSensor.Context(owner, ownerTeam, ch, ship == null ? Set.of() : Set.of(ship), origin);
-        UUID designated = RadarNetwork.designated(level, ch, now);
+        UUID designated = linkedFcs > 0 ? localDesignation(now) : RadarNetwork.designated(level, ch, now);
         double minSpeed = FcsConfig.MIN_SPEED.get() / 20.0;
         List<Target> tl = new ArrayList<>();
         List<Blip> bl = new ArrayList<>();
@@ -322,11 +367,15 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         }
         long now = sl.getGameTime();
         if (best != null) {
-            RadarNetwork.designate(sl, m.channel.getId(), best.id(), now + FcsConfig.DESIGNATION_TICKS.get());
+            // экран с вычислителями на линках назначает цель только им, иначе - всем вычислителям канала
+            m.localTarget = best.id();
+            m.localUntil = now + FcsConfig.DESIGNATION_TICKS.get();
+            if (m.linkedFcs == 0) RadarNetwork.designate(sl, m.channel.getId(), best.id(), now + FcsConfig.DESIGNATION_TICKS.get());
             p.displayClientMessage(Component.translatable("radar_fcs.msg.designated", best.name(),
                     String.format(Locale.ROOT, "%.0f", best.dist())).withStyle(ChatFormatting.YELLOW), true);
         } else {
-            RadarNetwork.clearDesignation(sl, m.channel.getId());
+            m.localTarget = null;
+            if (m.linkedFcs == 0) RadarNetwork.clearDesignation(sl, m.channel.getId());
             p.displayClientMessage(Component.translatable("radar_fcs.msg.designation_cleared").withStyle(ChatFormatting.GRAY), true);
         }
         m.refresh(sl, now);

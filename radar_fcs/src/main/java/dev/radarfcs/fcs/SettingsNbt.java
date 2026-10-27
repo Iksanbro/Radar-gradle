@@ -19,6 +19,7 @@ public final class SettingsNbt {
         t.putDouble("SpeedMin", s.speedMin);
         t.putDouble("SpeedMax", s.speedMax);
         t.putBoolean("DropStatic", s.dropStatic);
+        t.putInt("StaticTicks", s.staticTicks);
         t.putBoolean("DropMoving", s.dropMoving);
         t.putInt("DropShots", s.dropAfterShots);
         t.putString("Priority", s.priority.name());
@@ -42,6 +43,7 @@ public final class SettingsNbt {
         s.speedMin = t.getDouble("SpeedMin");
         s.speedMax = t.getDouble("SpeedMax");
         if (t.contains("DropStatic")) s.dropStatic = t.getBoolean("DropStatic");
+        if (t.contains("StaticTicks")) s.staticTicks = t.getInt("StaticTicks");
         s.dropMoving = t.getBoolean("DropMoving");
         s.dropAfterShots = t.getInt("DropShots");
         s.priority = enumOr(EngageSettings.Priority.class, t.getString("Priority"), s.priority);

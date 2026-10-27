@@ -58,7 +58,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 public class RadarGameTests {
     private static final String ARENA = "arena";
 
-    private static void radarConfig(ServerLevel level) {
+    static void radarConfig(ServerLevel level) {
         FcsGameTests.cleanup(level);
         FcsGameTests.commonConfig();
         FcsConfig.REQUIRE_RADAR.set(true);

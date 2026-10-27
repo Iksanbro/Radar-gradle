@@ -18,7 +18,7 @@ public final class FcsConfig {
     public static final ModConfigSpec SPEC;
 
     // связи
-    public static final ModConfigSpec.IntValue LINK_RADIUS, DISCOVER_INTERVAL;
+    public static final ModConfigSpec.IntValue LINK_RADIUS, DISCOVER_INTERVAL, LINK_RANGE;
     public static final ModConfigSpec.BooleanValue REQUIRE_RADAR, AUTO_ASSEMBLE, YIELD_TO_RADAR_CONTROLLERS;
     public static final ModConfigSpec.ConfigValue<List<? extends String>> RADAR_BLOCKS, RAPID_CLASS_HINTS;
     // сенсор и треки
@@ -69,6 +69,9 @@ public final class FcsConfig {
                 .defineInRange("linkRadius", 16, 2, 64);
         DISCOVER_INTERVAL = b.comment("Как часто пересканировать подключённые блоки, тиков")
                 .defineInRange("discoverInterval", 40, 10, 1200);
+        LINK_RANGE = b.comment("Наибольшее расстояние между концами радарного линка, блоков. Вычислитель, к которому линком",
+                        "подключён хотя бы один станок, управляет только подключёнными станками (то же для радаров и мониторов)")
+                .defineInRange("radarLinkRange", 64, 4, 512);
         REQUIRE_RADAR = b.comment("Вычислитель работает только при работающем радаре: своём (канал, networkRange) или Create Radars (linkRadius)")
                 .define("requireRadar", true);
         RADAR_BLOCKS = b.comment("Запасной список ID блоков-радаров Create Radars (если его API изменилось)")

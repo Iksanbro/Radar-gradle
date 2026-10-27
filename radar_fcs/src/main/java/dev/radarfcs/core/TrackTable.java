@@ -83,6 +83,7 @@ public final class TrackTable {
             double s = t.speedPerTick();
             if (s >= minSpeedPerTick) t.moving = true;
             else if (s < minSpeedPerTick * HYSTERESIS) t.moving = false;
+            if (t.moving) t.lastMovingTick = t.lastTick;
             t.friendly = isFriendly.test(t);
             double d = t.pos.distance(origin);
             t.active = !t.friendly && motionOk.test(t) && t.samples >= minSamples && t.observedSpan() >= 3
