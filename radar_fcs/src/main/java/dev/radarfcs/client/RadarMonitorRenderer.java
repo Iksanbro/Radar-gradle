@@ -67,6 +67,19 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
 
         float e = 1 / 16f;
         rect(vc, m, -0.5f + e, -0.5f + e, w - 0.5f - e, h - 0.5f - e, 0, BG);
+        if (!be.powered()) {
+            // нет электричества: тёмный экран с надписью
+            float sc = 0.0075f * (float) Math.sqrt(Math.min(w, h));
+            String msg = Component.translatable("radar_fcs.monitor.no_energy_short").getString();
+            ps.pushPose();
+            ps.translate((w - 1) / 2f, (h - 1) / 2f, 0.003f);
+            ps.scale(sc, -sc, sc);
+            font.drawInBatch(msg, -font.width(msg) / 2f, -font.lineHeight / 2f, 0xFFFF5050, false, ps.last().pose(), buffers,
+                    Font.DisplayMode.POLYGON_OFFSET, 0, LightTexture.FULL_BRIGHT);
+            ps.popPose();
+            ps.popPose();
+            return;
+        }
         float cx = (w - 1) / 2f, cy = (h - 1) / 2f;
         float r = (float) (Math.min(w, h) / 2.0 * RadarMonitorBlockEntity.PPI_FRACTION);
         float t = Math.max(0.006f, r * 0.016f);

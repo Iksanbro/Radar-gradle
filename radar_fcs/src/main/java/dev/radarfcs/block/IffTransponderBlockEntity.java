@@ -3,6 +3,7 @@ package dev.radarfcs.block;
 import dev.radarfcs.FcsConfig;
 import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.core.EngageSettings;
+import dev.radarfcs.energy.EnergyBuffer;
 import dev.radarfcs.iff.IffAccess;
 import dev.radarfcs.iff.IffRegistry;
 import dev.radarfcs.iff.TransponderMode;
@@ -31,6 +32,9 @@ public class IffTransponderBlockEntity extends BlockEntity {
     /** null - по месту: на сублевеле «сублевел», иначе «радиус». */
     @Nullable private TransponderMode mode;
     private int radius = defaultRadius();
+    /** Электричество (FE): без него транспондер ничего не защищает. */
+    private final EnergyBuffer energy = new EnergyBuffer(64, this::setChanged);
+    private boolean powered = true;
 
     public IffTransponderBlockEntity(BlockPos pos, BlockState state) {
         super(FcsRegistry.IFF_BE.get(), pos, state);
@@ -59,9 +63,30 @@ public class IffTransponderBlockEntity extends BlockEntity {
     }
 
     private void register() {
-        if (level != null && !level.isClientSide) {
+        if (level == null || level.isClientSide) return;
+        if (powered || !EnergyBuffer.required()) {
             IffRegistry.put(level, worldPosition, new IffRegistry.Beacon(code, mode, Math.min(radius, maxRadius())));
+        } else {
+            IffRegistry.remove(level, worldPosition);
         }
+    }
+
+    public static void serverTick(net.minecraft.world.level.Level level, BlockPos pos, BlockState state, IffTransponderBlockEntity be) {
+        int usage = FcsConfig.safe(FcsConfig.TRANSPONDER_USAGE);
+        be.energy.fit(usage);
+        boolean p = !EnergyBuffer.required() || be.energy.consume(usage);
+        if (p != be.powered) {
+            be.powered = p;
+            be.register();
+        }
+    }
+
+    public boolean powered() {
+        return powered || !EnergyBuffer.required();
+    }
+
+    public EnergyBuffer energy() {
+        return energy;
     }
 
     @Override
@@ -132,6 +157,8 @@ public class IffTransponderBlockEntity extends BlockEntity {
         tag.putString("Code", code);
         if (mode != null) tag.putString("Mode", mode.name());
         tag.putInt("Radius", radius);
+        energy.save(tag);
+        tag.putBoolean("Powered", powered);
     }
 
     @Override
@@ -142,6 +169,8 @@ public class IffTransponderBlockEntity extends BlockEntity {
         code = EngageSettings.cleanCode(tag.getString("Code"));
         mode = modeOf(tag.getString("Mode"));
         radius = tag.contains("Radius") ? Math.max(1, tag.getInt("Radius")) : defaultRadius();
+        energy.load(tag);
+        powered = !tag.contains("Powered") || tag.getBoolean("Powered");
         register();
     }
 

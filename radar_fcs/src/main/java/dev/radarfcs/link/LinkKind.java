@@ -22,7 +22,9 @@ public enum LinkKind {
     /** Радарный монитор (любой блок стены). */
     MONITOR,
     /** Монитор Create Radars: выбранная на нём цель - ручное наведение для вычислителей сети. */
-    CR_MONITOR;
+    CR_MONITOR,
+    /** Блок памяти: расширяет списки вычислителей сети. */
+    MEMORY;
 
     /** Вид аппаратуры в точке или null (не аппаратура, чанк не загружен). */
     @Nullable
@@ -36,6 +38,7 @@ public enum LinkKind {
         if (be == null || be.isRemoved()) return null;
         if (be instanceof FireControlBlockEntity) return FCS;
         if (be instanceof RadarMonitorBlockEntity) return MONITOR;
+        if (be instanceof dev.radarfcs.block.MemoryBlockEntity) return MEMORY;
         if (CbcMount.of(be) != null) return MOUNT;
         try {
             if (RadarLink.isRadar(be)) return RADAR;

@@ -22,7 +22,8 @@ public final class TransponderPayloads {
     private static final double MAX_DIST_SQR = 10 * 10;
 
     /** Сервер -> клиент: открыть экран транспондера с его настройками. */
-    public record Open(BlockPos pos, String code, int mode, int radius, boolean onSublevel, int maxRadius)
+    /** flags: 1 - стоит на сублевеле, 2 - есть питание. */
+    public record Open(BlockPos pos, String code, int mode, int radius, int flags, int maxRadius)
             implements CustomPacketPayload {
         public static final Type<Open> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(FcsMod.MODID, "transponder_open"));
         public static final StreamCodec<ByteBuf, Open> CODEC = StreamCodec.composite(
@@ -30,7 +31,7 @@ public final class TransponderPayloads {
                 ByteBufCodecs.stringUtf8(16), Open::code,
                 ByteBufCodecs.VAR_INT, Open::mode,
                 ByteBufCodecs.VAR_INT, Open::radius,
-                ByteBufCodecs.BOOL, Open::onSublevel,
+                ByteBufCodecs.VAR_INT, Open::flags,
                 ByteBufCodecs.VAR_INT, Open::maxRadius,
                 Open::new);
 
@@ -65,7 +66,7 @@ public final class TransponderPayloads {
     /** Открыть экран транспондера игроку (если ему можно видеть код). */
     public static void open(ServerPlayer sp, IffTransponderBlockEntity be) {
         PacketDistributor.sendToPlayer(sp, new Open(be.getBlockPos(), be.code(), be.effectiveMode().ordinal(), be.radius(),
-                be.onSublevel(), IffTransponderBlockEntity.maxRadius()));
+                (be.onSublevel() ? 1 : 0) | (be.powered() ? 2 : 0), IffTransponderBlockEntity.maxRadius()));
     }
 
     private static void handleSave(Save p, IPayloadContext ctx) {

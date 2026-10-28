@@ -71,6 +71,7 @@ dependencies {
         devMods "maven.modrinth:sable:${sable_version}"
         devMods "maven.modrinth:create-aeronautics:${aeronautics_version}"
         if (!project.hasProperty('fcsNoCbcAt')) devMods "maven.modrinth:create-big-cannons-advanced-technologies:${cbcat_version}"
+        devMods "maven.modrinth:createaddition:${createaddition_version}"
     }
 }
 

@@ -65,6 +65,14 @@ public class IffGameTests {
     @AfterBatch(batch = "iff_ship_foreign") public static void a6(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "iff_ship_own") public static void b7(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "iff_ship_own") public static void a7(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "iff_combined_ground") public static void b8(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "iff_combined_ground") public static void a8(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "iff_ship_rider") public static void b9(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "iff_ship_rider") public static void a9(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "iff_ship_escort") public static void b10(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "iff_ship_escort") public static void a10(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "iff_ship_escort_out") public static void b11(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "iff_ship_escort_out") public static void a11(ServerLevel l) { FcsGameTests.cleanup(l); }
 
     /** Транспондер с кодом, режимом и радиусом (как сохранил бы игрок на экране транспондера). */
     static IffTransponderBlockEntity transponder(GameTestHelper h, BlockPos rel, String code, TransponderMode mode, int radius) {
@@ -257,6 +265,105 @@ public class IffGameTests {
             if (!seen) h.fail("ship was not detected at all");
             if (!be.sensor().active().isEmpty()) h.fail("ship with a whitelisted code is active");
             h.succeed();
+        });
+    }
+
+    /** Режим «сублевел и расстояние» не на корабле - шар заданного радиуса: корова в 5 блоках своя. */
+    @GameTest(template = ARENA, batch = "iff_combined_ground", timeoutTicks = 300)
+    public static void combinedModeOnGroundActsAsRadius(GameTestHelper h) {
+        FireControlBlockEntity be = cowHunter(h, false);
+        transponder(h, new BlockPos(48, 1, 30), "", TransponderMode.SUBLEVEL_AND_DISTANCE, 8);
+        Mob cow = tough(movingTarget(h, EntityType.COW, new Vec3(46.5, 1, 26.5), 0.1, 4));
+        AtomicInteger hits = countHits(h, cow);
+        neverShot(h, be, cow, hits, "cow within the distance of a ground transponder");
+        logEvery(h, be, "iff_combined_ground", 40);
+        h.runAtTickTime(200, () -> {
+            if (!friendly(be, cow)) h.fail("cow within the distance is not friendly");
+            h.succeed();
+        });
+    }
+
+    /** Враждебный моб, который держится рядом с кораблём (на dx от его границы со стороны пушки, движется вместе с ним). */
+    static Mob escort(GameTestHelper h, Object sub, double dx) {
+        Mob m = h.spawn(EntityType.HUSK, new Vec3(40.5, 9, 22.5));
+        m.setNoAi(true);
+        m.setPersistenceRequired();
+        tough(m);
+        h.onEachTick(() -> {
+            var b = SableTestSupport.box(sub);
+            m.setPos(b.minX - dx, b.minY, (b.minZ + b.maxZ) / 2);           // со стороны пушки: линия огня не через корабль
+            m.setDeltaMovement(Vec3.ZERO);
+        });
+        return m;
+    }
+
+    /** Режим «сублевел»: моб на палубе корабля (в его пределах) - свой, огня нет. */
+    @GameTest(template = ARENA, batch = "iff_ship_rider", timeoutTicks = 300)
+    public static void shipZoneProtectsRider(GameTestHelper h) {
+        if (!ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        autocannon(h, MOUNT, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcs(h, FCS);
+        Object sub = SableTestSupport.ship(h, new BlockPos(46, 9, 22), 3, new Vec3(0, 0, 0.12), 14, "", TransponderMode.SUBLEVEL, 12);
+        Mob rider = h.spawn(EntityType.HUSK, new Vec3(40.5, 13, 22.5));
+        rider.setNoAi(true);
+        tough(rider);
+        h.onEachTick(() -> {
+            var b = SableTestSupport.box(sub);
+            rider.setPos((b.minX + b.maxX) / 2, b.maxY, (b.minZ + b.maxZ) / 2);
+            rider.setDeltaMovement(Vec3.ZERO);
+        });
+        AtomicInteger hits = countHits(h, rider);
+        neverShot(h, be, rider, hits, "hostile mob on the ship deck");
+        logEvery(h, be, "iff_ship_rider", 40);
+        h.runAtTickTime(240, () -> {
+            if (!friendly(be, rider)) h.fail("hostile mob on the ship deck is not friendly");
+            h.succeed();
+        });
+    }
+
+    /** Режим «сублевел и расстояние» 8: моб в 4 блоках сбоку от корабля - свой. */
+    @GameTest(template = ARENA, batch = "iff_ship_escort", timeoutTicks = 300)
+    public static void shipCombinedZoneProtectsEscort(GameTestHelper h) {
+        if (!ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        autocannon(h, MOUNT, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcs(h, FCS);
+        Object sub = SableTestSupport.ship(h, new BlockPos(46, 9, 22), 3, new Vec3(0, 0, 0.12), 14, "",
+                TransponderMode.SUBLEVEL_AND_DISTANCE, 8);
+        Mob esc = escort(h, sub, 4);
+        AtomicInteger hits = countHits(h, esc);
+        neverShot(h, be, esc, hits, "escort within the distance of the ship");
+        logEvery(h, be, "iff_ship_escort", 40);
+        h.runAtTickTime(240, () -> {
+            if (!friendly(be, esc)) h.fail("escort within the distance of the ship is not friendly");
+            h.succeed();
+        });
+    }
+
+    /** Режим «сублевел» (без расстояния): тот же моб в 4 блоках сбоку от корабля - чужой, огонь и попадание. */
+    @GameTest(template = ARENA, batch = "iff_ship_escort_out", timeoutTicks = 500)
+    public static void shipZoneLeavesEscortOutside(GameTestHelper h) {
+        if (!ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        autocannon(h, MOUNT, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcs(h, FCS);
+        Object sub = SableTestSupport.ship(h, new BlockPos(46, 9, 22), 3, new Vec3(0, 0, 0.12), 14, "", TransponderMode.SUBLEVEL, 12);
+        Mob esc = escort(h, sub, 4);
+        AtomicInteger hits = countHits(h, esc);
+        logEvery(h, be, "iff_ship_escort_out", 40);
+        h.succeedWhen(() -> {
+            if (friendly(be, esc)) throw new GameTestAssertException("mob 4 blocks off the ship is friendly in sublevel mode");
+            if (hits.get() == 0) throw new GameTestAssertException("mob next to the ship not hit yet");
         });
     }
 }

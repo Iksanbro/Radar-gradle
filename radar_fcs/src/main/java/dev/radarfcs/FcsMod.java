@@ -22,6 +22,7 @@ public final class FcsMod {
         FcsRegistry.register(modBus);
         container.registerConfig(ModConfig.Type.SERVER, FcsConfig.SPEC);
         modBus.addListener(FMLCommonSetupEvent.class, e -> e.enqueueWork(FcsRegistry::bindCreate));
+        modBus.addListener(FcsRegistry::registerCapabilities);
         modBus.addListener(dev.radarfcs.net.FcsSettingsPayload::register);
         modBus.addListener(dev.radarfcs.net.FcsCommandPayload::register);
         modBus.addListener(dev.radarfcs.net.MonitorCommandPayload::register);

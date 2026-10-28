@@ -9,6 +9,7 @@ import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.core.Vec;
+import dev.radarfcs.energy.EnergyBuffer;
 import dev.radarfcs.fcs.FcsControl;
 import dev.radarfcs.fcs.MountState;
 import dev.radarfcs.fcs.SettingsNbt;
@@ -67,6 +68,14 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     @Nullable private UUID ownShip;
     /** Настройки этого вычислителя (экран настроек). */
     private EngageSettings settings = new EngageSettings();
+    /** Настройки с учётом памяти: в списках действуют первые capacity записей. */
+    @Nullable private EngageSettings effective;
+    /** Записей в каждом списке: 16 + 16 за каждый блок памяти с питанием в сети. */
+    private int capacity = MemoryBlockEntity.BASE;
+    private final List<BlockPos> memories = new ArrayList<>();
+    /** Электричество (FE) и есть ли питание в этом тике. */
+    private final EnergyBuffer energy = new EnergyBuffer(1024, this::setChanged);
+    private boolean powered = true;
     /** false - пушки разобраны кнопкой «Разобрать» и не собираются автоматически. */
     private boolean assembleWanted = true;
     /** Выстрелы всех пушек по каждой цели и цели, сброшенные после заданного числа выстрелов. */
@@ -96,6 +105,24 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             lastDiscover = now;
             discover(level, now);
         }
+        // питание: без электричества вычислитель не видит целей и не управляет пушками
+        int usage = FcsConfig.safe(FcsConfig.FCS_USAGE);
+        energy.fit(usage);
+        boolean p = !EnergyBuffer.required() || energy.consume(usage);
+        if (p != powered) {
+            powered = p;
+            lastSummary = Long.MIN_VALUE / 2;
+        }
+        if (now % 20 == 0) updateCapacity(level);
+        if (!powered) {
+            sensor.clear();
+            for (MountState m : mounts.values()) FcsControl.cease(level, m, Status.NO_ENERGY);
+            if (now - lastSummary >= 20) {
+                lastSummary = now;
+                updateSummary(level);
+            }
+            return;
+        }
         Vec origin = origin(level);
         // цели - только с работающих радаров Create Radars на линках
         List<BlockEntity> live = new ArrayList<>();
@@ -108,7 +135,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             for (MountState m : mounts.values()) FcsControl.cease(level, m, Status.NO_RADAR);
         } else {
             if (now % FcsConfig.SCAN_INTERVAL.get() == 0) {
-                sensor.sense(level, live, context(level), now, settings, t -> dropped.contains(t.id), des);
+                sensor.sense(level, live, context(level), now, effectiveSettings(), t -> dropped.contains(t.id), des);
                 // цели, которых больше нет, - из учёта выстрелов и сброса
                 if (now % 100 == 0) {
                     shotsAt.keySet().removeIf(id -> sensor.get(id) == null);
@@ -116,7 +143,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                 }
             }
             for (MountState m : mounts.values()) {
-                FcsControl.control(level, this, m, sensor, now, hold, settings.iffRule(), platformShips, des);
+                FcsControl.control(level, this, m, sensor, now, hold, effectiveSettings().iffRule(), platformShips, des);
                 if (m.targetId != null && (m.status == Status.FIRE || m.status == Status.AIMING)) {
                     UUID tid = uuidOrNull(m.targetId);
                     if (tid != null) {
@@ -146,7 +173,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     }
 
     private TargetSensor.Context context(ServerLevel level) {
-        return new TargetSensor.Context(owner, ownerTeam, settings.iffRule(), platformShips, origin(level));
+        return new TargetSensor.Context(owner, ownerTeam, effectiveSettings().iffRule(), platformShips, origin(level));
     }
 
     /** Мировая позиция вычислителя (на корабле - через позу корабля). */
@@ -190,6 +217,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         radars.clear();
         linkedMonitors.clear();
         crMonitors.clear();
+        memories.clear();
         for (BlockPos p : LinkRegistry.linkedTo(level, worldPosition)) {
             if (!level.isLoaded(p)) continue;
             BlockEntity be = level.getBlockEntity(p);
@@ -207,6 +235,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                     if (!linkedMonitors.contains(m.getBlockPos())) linkedMonitors.add(m.getBlockPos());
                 }
                 case CR_MONITOR -> crMonitors.add(p.immutable());
+                case MEMORY -> memories.add(p.immutable());
                 default -> { }
             }
         }
@@ -227,6 +256,40 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             if (s != null) ships.add(s);
         }
         platformShips = Set.copyOf(ships);
+        updateCapacity(level);
+    }
+
+    /** Ёмкость списков: 16 + 16 за каждый блок памяти с питанием в сети. */
+    private void updateCapacity(ServerLevel level) {
+        int n = 0;
+        for (BlockPos p : memories) {
+            if (level.isLoaded(p) && level.getBlockEntity(p) instanceof MemoryBlockEntity m && m.powered()) n++;
+        }
+        int cap = Math.min(EngageSettings.MAX_LIST, MemoryBlockEntity.BASE + MemoryBlockEntity.PER_BLOCK * n);
+        if (cap != capacity) {
+            capacity = cap;
+            effective = null;
+            lastSummary = Long.MIN_VALUE / 2;
+        }
+    }
+
+    /** Записей в каждом списке (белый и чёрный списки целей, коды «свой-чужой»). */
+    public int capacity() {
+        return capacity;
+    }
+
+    /** Настройки, которые действуют: в списках - первые capacity записей. */
+    public EngageSettings effectiveSettings() {
+        if (effective == null) effective = settings.limited(capacity);
+        return effective;
+    }
+
+    public EnergyBuffer energy() {
+        return energy;
+    }
+
+    public boolean powered() {
+        return powered;
     }
 
     public void releaseAll() {
@@ -288,6 +351,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             setOwner(p);
         }
         settings = next;
+        effective = null;
         dropped.clear();
         setChanged();
         if (level != null) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
@@ -349,6 +413,12 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     private void updateSummary(ServerLevel level) {
         CompoundTag tag = new CompoundTag();
         tag.putInt("Radars", runningRadars);
+        tag.putBoolean("Power", powered);
+        tag.putInt("Energy", energy.getEnergyStored());
+        tag.putInt("EnergyCap", energy.getMaxEnergyStored());
+        tag.putInt("Usage", EnergyBuffer.required() ? FcsConfig.safe(FcsConfig.FCS_USAGE) : 0);
+        tag.putInt("Capacity", capacity);
+        tag.putInt("Memory", memories.size());
         tag.putInt("RadarBlocks", radars.size());
         tag.putBoolean("RadarOk", runningRadars > 0 || FcsDev.radarless);
         tag.putBoolean("Hold", hold);
@@ -410,6 +480,9 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     public static List<Component> summaryLines(CompoundTag s, boolean full) {
         List<Component> out = new ArrayList<>();
         boolean radarOk = s.getBoolean("RadarOk");
+        if (s.contains("Power") && !s.getBoolean("Power")) {
+            out.add(Component.translatable("radar_fcs.report.no_energy", s.getInt("Usage")).withStyle(ChatFormatting.RED));
+        }
         out.add(Component.translatable("radar_fcs.report.header").withStyle(ChatFormatting.AQUA)
                 .append(Component.literal("  "))
                 .append(radarOk
@@ -425,6 +498,10 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         int[] links = s.getIntArray("Links");
         if (full && links.length == 3) out.add(Component.translatable("radar_fcs.report.links", links[0], links[1], links[2])
                 .withStyle(ChatFormatting.AQUA));
+        if (full && s.contains("Capacity")) out.add(Component.translatable("radar_fcs.report.memory", s.getInt("Capacity"),
+                s.getInt("Memory")).withStyle(ChatFormatting.GRAY));
+        if (full && s.getInt("Usage") > 0) out.add(Component.translatable("radar_fcs.energy.stored", s.getInt("Energy"),
+                s.getInt("EnergyCap"), s.getInt("Usage")).withStyle(ChatFormatting.DARK_GRAY));
         ListTag ml = s.getList("Mounts", Tag.TAG_COMPOUND);
         out.add(Component.translatable("radar_fcs.report.guns", ml.size()).withStyle(ChatFormatting.WHITE));
         for (int i = 0; i < ml.size(); i++) {
@@ -495,6 +572,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         tag.putString("OwnerTeam", ownerTeam);
         tag.put("Settings", SettingsNbt.write(settings));
         tag.putBoolean("Assemble", assembleWanted);
+        energy.save(tag);
     }
 
     @Override
@@ -505,6 +583,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         ownerTeam = tag.getString("OwnerTeam");
         settings = SettingsNbt.read(tag.getCompound("Settings"));
         assembleWanted = !tag.contains("Assemble") || tag.getBoolean("Assemble");
+        energy.load(tag);
+        effective = null;
         if (tag.contains("Summary", Tag.TAG_COMPOUND)) summary = tag.getCompound("Summary");
     }
 

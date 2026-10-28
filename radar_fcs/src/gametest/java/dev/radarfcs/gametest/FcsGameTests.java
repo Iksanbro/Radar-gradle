@@ -57,6 +57,7 @@ public class FcsGameTests {
         FcsConfig.GLOW_TARGETS.set(true);
         FcsConfig.MARK_TARGETS.set(true);
         FcsConfig.REQUIRE_LOS.set(true);
+        FcsConfig.REQUIRE_POWER.set(false);                         // питание проверяют отдельные тесты (EnergyGameTests)
         FcsConfig.LOG_SHOTS.set(true);
         try {
             CBCConfigs.server().failure.disableAllFailure.set(true);   // без случайных разрывов стволов
@@ -696,8 +697,8 @@ public class FcsGameTests {
     }
 
     /**
-     * Зона наземного транспондера бережёт своё на базе (мирная корова, взятая в цели белым списком, - своя, огня по ней нет),
-     * но не прикрывает врага: враждебный моб в той же зоне - цель, по нему огонь.
+     * Зона транспондера бережёт всё внутри, и врагов тоже: враждебный моб в зоне не цель, такой же моб вне зоны -
+     * цель, по нему огонь; мирная корова (в белом списке целей) в зоне - своя.
      */
     @GameTest(template = ARENA, batch = "iff", timeoutTicks = 500)
     public static void transponderProtectsTarget(GameTestHelper h) {
@@ -705,22 +706,27 @@ public class FcsGameTests {
         autocannon(h, new BlockPos(10, 1, 32), Direction.EAST, 4, 64);
         FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 28));
         SettingsGameTests.configure(be, s -> s.whitelist.add("minecraft:cow"));
-        h.setBlock(new BlockPos(48, 1, 30), FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState());
-        Mob cow = SettingsGameTests.tough(movingTarget(h, EntityType.COW, new Vec3(46.5, 1, 22.5), 0.1, 6));
-        Mob husk = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(46.5, 1, 34.5), 0.1, 4));
-        AtomicInteger cowHits = countHits(h, cow), huskHits = countHits(h, husk);
+        h.setBlock(new BlockPos(48, 1, 26), FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState());
+        Mob cow = SettingsGameTests.tough(movingTarget(h, EntityType.COW, new Vec3(46.5, 1, 20.5), 0.1, 6));
+        Mob inside = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(44.5, 1, 28.5), 0.1, 4));
+        Mob outside = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(46.5, 1, 46.5), 0.1, 4));
+        AtomicInteger cowHits = countHits(h, cow), insideHits = countHits(h, inside), outsideHits = countHits(h, outside);
         logEvery(h, be, "iff", 40);
         h.onEachTick(() -> {
             if (cowHits.get() > 0) throw new GameTestAssertException("protected cow was shot");
+            if (insideHits.get() > 0) throw new GameTestAssertException("hostile mob inside the transponder zone was shot");
             for (MountState m : be.mountStates()) {
-                if (cow.getUUID().toString().equals(m.targetId)) throw new GameTestAssertException("protected cow was picked as a target");
+                if (cow.getUUID().toString().equals(m.targetId) || inside.getUUID().toString().equals(m.targetId))
+                    throw new GameTestAssertException("a mob inside the transponder zone was picked as a target");
             }
         });
         h.succeedWhen(() -> {
-            var t = be.sensor().get(cow.getUUID().toString());
-            if (t == null || !t.friendly) throw new GameTestAssertException("cow in the zone is not friendly");
-            if (huskHits.get() == 0) throw new GameTestAssertException("hostile mob in the zone not hit yet");
-            FcsMod.LOG.info("[radar_fcs test] iff: hostile in the transponder zone hit {} times, protected cow untouched", huskHits.get());
+            var tc = be.sensor().get(cow.getUUID().toString());
+            var ti = be.sensor().get(inside.getUUID().toString());
+            if (tc == null || !tc.friendly) throw new GameTestAssertException("cow in the zone is not friendly");
+            if (ti == null || !ti.friendly) throw new GameTestAssertException("hostile mob in the zone is not friendly");
+            if (outsideHits.get() == 0) throw new GameTestAssertException("hostile mob outside the zone not hit yet");
+            FcsMod.LOG.info("[radar_fcs test] iff: mob outside the zone hit {} times, cow and husk inside untouched", outsideHits.get());
         });
     }
 

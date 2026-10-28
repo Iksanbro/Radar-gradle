@@ -27,7 +27,9 @@ public enum Status {
     /** У станка нет контроллера горизонтальной или вертикальной наводки. */
     NO_CONTROLLER(ChatFormatting.GOLD),
     /** Пушка разобрана кнопкой «Разобрать»: вычислитель её не собирает, пока не нажата «Собрать». */
-    DISASSEMBLED(ChatFormatting.DARK_GRAY);
+    DISASSEMBLED(ChatFormatting.DARK_GRAY),
+    /** У вычислителя нет электричества (FE). */
+    NO_ENERGY(ChatFormatting.DARK_RED);
 
     public final ChatFormatting color;
 

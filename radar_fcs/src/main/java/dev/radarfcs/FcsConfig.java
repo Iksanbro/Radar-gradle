@@ -43,6 +43,9 @@ public final class FcsConfig {
     public static final ModConfigSpec.BooleanValue LOG_SHOTS;
     // монитор
     public static final ModConfigSpec.IntValue MONITOR_MAX_SIZE, DESIGNATION_TICKS;
+    // электропитание (FE)
+    public static final ModConfigSpec.BooleanValue REQUIRE_POWER;
+    public static final ModConfigSpec.IntValue FCS_USAGE, MEMORY_USAGE, MONITOR_USAGE, TRANSPONDER_USAGE;
 
     static {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
@@ -180,6 +183,15 @@ public final class FcsConfig {
         MONITOR_MAX_SIZE = b.comment("Наибольший размер монитора из блоков (ширина и высота)").defineInRange("monitorMaxSize", 6, 1, 16);
         b.pop();
 
+        b.comment("Электропитание блоков мода (FE: Create Crafts & Additions и любые моды с Forge Energy).",
+                "Устройства других модов (станки CBC, радары Create Radars) - без изменений").push("energy");
+        REQUIRE_POWER = b.comment("Блокам мода нужно электричество (false - работают без него)").define("requirePower", true);
+        FCS_USAGE = b.comment("Вычислитель, FE/тик").defineInRange("fireControlUsage", 1024, 0, 1_000_000);
+        MEMORY_USAGE = b.comment("Блок памяти, FE/тик").defineInRange("memoryUsage", 240, 0, 1_000_000);
+        MONITOR_USAGE = b.comment("Радарный монитор, FE/тик за каждый блок экрана").defineInRange("monitorUsage", 32, 0, 1_000_000);
+        TRANSPONDER_USAGE = b.comment("Транспондер «свой», FE/тик").defineInRange("transponderUsage", 64, 0, 1_000_000);
+        b.pop();
+
         SPEC = b.build();
     }
 
@@ -189,6 +201,23 @@ public final class FcsConfig {
 
     public static CbcFlightModel rapidFallback() {
         return CbcFlightModel.ballistic(RAPID_SPEED.get(), RAPID_GRAVITY.get(), RAPID_DRAG.get(), false, RAPID_TICKS.get());
+    }
+
+    /** Целое значение, даже если серверный конфиг ещё не загружен. */
+    public static int safe(ModConfigSpec.IntValue v) {
+        try {
+            return v.get();
+        } catch (IllegalStateException e) {
+            return v.getDefault();
+        }
+    }
+
+    public static boolean safe(ModConfigSpec.BooleanValue v) {
+        try {
+            return v.get();
+        } catch (IllegalStateException e) {
+            return v.getDefault();
+        }
     }
 
     /** Значение, даже если серверный конфиг ещё не загружен (главное меню, подсказки предметов). */

@@ -69,14 +69,15 @@ public final class EngageSettings {
      * Записи: ID типа (minecraft:zombie), тег типа (#minecraft:undead), мод целиком (minecraft:*), имя игрока (Steve).
      */
     public final java.util.List<String> whitelist = new java.util.ArrayList<>(), blacklist = new java.util.ArrayList<>();
-    public static final int MAX_LIST = 10, MAX_ENTRY = 64;
+    /** Наибольшее число хранимых записей списка; действуют первые столько, сколько позволяет память вычислителя. */
+    public static final int MAX_LIST = 256, MAX_ENTRY = 64;
     /**
      * Свой-чужой по кодам транспондеров: true - белый список (свои только коды из списка), false - чёрный (свои все,
      * кроме кодов из списка). Код - от 1 до CODE_LENGTH цифр.
      */
     public boolean iffWhitelist = false;
     public final java.util.List<String> iffCodes = new java.util.ArrayList<>();
-    public static final int MAX_IFF_CODES = 16, CODE_LENGTH = 8;
+    public static final int MAX_IFF_CODES = 256, CODE_LENGTH = 8;
     /** Скорость цели от и до, м/с; 0 - без ограничения. */
     public double speedMin = 0, speedMax = 0;
 
@@ -173,6 +174,19 @@ public final class EngageSettings {
         s.switchShots = switchShots;
         s.switchSeconds = switchSeconds;
         return s;
+    }
+
+    /** Копия, в которой у каждого списка действуют только первые capacity записей (память вычислителя). */
+    public EngageSettings limited(int capacity) {
+        EngageSettings s = copy();
+        truncate(s.whitelist, capacity);
+        truncate(s.blacklist, capacity);
+        truncate(s.iffCodes, capacity);
+        return s;
+    }
+
+    private static void truncate(java.util.List<String> l, int n) {
+        while (l.size() > Math.max(0, n)) l.remove(l.size() - 1);
     }
 
     /** Правило «свой-чужой» по кодам транспондеров. */

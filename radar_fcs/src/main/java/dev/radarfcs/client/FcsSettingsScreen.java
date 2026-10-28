@@ -31,7 +31,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 public final class FcsSettingsScreen extends Screen {
     private enum Tab { FIRE, TARGETS, LISTS, IFF, DROP, PICK, STATUS }
 
-    private static final int W = 400, H = 240, ROW = 22, LIST_ROW = 14, CODE_COLS = 4;
+    private static final int W = 400, H = 240, ROW = 22, LIST_ROW = 14, CODE_COLS = 4, LIST_ROWS = 9, IFF_ROWS = 6;
 
     private final BlockPos pos;
     private final EngageSettings s;
@@ -39,6 +39,8 @@ public final class FcsSettingsScreen extends Screen {
     private int left, top;
     /** Набранная запись списка и код «свой-чужой» (переживают перестройку виджетов). */
     private String listInput = "", codeInput = "";
+    /** Прокрутка: белый список, чёрный список, коды «свой-чужой». */
+    private final int[] scroll = new int[3];
     /** Видит ли игрок коды «свой-чужой» и может ли их менять (владелец, его команда, оператор). */
     private final boolean iffAccess;
 
@@ -110,7 +112,8 @@ public final class FcsSettingsScreen extends Screen {
 
     /** Белый и чёрный списки: поле ввода, кнопки «в белый» / «в чёрный», записи (клик - убрать). */
     private void listsTab(int y) {
-        EditBox box = new EditBox(font, left + 8, y, 170, 20, Component.translatable("radar_fcs.gui.list_entry"));
+        int cap = capacity();
+        EditBox box = new EditBox(font, left + 8, y, 190, 20, Component.translatable("radar_fcs.gui.list_entry"));
         box.setMaxLength(EngageSettings.MAX_ENTRY);
         box.setValue(listInput);
         box.setResponder(v -> listInput = v);
@@ -118,35 +121,47 @@ public final class FcsSettingsScreen extends Screen {
         box.setTooltip(Tooltip.create(Component.translatable("radar_fcs.gui.lists_hint")));
         addRenderableWidget(box);
         addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.to_whitelist"), b -> addEntry(s.whitelist, s.blacklist))
-                .bounds(left + 182, y, 84, 20).build()).active = s.whitelist.size() < EngageSettings.MAX_LIST;
+                .bounds(left + 202, y, 94, 20).build()).active = s.whitelist.size() < cap;
         addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.to_blacklist"), b -> addEntry(s.blacklist, s.whitelist))
-                .bounds(left + 268, y, 84, 20).build()).active = s.blacklist.size() < EngageSettings.MAX_LIST;
+                .bounds(left + 300, y, 92, 20).build()).active = s.blacklist.size() < cap;
         y += 38;
-        entries(s.whitelist, left + 8, y, 0xFF8CFF9A);
-        entries(s.blacklist, left + 182, y, 0xFFFF8C8C);
+        entries(s.whitelist, 0, left + 8, y, 0xFF8CFF9A, cap);
+        entries(s.blacklist, 1, left + 204, y, 0xFFFF8C8C, cap);
     }
 
-    private void entries(List<String> list, int x, int y, int color) {
-        for (int i = 0; i < list.size(); i++) {
-            int k = i;
+    /** Видимые записи списка (колесо мыши - прокрутка); записи сверх памяти серые и не действуют. */
+    private void entries(List<String> list, int which, int x, int y, int color, int cap) {
+        scroll[which] = Math.max(0, Math.min(scroll[which], Math.max(0, list.size() - LIST_ROWS)));
+        for (int r = 0; r < LIST_ROWS && scroll[which] + r < list.size(); r++) {
+            int k = scroll[which] + r;
+            boolean active = k < cap;
             Button b = addRenderableWidget(Button.builder(Component.literal("✕ ").withStyle(ChatFormatting.GRAY)
-                            .append(Component.literal(list.get(i)).withColor(color & 0xFFFFFF)),
-                    x0 -> { list.remove(k); rebuildWidgets(); }).bounds(x, y + i * LIST_ROW, 170, LIST_ROW - 1).build());
-            b.setTooltip(Tooltip.create(Component.translatable("radar_fcs.gui.list_remove")));
+                            .append(active ? Component.literal(list.get(k)).withColor(color & 0xFFFFFF)
+                                    : Component.literal(list.get(k)).withStyle(ChatFormatting.DARK_GRAY)),
+                    x0 -> { list.remove(k); rebuildWidgets(); }).bounds(x, y + r * LIST_ROW, 188, LIST_ROW - 1).build());
+            b.setTooltip(Tooltip.create(Component.translatable(active ? "radar_fcs.gui.list_remove" : "radar_fcs.gui.list_no_memory")));
         }
     }
 
     private void addEntry(List<String> to, List<String> other) {
         String e = listInput.trim();
-        if (e.isEmpty() || to.size() >= EngageSettings.MAX_LIST) return;
+        if (e.isEmpty() || to.size() >= capacity()) return;
         other.removeIf(x -> x.equalsIgnoreCase(e));                       // запись - только в одном списке
         if (to.stream().noneMatch(x -> x.equalsIgnoreCase(e))) to.add(e);
         listInput = "";
         rebuildWidgets();
     }
 
+    /** Записей в каждом списке: 16 + 16 за блок памяти с питанием в сети вычислителя (из сводки блока). */
+    private int capacity() {
+        if (minecraft != null && minecraft.level != null && minecraft.level.getBlockEntity(pos) instanceof FireControlBlockEntity be
+                && be.summary().contains("Capacity")) return be.summary().getInt("Capacity");
+        return dev.radarfcs.block.MemoryBlockEntity.BASE;
+    }
+
     /** Свой-чужой: режим (белый / чёрный список кодов транспондеров), поле кода, коды (клик - убрать). */
     private void iffTab(int y) {
+        int cap = capacity();
         Button mode = cycle(left + 8, y, W - 16, () -> Component.translatable(s.iffWhitelist ? "radar_fcs.gui.iff_mode_white"
                 : "radar_fcs.gui.iff_mode_black"), () -> s.iffWhitelist = !s.iffWhitelist);
         mode.active = iffAccess;
@@ -161,22 +176,42 @@ public final class FcsSettingsScreen extends Screen {
         addRenderableWidget(box);
         Button add = addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.iff_add"), b -> {
             String c = EngageSettings.cleanCode(codeInput);
-            if (!c.isEmpty() && !s.iffCodes.contains(c) && s.iffCodes.size() < EngageSettings.MAX_IFF_CODES) s.iffCodes.add(c);
+            if (!c.isEmpty() && !s.iffCodes.contains(c) && s.iffCodes.size() < capacity()) s.iffCodes.add(c);
             codeInput = "";
             rebuildWidgets();
         }).bounds(left + 132, y, 90, 20).build());
-        add.active = iffAccess && s.iffCodes.size() < EngageSettings.MAX_IFF_CODES;
+        add.active = iffAccess && s.iffCodes.size() < cap;
         y += 26;
         int cw = (W - 16) / CODE_COLS;
-        for (int i = 0; i < s.iffCodes.size(); i++) {
-            int k = i;
-            Button b = addRenderableWidget(Button.builder(Component.literal("✕ ").withStyle(ChatFormatting.GRAY)
-                            .append(Component.literal(s.iffCodes.get(i)).withStyle(s.iffWhitelist ? ChatFormatting.GREEN : ChatFormatting.RED)),
-                    x0 -> { s.iffCodes.remove(k); rebuildWidgets(); })
-                    .bounds(left + 8 + (i % CODE_COLS) * cw, y + (i / CODE_COLS) * LIST_ROW, cw - 4, LIST_ROW - 1).build());
-            b.active = iffAccess;
-            b.setTooltip(Tooltip.create(Component.translatable("radar_fcs.gui.list_remove")));
+        int rows = (s.iffCodes.size() + CODE_COLS - 1) / CODE_COLS;
+        scroll[2] = Math.max(0, Math.min(scroll[2], Math.max(0, rows - IFF_ROWS)));
+        for (int r = 0; r < IFF_ROWS; r++) {
+            for (int c = 0; c < CODE_COLS; c++) {
+                int k = (scroll[2] + r) * CODE_COLS + c;
+                if (k >= s.iffCodes.size()) break;
+                boolean active = k < cap;
+                Button b = addRenderableWidget(Button.builder(Component.literal("✕ ").withStyle(ChatFormatting.GRAY)
+                                .append(Component.literal(s.iffCodes.get(k)).withStyle(!active ? ChatFormatting.DARK_GRAY
+                                        : s.iffWhitelist ? ChatFormatting.GREEN : ChatFormatting.RED)),
+                        x0 -> { s.iffCodes.remove(k); rebuildWidgets(); })
+                        .bounds(left + 8 + c * cw, y + r * LIST_ROW, cw - 4, LIST_ROW - 1).build());
+                b.active = iffAccess;
+                b.setTooltip(Tooltip.create(Component.translatable(active ? "radar_fcs.gui.list_remove" : "radar_fcs.gui.list_no_memory")));
+            }
         }
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double dx, double dy) {
+        int which = -1;
+        if (tab == Tab.LISTS && mouseY >= top + 68) which = mouseX < left + 200 ? 0 : 1;
+        else if (tab == Tab.IFF && mouseY >= top + 82) which = 2;
+        if (which >= 0) {
+            scroll[which] = Math.max(0, scroll[which] - (int) Math.signum(dy) * (which == 2 ? 1 : 3));
+            rebuildWidgets();
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, dx, dy);
     }
 
     /** Сборка и разборка всех пушек вычислителя - сразу, без «Сохранить». */
@@ -257,18 +292,24 @@ public final class FcsSettingsScreen extends Screen {
                 hint(g, "radar_fcs.gui.targets_hint", y);
             }
             case LISTS -> {
-                int hy = top + 56;
-                g.drawString(font, Component.translatable("radar_fcs.gui.whitelist", s.whitelist.size(), EngageSettings.MAX_LIST),
-                        left + 8, hy, 0x8CFF9A, false);
-                g.drawString(font, Component.translatable("radar_fcs.gui.blacklist", s.blacklist.size(), EngageSettings.MAX_LIST),
-                        left + 182, hy, 0xFF8C8C, false);
+                int hy = top + 56, cap = capacity();
+                g.drawString(font, Component.translatable("radar_fcs.gui.whitelist", s.whitelist.size(), cap), left + 8, hy, 0x8CFF9A, false);
+                g.drawString(font, Component.translatable("radar_fcs.gui.blacklist", s.blacklist.size(), cap), left + 204, hy, 0xFF8C8C, false);
+                if (s.whitelist.size() > LIST_ROWS || s.blacklist.size() > LIST_ROWS) {
+                    Component sc = Component.translatable("radar_fcs.gui.scroll");
+                    g.drawString(font, sc, left + W - 8 - font.width(sc), top + H - 18, 0x808080, false);
+                }
                 int rows = Math.max(s.whitelist.size(), s.blacklist.size());
                 if (rows <= 6) hint(g, "radar_fcs.gui.lists_hint", top + 68 + rows * LIST_ROW + 4);
             }
             case IFF -> {
-                g.drawString(font, Component.translatable("radar_fcs.gui.iff_count", s.iffCodes.size(), EngageSettings.MAX_IFF_CODES),
+                g.drawString(font, Component.translatable("radar_fcs.gui.iff_count", s.iffCodes.size(), capacity()),
                         left + 232, top + 62, 0xA0A0A0, false);
-                int rows = (s.iffCodes.size() + CODE_COLS - 1) / CODE_COLS;
+                int rows = Math.min(IFF_ROWS, (s.iffCodes.size() + CODE_COLS - 1) / CODE_COLS);
+                if ((s.iffCodes.size() + CODE_COLS - 1) / CODE_COLS > IFF_ROWS) {
+                    Component sc = Component.translatable("radar_fcs.gui.scroll");
+                    g.drawString(font, sc, left + W - 8 - font.width(sc), top + 62, 0x808080, false);
+                }
                 int hy = top + 82 + rows * LIST_ROW + 6;
                 if (!iffAccess) {
                     g.drawWordWrap(font, Component.translatable("radar_fcs.gui.iff_hidden").withStyle(ChatFormatting.GOLD), left + 8, hy,

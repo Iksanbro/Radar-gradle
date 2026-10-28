@@ -6,6 +6,7 @@
     "radar_fcs:radar_monitor",
     "radar_fcs:radar_link",
     "radar_fcs:yaw_controller",
-    "radar_fcs:pitch_controller"
+    "radar_fcs:pitch_controller",
+    "radar_fcs:memory_block"
   ]
 }

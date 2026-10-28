@@ -142,7 +142,7 @@ public final class DevScreenshots {
         if (tick == 610) shot(mc, "monitor_gui");
         // экран транспондера
         if (tick == 620) dev.radarfcs.client.FcsClientHooks.openTransponder(new dev.radarfcs.net.TransponderPayloads.Open(
-                base.offset(8, 0, -3), "2077", dev.radarfcs.iff.TransponderMode.RADIUS.ordinal(), 16, false, 64));
+                base.offset(8, 0, -3), "2077", dev.radarfcs.iff.TransponderMode.RADIUS.ordinal(), 16, 2, 64));
         if (tick == 630) shot(mc, "transponder_gui");
         if (tick == 640) mc.stop();
     }
@@ -249,6 +249,7 @@ public final class DevScreenshots {
         }
         player.setItemSlot(EquipmentSlot.HEAD, new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("create:goggles"))));
         player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, ItemStack.EMPTY);     // линк из прошлой съёмки
+        dev.radarfcs.FcsConfig.REQUIRE_POWER.set(false);                 // сцена без генераторов
         player.teleportTo(level, base.getX() - 6.5, y + 3, base.getZ() + 7.5, -120f, 15f);
         FcsMod.LOG.info("[radar_fcs dev] scene built at {}", base);
     }

@@ -335,14 +335,9 @@ public final class TargetSensor {
         } else if (kind == Track.Kind.PLAYER && !FcsConfig.TARGET_PLAYERS.get()) {
             return true;
         }
-        // зона транспондера в режиме «радиус» бережёт своё (мирных мобов, транспорт, контрапшены), но не прикрывает
-        // врагов: враждебные мобы, игроки (у них свои правила), снаряды и чужие корабли в зоне - цели
-        boolean zoneProtects = switch (kind) {
-            case MOB -> !(handle instanceof Enemy);
-            case PLAYER, PROJECTILE, SHIP -> false;
-            default -> true;
-        };
-        return zoneProtects && IffRegistry.protectsPoint(level, pos, iff);
+        // зона своего транспондера (корабль, радиус, корабль + расстояние) бережёт всё внутри: мобов, игроков,
+        // транспорт, снаряды и корабли
+        return IffRegistry.protectsPoint(level, pos, iff);
     }
 
     private static boolean isFriendlyPlayer(Player p, Context ctx) {

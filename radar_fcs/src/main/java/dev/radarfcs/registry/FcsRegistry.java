@@ -11,6 +11,8 @@ import dev.radarfcs.block.FireControlBlock;
 import dev.radarfcs.block.FireControlBlockEntity;
 import dev.radarfcs.block.IffTransponderBlock;
 import dev.radarfcs.block.IffTransponderBlockEntity;
+import dev.radarfcs.block.MemoryBlock;
+import dev.radarfcs.block.MemoryBlockEntity;
 import dev.radarfcs.block.RadarMonitorBlock;
 import dev.radarfcs.block.RadarMonitorBlockEntity;
 import dev.radarfcs.block.RadarLinkBlock;
@@ -62,7 +64,11 @@ public final class FcsRegistry {
     public static final DeferredBlock<RadarLinkBlock> RADAR_LINK = BLOCKS.register("radar_link",
             () -> new RadarLinkBlock(metal(MapColor.COLOR_LIGHT_BLUE, 1.5f).noOcclusion().lightLevel(s -> 4)));
 
+    public static final DeferredBlock<MemoryBlock> MEMORY = BLOCKS.register("memory_block",
+            () -> new MemoryBlock(metal(MapColor.TERRACOTTA_BROWN, 2.5f).lightLevel(s -> s.getValue(MemoryBlock.POWERED) ? 5 : 0)));
+
     public static final DeferredItem<BlockItem> FIRE_CONTROL_ITEM = ITEMS.registerSimpleBlockItem(FIRE_CONTROL);
+    public static final DeferredItem<BlockItem> MEMORY_ITEM = ITEMS.registerSimpleBlockItem(MEMORY);
     public static final DeferredItem<BlockItem> YAW_CONTROLLER_ITEM = ITEMS.registerSimpleBlockItem(YAW_CONTROLLER);
     public static final DeferredItem<BlockItem> PITCH_CONTROLLER_ITEM = ITEMS.registerSimpleBlockItem(PITCH_CONTROLLER);
     public static final DeferredItem<RadarLinkItem> RADAR_LINK_ITEM = ITEMS.register("radar_link",
@@ -89,6 +95,10 @@ public final class FcsRegistry {
             BLOCK_ENTITIES.register("radar_link",
                     () -> BlockEntityType.Builder.of(RadarLinkBlockEntity::new, RADAR_LINK.get()).build(null));
 
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<MemoryBlockEntity>> MEMORY_BE =
+            BLOCK_ENTITIES.register("memory_block",
+                    () -> BlockEntityType.Builder.of(MemoryBlockEntity::new, MEMORY.get()).build(null));
+
     public static final DeferredHolder<DisplaySource, FcsDisplaySource> FCS_DISPLAY_SOURCE =
             DISPLAY_SOURCES.register("fire_control", FcsDisplaySource::new);
 
@@ -98,6 +108,7 @@ public final class FcsRegistry {
                     .icon(() -> new ItemStack(FIRE_CONTROL_ITEM.get()))
                     .displayItems((params, out) -> {
                         out.accept(FIRE_CONTROL_ITEM.get());
+                        out.accept(MEMORY_ITEM.get());
                         out.accept(RADAR_LINK_ITEM.get());
                         out.accept(YAW_CONTROLLER_ITEM.get());
                         out.accept(PITCH_CONTROLLER_ITEM.get());
@@ -112,6 +123,15 @@ public final class FcsRegistry {
         BLOCK_ENTITIES.register(bus);
         TABS.register(bus);
         DISPLAY_SOURCES.register(bus);
+    }
+
+    /** Приём электричества (FE) блоками мода. */
+    public static void registerCapabilities(net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent event) {
+        var cap = net.neoforged.neoforge.capabilities.Capabilities.EnergyStorage.BLOCK;
+        event.registerBlockEntity(cap, FIRE_CONTROL_BE.get(), (be, side) -> be.energy());
+        event.registerBlockEntity(cap, MEMORY_BE.get(), (be, side) -> be.energy());
+        event.registerBlockEntity(cap, RADAR_MONITOR_BE.get(), (be, side) -> be.energy());
+        event.registerBlockEntity(cap, IFF_BE.get(), (be, side) -> be.energy());
     }
 
     private static BlockBehaviour.Properties metal(MapColor color, float strength) {

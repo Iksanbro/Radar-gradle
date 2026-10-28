@@ -6,6 +6,7 @@ import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.core.IffRule;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.core.Vec;
+import dev.radarfcs.energy.EnergyBuffer;
 import dev.radarfcs.fcs.TargetSensor;
 import dev.radarfcs.compat.RadarLink;
 import dev.radarfcs.link.LinkRegistry;
@@ -92,6 +93,9 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     private float displayRange = 64;
     private Vec3 center = Vec3.ZERO;
     private int radarCount;
+    /** Электричество (FE): каждый блок стены принимает его, ведущий забирает потребление всей стены. */
+    private final EnergyBuffer energy = new EnergyBuffer(32, this::setChanged);
+    private boolean powered = true;
     private List<Blip> blips = List.of();
     private List<Site> sites = List.of();
     private List<Target> targets = List.of();
@@ -118,6 +122,8 @@ public class RadarMonitorBlockEntity extends BlockEntity {
 
     private void tick(ServerLevel level) {
         long now = level.getGameTime();
+        energy.fit(FcsConfig.safe(FcsConfig.MONITOR_USAGE));
+        if (isMaster()) powerWall(level);
         if (now % 10 != Math.floorMod(worldPosition.hashCode(), 10)) return;
         boolean changed = false;
         if (now - lastCluster >= 20) {
@@ -134,6 +140,36 @@ public class RadarMonitorBlockEntity extends BlockEntity {
             lastSent = sent;
             level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
+    }
+
+    /** Ведущий забирает потребление всей стены (за каждый блок) из общего запаса её блоков. */
+    private void powerWall(ServerLevel level) {
+        if (!EnergyBuffer.required()) {
+            powered = true;
+            return;
+        }
+        int usage = FcsConfig.safe(FcsConfig.MONITOR_USAGE);
+        List<RadarMonitorBlockEntity> wall = new ArrayList<>();
+        for (BlockPos p : wallPositions()) {
+            if (level.getBlockEntity(p) instanceof RadarMonitorBlockEntity m) wall.add(m);
+        }
+        long need = (long) usage * Math.max(1, wall.size()), have = 0;
+        for (RadarMonitorBlockEntity m : wall) have += m.energy.getEnergyStored();
+        boolean p = have >= need;
+        if (p) {
+            long left = need;
+            for (RadarMonitorBlockEntity m : wall) left -= m.energy.drain((int) Math.min(Integer.MAX_VALUE, left));
+        }
+        powered = p;
+    }
+
+    /** Есть ли питание у экрана (на клиенте - присланное сервером). */
+    public boolean powered() {
+        return master().powered;
+    }
+
+    public EnergyBuffer energy() {
+        return energy;
     }
 
     public Direction facing() {
@@ -225,7 +261,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     @Nullable
     public UUID localDesignation(long now) {
         RadarMonitorBlockEntity m = master();
-        return m.localTarget != null && m.localUntil >= now ? m.localTarget : null;
+        return m.powered && m.localTarget != null && m.localUntil >= now ? m.localTarget : null;
     }
 
     /** Вычислитель на линке ведёт огонь по цели (отметка на экране). */
@@ -259,6 +295,13 @@ public class RadarMonitorBlockEntity extends BlockEntity {
 
     private void refresh(ServerLevel level, long now) {
         Vec3 center = screenCenter(level);
+        if (!powered) {                                                    // без питания экран погашен
+            blips = List.of();
+            sites = List.of();
+            targets = List.of();
+            designatedName = "";
+            return;
+        }
         // радары Create Radars в сети любого блока экрана; правило «свой-чужой» - первого вычислителя сети
         List<BlockEntity> radars = new ArrayList<>();
         IffRule iff = null;
@@ -269,7 +312,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
                 if (be != null && !be.isRemoved() && RadarLink.isRadar(be) && RadarLink.isRunning(be) && !radars.contains(be)) {
                     radars.add(be);
                 }
-                if (iff == null && be instanceof FireControlBlockEntity fcs) iff = fcs.settings().iffRule();
+                if (iff == null && be instanceof FireControlBlockEntity fcs) iff = fcs.effectiveSettings().iffRule();
             }
         }
         if (iff == null) iff = IffRule.DEFAULT;
@@ -442,6 +485,10 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     public void click(Player p, BlockHitResult hit) {
         RadarMonitorBlockEntity m = masterBe();
         if (m == null || !(level instanceof ServerLevel sl)) return;
+        if (!m.powered) {
+            p.displayClientMessage(Component.translatable("radar_fcs.monitor.no_energy").withStyle(ChatFormatting.RED), true);
+            return;
+        }
         Direction f = m.facing();
         if (hit.getDirection() != f) return;
         Direction right = f.getCounterClockWise();
@@ -483,6 +530,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         t.putInt("H", height);
         t.putInt("Scale", scaleIndex);
         t.putInt("Show", show);
+        t.putBoolean("Power", powered);
         if (isMaster()) {
             t.putFloat("Range", displayRange);
             t.putDouble("CX", center.x);
@@ -525,6 +573,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         center = new Vec3(t.getDouble("CX"), t.getDouble("CY"), t.getDouble("CZ"));
         designatedName = t.getString("Des");
         show = t.contains("Show") ? t.getInt("Show") : Show.ALL;
+        powered = !t.contains("Power") || t.getBoolean("Power");
         radarCount = t.getInt("Radars");
         List<Blip> bl = new ArrayList<>();
         for (Tag tag : t.getList("Blips", Tag.TAG_COMPOUND)) {
@@ -546,6 +595,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         super.saveAdditional(tag, registries);
         tag.putInt("Scale", scaleIndex);
         tag.putInt("Show", show);
+        energy.save(tag);
         if (owner != null) tag.putUUID("Owner", owner);
         tag.putString("OwnerTeam", ownerTeam);
     }
@@ -555,6 +605,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         super.loadAdditional(tag, registries);
         scaleIndex = Math.floorMod(tag.getInt("Scale"), SCALES.length);
         show = tag.contains("Show") ? tag.getInt("Show") & Show.ALL : Show.ALL;
+        energy.load(tag);
         owner = tag.hasUUID("Owner") ? tag.getUUID("Owner") : null;
         ownerTeam = tag.getString("OwnerTeam");
         if (tag.contains("Screen", Tag.TAG_COMPOUND)) readClientData(tag.getCompound("Screen"));

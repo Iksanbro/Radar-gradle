@@ -36,13 +36,20 @@ final class SableTestSupport {
     /** То же; transponderCode != null - на корабле транспондер «свой» с этим кодом в режиме «сублевел». */
     static Object ship(GameTestHelper h, BlockPos minRel, int size, Vec3 velPerTick, double span,
                        @org.jetbrains.annotations.Nullable String transponderCode) {
+        return ship(h, minRel, size, velPerTick, span, transponderCode, dev.radarfcs.iff.TransponderMode.SUBLEVEL, 12);
+    }
+
+    /** Корабль с транспондером с кодом, режимом выделения и радиусом. */
+    static Object ship(GameTestHelper h, BlockPos minRel, int size, Vec3 velPerTick, double span,
+                       @org.jetbrains.annotations.Nullable String transponderCode, dev.radarfcs.iff.TransponderMode mode, int radius) {
         for (int x = 0; x < size; x++) for (int y = 0; y < size; y++) for (int z = 0; z < size; z++)
             h.setBlock(minRel.offset(x, y, z), Blocks.IRON_BLOCK.defaultBlockState());
         if (transponderCode != null) {
             BlockPos tp = minRel.offset(size / 2, size - 1, size / 2);
             h.setBlock(tp, FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState());
-            if (!transponderCode.isEmpty() && h.getLevel().getBlockEntity(h.absolutePos(tp)) instanceof dev.radarfcs.block.IffTransponderBlockEntity t) {
-                t.apply(transponderCode, dev.radarfcs.iff.TransponderMode.SUBLEVEL, 12, null);
+            if (h.getLevel().getBlockEntity(h.absolutePos(tp)) instanceof dev.radarfcs.block.IffTransponderBlockEntity t
+                    && (!transponderCode.isEmpty() || mode != dev.radarfcs.iff.TransponderMode.SUBLEVEL)) {
+                t.apply(transponderCode, mode, radius, null);
             }
         }
         BlockPos min = h.absolutePos(minRel), max = min.offset(size - 1, size - 1, size - 1);
@@ -76,6 +83,12 @@ final class SableTestSupport {
             }
         });
         return sub;
+    }
+
+    /** Мировые границы корабля. */
+    static net.minecraft.world.phys.AABB box(Object handle) {
+        var b = ((ServerSubLevel) handle).boundingBox();
+        return new net.minecraft.world.phys.AABB(b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ());
     }
 
     /** Диагностика: поза и габарит корабля, трек вычислителя и снаряды CBC по тикам. */

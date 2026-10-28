@@ -1,0 +1,26 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "TCT",
+    "RBR",
+    "TCT"
+  ],
+  "key": {
+    "T": {
+      "item": "create:electron_tube"
+    },
+    "C": {
+      "item": "minecraft:comparator"
+    },
+    "B": {
+      "item": "create:brass_casing"
+    },
+    "R": {
+      "item": "minecraft:redstone"
+    }
+  },
+  "result": {
+    "id": "radar_fcs:memory_block",
+    "count": 1
+  }
+}

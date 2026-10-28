@@ -167,6 +167,20 @@ public final class SableCompat {
         return new Ship(s.getUniqueId(), name, center, box, vel, s);
     }
 
+    /** Мировые границы корабля, в плоте которого блок, или null (блок в обычном мире). */
+    @Nullable
+    public static AABB worldBox(Level level, BlockPos pos) {
+        SubLevelAccess s = containing(level, pos);
+        if (s == null) return null;
+        try {
+            BoundingBox3dc b = s.boundingBox();
+            return new AABB(b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ());
+        } catch (Throwable t) {
+            fail(t);
+            return null;
+        }
+    }
+
     /** Корабли, пересекающие мировую область. */
     public static List<Ship> shipsIn(Level level, AABB area) {
         List<Ship> out = new ArrayList<>();

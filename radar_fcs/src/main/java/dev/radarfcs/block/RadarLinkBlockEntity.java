@@ -147,7 +147,8 @@ public class RadarLinkBlockEntity extends BlockEntity implements IHaveGoggleInfo
         UUID net = network();
         if (net == null) return Component.translatable("radar_fcs.link.not_linked").withStyle(ChatFormatting.RED);
         if (disabled) return Component.translatable("radar_fcs.link.disabled", shortName(net)).withStyle(ChatFormatting.GOLD);
-        return Component.translatable("radar_fcs.link.network_info", shortName(net), counts[0], counts[1], counts[2], counts[3] + counts[4])
+        return Component.translatable("radar_fcs.link.network_info", shortName(net), counts[0], counts[1], counts[2], counts[3] + counts[4],
+                        counts[5])
                 .withStyle(ChatFormatting.AQUA);
     }
 

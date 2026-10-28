@@ -62,6 +62,14 @@ public class IffTransponderBlock extends BaseEntityBlock {
         return new IffTransponderBlockEntity(pos, state);
     }
 
+    @org.jetbrains.annotations.Nullable
+    @Override
+    public <T extends BlockEntity> net.minecraft.world.level.block.entity.BlockEntityTicker<T> getTicker(
+            Level level, BlockState state, net.minecraft.world.level.block.entity.BlockEntityType<T> type) {
+        return level.isClientSide ? null
+                : createTickerHelper(type, dev.radarfcs.registry.FcsRegistry.IFF_BE.get(), IffTransponderBlockEntity::serverTick);
+    }
+
     @Override
     protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player,
                                               InteractionHand hand, BlockHitResult hit) {

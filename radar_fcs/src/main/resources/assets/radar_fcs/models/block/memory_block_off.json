@@ -1,0 +1,9 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "front": "radar_fcs:block/memory_front_off",
+    "side": "create:block/brass_casing",
+    "top": "create:block/brass_casing",
+    "particle": "create:block/brass_casing"
+  }
+}

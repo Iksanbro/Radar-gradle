@@ -50,10 +50,9 @@ public final class FireSafety {
 
         for (IffRegistry.Zone z : IffRegistry.zones(level, iff)) {
             if (z.contains(muzzle)) continue;                               // своя зона - стреляем изнутри
-            // враг внутри своей зоны (она его не прикрывает) - стрелять в неё можно; свои на линии огня проверены выше.
-            // Через свою зону по цели снаружи - нельзя.
-            if (z.contains(target.pos)) continue;
-            if (pathNear(path, z.center(), z.radius(), 0)) return Verdict.FRIENDLY;
+            if (z.contains(target.pos)) continue;                           // цель в своей зоне (назначена вручную и т.п.)
+            // через свою зону (база, свой корабль с охранением) по цели снаружи - нельзя
+            if (z.box() != null ? pathHitsBox(path, z.box()) : pathNear(path, z.center(), z.radius(), 0)) return Verdict.FRIENDLY;
         }
 
         if (FcsConfig.REQUIRE_LOS.get() && terrainBlocked(level, path, target)) return Verdict.TERRAIN;
