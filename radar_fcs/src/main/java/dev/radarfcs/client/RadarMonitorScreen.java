@@ -8,6 +8,7 @@ import dev.radarfcs.block.RadarMonitorBlockEntity.Show;
 import dev.radarfcs.core.TargetCategory;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.net.MonitorCommandPayload;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -206,6 +207,7 @@ public final class RadarMonitorScreen extends Screen {
         g.fill(cx - 3, cy, cx + 4, cy + 1, 0xFFFFFFFF);
         g.fill(cx, cy - 3, cx + 1, cy + 4, 0xFFFFFFFF);
         boolean always = m.labels() == RadarMonitorBlockEntity.LABELS_ALWAYS;
+        List<LabelLayout.Label> labels = new ArrayList<>();
         hovered = null;
         hoveredMark = null;
         double best = 7;
@@ -220,7 +222,7 @@ public final class RadarMonitorScreen extends Screen {
                 best = d;
                 hoveredMark = mk;
             }
-            if (always && !mk.name().isEmpty()) label(g, mk.name(), p[0] + 6, p[1] - 3, col);
+            if (always && !mk.name().isEmpty()) labels.add(label(mk.name(), p[0] + 6, p[1], col, LabelLayout.RANK_MINOR));
         }
         for (Blip b : m.blips()) {
             float[] p = toScope(m, b.dx(), b.dz());
@@ -238,23 +240,30 @@ public final class RadarMonitorScreen extends Screen {
                 hovered = b;
                 hoveredMark = null;
             }
-            if (always && !b.tag().isEmpty()) label(g, b.tag(), p[0] + sz + 3, p[1] - 3, col);
+            if (always && !b.tag().isEmpty()) {
+                boolean minor = (b.flags() & (RadarMonitorBlockEntity.FLAG_INACTIVE | RadarMonitorBlockEntity.FLAG_FRIENDLY)) != 0;
+                int rank = (b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0 ? LabelLayout.RANK_DESIGNATED
+                        : minor ? LabelLayout.RANK_MINOR : LabelLayout.RANK_ACTIVE;
+                labels.add(label(b.tag(), p[0] + sz + 3, p[1], col, rank));
+            }
         }
         // наведённая отметка: рамка, подпись (в режиме «при наведении») и сведения справа
         List<Component> info = List.of();
         if (hovered != null) {
             float[] p = toScope(m, hovered.dx(), hovered.dz());
             if (p != null) g.renderOutline((int) p[0] - 6, (int) p[1] - 6, 13, 13, 0xFFFFFFFF);
-            if (!always && !hovered.tag().isEmpty() && p != null) label(g, hovered.tag(), p[0] + 8, p[1] - 3, 0xFFFFFFFF);
+            if (!always && !hovered.tag().isEmpty() && p != null) labels.add(label(hovered.tag(), p[0] + 8, p[1], 0xFFFFFFFF, LabelLayout.RANK_HOVER));
             info = describe(m, hovered);
         } else if (hoveredMark != null) {
             float[] p = toScope(m, hoveredMark.dx(), hoveredMark.dz());
             if (p != null) g.renderOutline((int) p[0] - 6, (int) p[1] - 6, 13, 13, 0xFFFFFFFF);
-            if (!always && !hoveredMark.name().isEmpty() && p != null) label(g, hoveredMark.name(), p[0] + 8, p[1] - 3, 0xFFFFFFFF);
+            if (!always && !hoveredMark.name().isEmpty() && p != null) labels.add(label(hoveredMark.name(), p[0] + 8, p[1], 0xFFFFFFFF, LabelLayout.RANK_HOVER));
             info = describeMark(m, hoveredMark);
         } else {
             for (Blip b : m.blips()) if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) info = describe(m, b);
         }
+        // подписи - поверх всех значков и без наложения
+        for (LabelLayout.Placed pl : LabelLayout.place(labels)) drawLabel(g, pl);
         int x = left + 2 * R + 20, y = top + 100, w = W - 2 * R - 28;
         if (info.isEmpty()) {
             g.drawWordWrap(font, Component.translatable("radar_fcs.monitor_gui.scope_hint").withStyle(ChatFormatting.GRAY), x, y, w, 0xA0A0A0);
@@ -288,12 +297,21 @@ public final class RadarMonitorScreen extends Screen {
         }
     }
 
-    private void label(GuiGraphics g, String text, float x, float y, int color) {
+    private static final float LABEL_SCALE = 0.75f;
+
+    /** Подпись у значка: x - левый край текста, y - середина строки. */
+    private LabelLayout.Label label(String text, float x, float y, int color, int rank) {
+        return new LabelLayout.Label(x - LABEL_SCALE, y, (font.width(text) + 2) * LABEL_SCALE, (font.lineHeight + 1) * LABEL_SCALE,
+                text, color, rank);
+    }
+
+    private void drawLabel(GuiGraphics g, LabelLayout.Placed pl) {
+        LabelLayout.Label lb = pl.label();
         g.pose().pushPose();
-        g.pose().translate(x, y, 0);
-        g.pose().scale(0.75f, 0.75f, 1f);
-        g.fill(-1, -1, font.width(text) + 1, font.lineHeight, 0xA0000000);
-        g.drawString(font, text, 0, 0, color, false);
+        g.pose().translate(lb.x() + LABEL_SCALE, pl.y() - lb.h() / 2 + LABEL_SCALE, 0);
+        g.pose().scale(LABEL_SCALE, LABEL_SCALE, 1f);
+        g.fill(-1, -1, font.width(lb.text()) + 1, font.lineHeight, 0xA0000000);
+        g.drawString(font, lb.text(), 0, 0, lb.color(), false);
         g.pose().popPose();
     }
 

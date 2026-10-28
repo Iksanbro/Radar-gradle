@@ -121,7 +121,8 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         int count = 0;
         List<Blip> blips = be.blips();
         boolean always = be.labels() == RadarMonitorBlockEntity.LABELS_ALWAYS;
-        List<Label> labels = new ArrayList<>();
+        List<LabelLayout.Label> labels = new ArrayList<>();
+        float ls = 0.0055f * (float) Math.sqrt(Math.min(w, h));
         // метки наземных транспондеров
         int tIcon = be.icon(MonitorIcons.TRANSPONDER);
         for (RadarMonitorBlockEntity.Mark mk : be.marks()) {
@@ -137,7 +138,7 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
                     hoveredMark = mk;
                 }
             }
-            if (always && !mk.name().isEmpty()) labels.add(new Label(p[0] + ms * 1.4f, p[1], mk.name(), col));
+            if (always && !mk.name().isEmpty()) labels.add(label(p[0] + ms * 1.4f, p[1], mk.name(), col, LabelLayout.RANK_MINOR, ls));
         }
         // неактивные и свои - снизу, активные - поверх
         for (int pass = 0; pass < 2; pass++) {
@@ -164,30 +165,35 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
                         hoveredMark = null;
                     }
                 }
-                if (always && !b.tag().isEmpty()) labels.add(new Label(p[0] + bs * 1.4f, p[1], b.tag(), col));
+                if (always && !b.tag().isEmpty()) {
+                    int rank = minor ? LabelLayout.RANK_MINOR
+                            : (b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0 ? LabelLayout.RANK_DESIGNATED : LabelLayout.RANK_ACTIVE;
+                    labels.add(label(p[0] + bs * 1.4f, p[1], b.tag(), col, rank, ls));
+                }
             }
         }
         if (hovered != null) {
             float[] p = toScreen(hovered.dx(), hovered.dz(), f, right, range, r, cx, cy);
             float o = s * 1.8f, th = s * 0.3f;
             frame(vc, m, p[0] - o, p[1] - o, p[0] + o, p[1] + o, th, 0.0026f, HOVER);
-            if (!always && !hovered.tag().isEmpty()) labels.add(new Label(p[0] + o * 1.2f, p[1], hovered.tag(), HOVER));
+            if (!always && !hovered.tag().isEmpty()) labels.add(label(p[0] + o * 1.2f, p[1], hovered.tag(), HOVER, LabelLayout.RANK_HOVER, ls));
         } else if (hoveredMark != null) {
             float[] p = toScreen(hoveredMark.dx(), hoveredMark.dz(), f, right, range, r, cx, cy);
             float o = s * 1.8f, th = s * 0.3f;
             frame(vc, m, p[0] - o, p[1] - o, p[0] + o, p[1] + o, th, 0.0026f, HOVER);
-            if (!always && !hoveredMark.name().isEmpty()) labels.add(new Label(p[0] + o * 1.2f, p[1], hoveredMark.name(), HOVER));
+            if (!always && !hoveredMark.name().isEmpty()) labels.add(label(p[0] + o * 1.2f, p[1], hoveredMark.name(), HOVER, LabelLayout.RANK_HOVER, ls));
         } else if (look != null) {
             // курсор взгляда
             float c = s * 0.8f, th = s * 0.15f;
             rect(vc, m, look[0] - c, look[1] - th, look[0] + c, look[1] + th, 0.0026f, 0xA0FFFFFF);
             rect(vc, m, look[0] - th, look[1] - c, look[0] + th, look[1] + c, 0.0026f, 0xA0FFFFFF);
         }
-        // подложки подписей (текст - ниже, после всех квадов)
-        float ls = 0.0055f * (float) Math.sqrt(Math.min(w, h));
-        for (Label lb : labels) {
-            float lw = font.width(lb.text()) * ls, lh = font.lineHeight * ls;
-            rect(vc, m, lb.x() - ls, lb.y() - lh / 2 - ls, lb.x() + lw + ls, lb.y() + lh / 2, 0.0027f, 0xB0000000);
+        // подложки подписей без наложения (текст - ниже, после всех квадов)
+        List<LabelLayout.Placed> placed = LabelLayout.place(labels);
+        float lh = font.lineHeight * ls;
+        for (LabelLayout.Placed pl : placed) {
+            LabelLayout.Label lb = pl.label();
+            rect(vc, m, lb.x(), pl.y() - lh / 2 - ls, lb.x() + lb.w(), pl.y() + lh / 2, 0.0027f, 0xB0000000);
         }
 
         // сведения о цели под взглядом (или назначенной): подложка - квадом здесь, текст - ниже. Свой фон текста шрифта
@@ -210,9 +216,10 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         }
 
         // подписи - последними: текст берёт из буферов свой тип рендера, и буфер квадов после него недействителен
-        for (Label lb : labels) {
+        for (LabelLayout.Placed pl : placed) {
+            LabelLayout.Label lb = pl.label();
             ps.pushPose();
-            ps.translate(lb.x(), lb.y() + font.lineHeight * ls / 2, 0.003f);
+            ps.translate(lb.x() + ls, pl.y() + lh / 2, 0.003f);
             ps.scale(ls, -ls, ls);
             font.drawInBatch(lb.text(), 0, 0, 0xFF000000 | lb.color(), false, ps.last().pose(), buffers, Font.DisplayMode.POLYGON_OFFSET, 0,
                     LightTexture.FULL_BRIGHT);
@@ -251,8 +258,10 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         ps.popPose();
     }
 
-    /** Подпись у значка (локальные координаты экрана). */
-    private record Label(float x, float y, String text, int color) {}
+    /** Подпись у значка (локальные координаты экрана): x - левый край текста, y - середина строки. */
+    private LabelLayout.Label label(float x, float y, String text, int color, int rank, float ls) {
+        return new LabelLayout.Label(x - ls, y, font.width(text) * ls + 2 * ls, font.lineHeight * ls + ls, text, color, rank);
+    }
 
     private static final int SHAPE_ROWS = 8;
 
