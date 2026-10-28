@@ -22,6 +22,7 @@ public final class FcsConfig {
             FRIENDLY_PLAYERS, FRIENDLY_RADAR_IDS;
     // свой-чужой и безопасность
     public static final ModConfigSpec.DoubleValue IFF_RADIUS, SAFETY_CONE, SAFETY_MARGIN;
+    public static final ModConfigSpec.IntValue MAX_TRANSPONDER_RADIUS;
     public static final ModConfigSpec.BooleanValue REQUIRE_LOS;
     // наведение
     public static final ModConfigSpec.DoubleValue FIRE_TOLERANCE, DEADBAND, SLEW, SHAFT_SPEED, LATENCY, ACCEL_HORIZON, YAW_OFFSET,
@@ -90,8 +91,10 @@ public final class FcsConfig {
         b.pop();
 
         b.comment("Свой-чужой и безопасность стрельбы").push("iff");
-        IFF_RADIUS = b.comment("Всё в этом радиусе от наземного транспондера «свой» защищено")
+        IFF_RADIUS = b.comment("Радиус нового транспондера «свой» (режим «радиус»), блоков")
                 .defineInRange("iffRadius", 12.0, 1.0, 64.0);
+        MAX_TRANSPONDER_RADIUS = b.comment("Наибольший радиус, который можно задать транспондеру, блоков")
+                .defineInRange("maxTransponderRadius", 64, 1, 256);
         SAFETY_CONE = b.comment("Не стрелять, если свой ближе этого угла к траектории, градусов")
                 .defineInRange("safetyCone", 2.0, 0.0, 30.0);
         SAFETY_MARGIN = b.comment("Дополнительный запас от траектории до своих, блоков")

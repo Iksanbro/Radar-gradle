@@ -7,12 +7,9 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.DyeItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
@@ -30,7 +27,6 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.phys.BlockHitResult;
-import net.neoforged.fml.loading.FMLEnvironment;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -90,21 +86,13 @@ public class FireControlBlock extends BaseEntityBlock {
     }
 
     @Override
-    protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player,
-                                              InteractionHand hand, BlockHitResult hit) {
-        if (!(stack.getItem() instanceof DyeItem dye)) return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
-        if (!level.isClientSide && level.getBlockEntity(pos) instanceof FireControlBlockEntity be) {
-            be.setChannel(dye.getDyeColor(), player);
-        }
-        return ItemInteractionResult.sidedSuccess(level.isClientSide);
-    }
-
-    @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
         if (player.isShiftKeyDown()) {
             if (!level.isClientSide && level.getBlockEntity(pos) instanceof FireControlBlockEntity be) be.toggleHold(player);
-        } else if (level.isClientSide && FMLEnvironment.dist.isClient()) {
-            dev.radarfcs.client.FcsClientHooks.openFcsSettings(pos);
+        } else if (player instanceof net.minecraft.server.level.ServerPlayer sp
+                && level.getBlockEntity(pos) instanceof FireControlBlockEntity be) {
+            // экран открывает сервер: коды «свой-чужой» получает только тот, кому их можно видеть
+            dev.radarfcs.net.FcsOpenPayload.open(sp, be);
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
     }

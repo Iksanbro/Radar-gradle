@@ -137,10 +137,6 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
             rect(vc, m, look[0] - th, look[1] - c, look[0] + th, look[1] + c, 0.0026f, 0xA0FFFFFF);
         }
 
-        // цвет канала - полоска в правом нижнем углу
-        int dye = be.channel().getTextureDiffuseColor();
-        rect(vc, m, w - 0.5f - e - 0.12f, -0.5f + e + 0.02f, w - 0.5f - e - 0.02f, -0.5f + e + 0.05f, 0.002f, 0xFF000000 | (dye & 0xFFFFFF));
-
         // сведения о цели под взглядом (или назначенной): подложка - квадом здесь, текст - ниже. Свой фон текста шрифта
         // лежит почти в одной плоскости с буквами и на расстоянии перекрывает их (мерцание по глубине)
         float scale = 0.0075f * (float) Math.sqrt(Math.min(w, h));

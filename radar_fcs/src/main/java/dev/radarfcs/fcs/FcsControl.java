@@ -11,6 +11,7 @@ import dev.radarfcs.compat.ShotObserver;
 import dev.radarfcs.core.Aim;
 import dev.radarfcs.core.BallisticSolver;
 import dev.radarfcs.core.FlightModel;
+import dev.radarfcs.core.IffRule;
 import dev.radarfcs.core.TargetMotion;
 import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.core.TargetPicker;
@@ -48,7 +49,7 @@ public final class FcsControl {
      * @param designated id цели, назначенной с радарного монитора канала (или null)
      */
     public static void control(ServerLevel level, FireControlBlockEntity fcs, MountState m, TargetSensor sensor, long now,
-                               boolean hold, int channel, Set<UUID> platform, @Nullable String designated) {
+                               boolean hold, IffRule iff, Set<UUID> platform, @Nullable String designated) {
         CbcMount d = m.mount;
         if (d == null || !d.isValid()) {
             m.status = Status.LOST;
@@ -287,7 +288,7 @@ public final class FcsControl {
             if (now - m.safetyTick >= SAFETY_CACHE_TICKS || moved || !target.id.equals(m.safetyTarget)) {
                 List<Vec> path = new ArrayList<>();
                 BallisticSolver.trajectory(sol, model, 2, path::add);
-                m.safety = FireSafety.check(level, path, sensor.all(), target, channel, platform);
+                m.safety = FireSafety.check(level, path, sensor.all(), target, iff, platform);
                 m.safetyTick = now;
                 m.safetyTarget = target.id;
                 m.safetyAim = sol.aimPoint();

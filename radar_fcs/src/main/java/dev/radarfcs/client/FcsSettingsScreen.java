@@ -29,21 +29,24 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * (сборка и разборка пушек). Настройки уходят на сервер кнопкой «Сохранить», команды сборки - сразу.
  */
 public final class FcsSettingsScreen extends Screen {
-    private enum Tab { FIRE, TARGETS, LISTS, DROP, PICK, STATUS }
+    private enum Tab { FIRE, TARGETS, LISTS, IFF, DROP, PICK, STATUS }
 
-    private static final int W = 360, H = 240, ROW = 22, LIST_ROW = 14;
+    private static final int W = 400, H = 240, ROW = 22, LIST_ROW = 14, CODE_COLS = 4;
 
     private final BlockPos pos;
     private final EngageSettings s;
     private Tab tab = Tab.FIRE;
     private int left, top;
-    /** Набранная запись списка (переживает перестройку виджетов). */
-    private String listInput = "";
+    /** Набранная запись списка и код «свой-чужой» (переживают перестройку виджетов). */
+    private String listInput = "", codeInput = "";
+    /** Видит ли игрок коды «свой-чужой» и может ли их менять (владелец, его команда, оператор). */
+    private final boolean iffAccess;
 
-    public FcsSettingsScreen(BlockPos pos, EngageSettings current) {
+    public FcsSettingsScreen(BlockPos pos, EngageSettings current, boolean iffAccess) {
         super(Component.translatable("radar_fcs.gui.title"));
         this.pos = pos;
         this.s = current.copy();
+        this.iffAccess = iffAccess;
     }
 
     @Override
@@ -61,6 +64,7 @@ public final class FcsSettingsScreen extends Screen {
             case FIRE -> fireTab(y);
             case TARGETS -> targetsTab(y);
             case LISTS -> listsTab(y);
+            case IFF -> iffTab(y);
             case DROP -> dropTab(y);
             case PICK -> pickTab(y);
             case STATUS -> statusTab(y);
@@ -139,6 +143,40 @@ public final class FcsSettingsScreen extends Screen {
         if (to.stream().noneMatch(x -> x.equalsIgnoreCase(e))) to.add(e);
         listInput = "";
         rebuildWidgets();
+    }
+
+    /** Свой-чужой: режим (белый / чёрный список кодов транспондеров), поле кода, коды (клик - убрать). */
+    private void iffTab(int y) {
+        Button mode = cycle(left + 8, y, W - 16, () -> Component.translatable(s.iffWhitelist ? "radar_fcs.gui.iff_mode_white"
+                : "radar_fcs.gui.iff_mode_black"), () -> s.iffWhitelist = !s.iffWhitelist);
+        mode.active = iffAccess;
+        y += ROW + 4;
+        EditBox box = new EditBox(font, left + 8, y, 120, 20, Component.translatable("radar_fcs.gui.iff_code"));
+        box.setMaxLength(EngageSettings.CODE_LENGTH);
+        box.setFilter(v -> v.chars().allMatch(ch -> ch >= '0' && ch <= '9'));
+        box.setValue(codeInput);
+        box.setResponder(v -> codeInput = v);
+        box.setHint(Component.translatable("radar_fcs.gui.iff_code_hint").withStyle(ChatFormatting.DARK_GRAY));
+        box.setEditable(iffAccess);
+        addRenderableWidget(box);
+        Button add = addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.iff_add"), b -> {
+            String c = EngageSettings.cleanCode(codeInput);
+            if (!c.isEmpty() && !s.iffCodes.contains(c) && s.iffCodes.size() < EngageSettings.MAX_IFF_CODES) s.iffCodes.add(c);
+            codeInput = "";
+            rebuildWidgets();
+        }).bounds(left + 132, y, 90, 20).build());
+        add.active = iffAccess && s.iffCodes.size() < EngageSettings.MAX_IFF_CODES;
+        y += 26;
+        int cw = (W - 16) / CODE_COLS;
+        for (int i = 0; i < s.iffCodes.size(); i++) {
+            int k = i;
+            Button b = addRenderableWidget(Button.builder(Component.literal("✕ ").withStyle(ChatFormatting.GRAY)
+                            .append(Component.literal(s.iffCodes.get(i)).withStyle(s.iffWhitelist ? ChatFormatting.GREEN : ChatFormatting.RED)),
+                    x0 -> { s.iffCodes.remove(k); rebuildWidgets(); })
+                    .bounds(left + 8 + (i % CODE_COLS) * cw, y + (i / CODE_COLS) * LIST_ROW, cw - 4, LIST_ROW - 1).build());
+            b.active = iffAccess;
+            b.setTooltip(Tooltip.create(Component.translatable("radar_fcs.gui.list_remove")));
+        }
     }
 
     /** Сборка и разборка всех пушек вычислителя - сразу, без «Сохранить». */
@@ -226,6 +264,18 @@ public final class FcsSettingsScreen extends Screen {
                         left + 182, hy, 0xFF8C8C, false);
                 int rows = Math.max(s.whitelist.size(), s.blacklist.size());
                 if (rows <= 6) hint(g, "radar_fcs.gui.lists_hint", top + 68 + rows * LIST_ROW + 4);
+            }
+            case IFF -> {
+                g.drawString(font, Component.translatable("radar_fcs.gui.iff_count", s.iffCodes.size(), EngageSettings.MAX_IFF_CODES),
+                        left + 232, top + 62, 0xA0A0A0, false);
+                int rows = (s.iffCodes.size() + CODE_COLS - 1) / CODE_COLS;
+                int hy = top + 82 + rows * LIST_ROW + 6;
+                if (!iffAccess) {
+                    g.drawWordWrap(font, Component.translatable("radar_fcs.gui.iff_hidden").withStyle(ChatFormatting.GOLD), left + 8, hy,
+                            W - 16, 0xFFAA00);
+                    hy += 22;
+                }
+                hint(g, s.iffWhitelist ? "radar_fcs.gui.iff_hint_white" : "radar_fcs.gui.iff_hint_black", hy);
             }
             case DROP -> {
                 y += ROW;
@@ -330,6 +380,10 @@ public final class FcsSettingsScreen extends Screen {
     public void fillListsForScreenshot() {
         if (s.whitelist.isEmpty()) s.whitelist.addAll(List.of("minecraft:pillager", "#minecraft:raiders"));
         if (s.blacklist.isEmpty()) s.blacklist.addAll(List.of("minecraft:villager", "Steve", "create:*"));
+        if (s.iffCodes.isEmpty()) {
+            s.iffWhitelist = true;
+            s.iffCodes.addAll(List.of("1234", "2077", "31337", "4096", "777"));
+        }
     }
 
     /** Открыть вкладку по номеру (скриншоты для документации). */

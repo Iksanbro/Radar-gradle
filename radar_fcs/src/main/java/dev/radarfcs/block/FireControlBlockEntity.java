@@ -39,11 +39,9 @@ import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Team;
 import org.jetbrains.annotations.Nullable;
@@ -65,7 +63,6 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     private boolean hold;
     @Nullable private UUID owner;
     private String ownerTeam = "";
-    private DyeColor channel = DyeColor.WHITE;
     private Set<UUID> platformShips = Set.of();
     @Nullable private UUID ownShip;
     /** Настройки этого вычислителя (экран настроек). */
@@ -119,7 +116,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                 }
             }
             for (MountState m : mounts.values()) {
-                FcsControl.control(level, this, m, sensor, now, hold, channel.getId(), platformShips, des);
+                FcsControl.control(level, this, m, sensor, now, hold, settings.iffRule(), platformShips, des);
                 if (m.targetId != null && (m.status == Status.FIRE || m.status == Status.AIMING)) {
                     UUID tid = uuidOrNull(m.targetId);
                     if (tid != null) {
@@ -149,7 +146,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     }
 
     private TargetSensor.Context context(ServerLevel level) {
-        return new TargetSensor.Context(owner, ownerTeam, channel.getId(), platformShips, origin(level));
+        return new TargetSensor.Context(owner, ownerTeam, settings.iffRule(), platformShips, origin(level));
     }
 
     /** Мировая позиция вычислителя (на корабле - через позу корабля). */
@@ -260,11 +257,9 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         setChanged();
     }
 
-    public void setChannel(DyeColor c, Player p) {
-        channel = c;
-        setChanged();
-        p.displayClientMessage(Component.translatable("radar_fcs.msg.channel",
-                Component.translatable("color.minecraft." + c.getName())), true);
+    /** Видит и меняет ли игрок коды «свой-чужой» этого вычислителя (владелец, его команда, оператор). */
+    public boolean canEditIff(Player p) {
+        return dev.radarfcs.iff.IffAccess.canEdit(p, owner, ownerTeam);
     }
 
     public void toggleHold(Player p) {
@@ -284,7 +279,15 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
 
     /** Новые настройки с экрана (проверяются здесь); p - кому сообщить (null - никому). */
     public void applySettings(EngageSettings s, @Nullable Player p) {
-        settings = s.copy().sanitize();
+        EngageSettings next = s.copy().sanitize();
+        if (p != null && !canEditIff(p)) {                               // чужим коды «свой-чужой» не менять
+            next.iffWhitelist = settings.iffWhitelist;
+            next.iffCodes.clear();
+            next.iffCodes.addAll(settings.iffCodes);
+        } else if (p != null && owner == null) {
+            setOwner(p);
+        }
+        settings = next;
         dropped.clear();
         setChanged();
         if (level != null) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
@@ -324,6 +327,13 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         if (p != null) p.displayClientMessage(Component.translatable("radar_fcs.msg.disassembled", n).withStyle(ChatFormatting.GRAY), true);
     }
 
+    /** Настройки для всех клиентов: коды «свой-чужой» скрыты (их получает только тот, кому можно, при открытии экрана). */
+    public EngageSettings settingsForClients() {
+        EngageSettings s = settings.copy();
+        s.iffCodes.clear();
+        return s;
+    }
+
     /** Выстрел пушки этого вычислителя по цели: учёт для сброса после N выстрелов. */
     public void onShotAt(String targetId) {
         int n = shotsAt.merge(targetId, 1, Integer::sum);
@@ -342,7 +352,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         tag.putInt("RadarBlocks", radars.size());
         tag.putBoolean("RadarOk", runningRadars > 0 || FcsDev.radarless);
         tag.putBoolean("Hold", hold);
-        tag.putInt("Channel", channel.getId());
+        tag.putBoolean("IffWhitelist", settings.iffWhitelist);
+        tag.putInt("IffCodes", settings.iffCodes.size());
         tag.putInt("Targets", sensor.active().size());
         tag.putInt("Contacts", sensor.usedRadar() ? sensor.contacts() : sensor.all().size());
         tag.putBoolean("Direct", !sensor.usedRadar());
@@ -399,7 +410,6 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     public static List<Component> summaryLines(CompoundTag s, boolean full) {
         List<Component> out = new ArrayList<>();
         boolean radarOk = s.getBoolean("RadarOk");
-        DyeColor ch = DyeColor.byId(s.getInt("Channel"));
         out.add(Component.translatable("radar_fcs.report.header").withStyle(ChatFormatting.AQUA)
                 .append(Component.literal("  "))
                 .append(radarOk
@@ -408,8 +418,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         out.add(Component.translatable(s.getBoolean("Hold") ? "radar_fcs.report.hold" : "radar_fcs.report.free")
                 .withStyle(s.getBoolean("Hold") ? ChatFormatting.GOLD : ChatFormatting.GREEN)
                 .append(Component.literal("  "))
-                .append(Component.translatable("radar_fcs.report.channel", Component.translatable("color.minecraft." + ch.getName()))
-                        .withStyle(ChatFormatting.GRAY)));
+                .append(Component.translatable(s.getBoolean("IffWhitelist") ? "radar_fcs.report.iff_white" : "radar_fcs.report.iff_black",
+                        s.getInt("IffCodes")).withStyle(ChatFormatting.GRAY)));
         if (full) out.add(Component.translatable(s.getBoolean("Direct") ? "radar_fcs.report.sensor_direct" : "radar_fcs.report.sensor_radar",
                 s.getInt("Contacts")).withStyle(ChatFormatting.DARK_GRAY));
         int[] links = s.getIntArray("Links");
@@ -469,10 +479,6 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         return radars;
     }
 
-    public DyeColor channel() {
-        return channel;
-    }
-
     @Override
     public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
         for (Component c : summaryLines(summary, isPlayerSneaking)) tooltip.add(Component.literal("    ").append(c));
@@ -487,7 +493,6 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         tag.putBoolean("Hold", hold);
         if (owner != null) tag.putUUID("Owner", owner);
         tag.putString("OwnerTeam", ownerTeam);
-        tag.putInt("Channel", channel.getId());
         tag.put("Settings", SettingsNbt.write(settings));
         tag.putBoolean("Assemble", assembleWanted);
     }
@@ -498,7 +503,6 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         hold = tag.getBoolean("Hold");
         owner = tag.hasUUID("Owner") ? tag.getUUID("Owner") : null;
         ownerTeam = tag.getString("OwnerTeam");
-        channel = DyeColor.byId(tag.getInt("Channel"));
         settings = SettingsNbt.read(tag.getCompound("Settings"));
         assembleWanted = !tag.contains("Assemble") || tag.getBoolean("Assemble");
         if (tag.contains("Summary", Tag.TAG_COMPOUND)) summary = tag.getCompound("Summary");
@@ -508,6 +512,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
         CompoundTag tag = super.getUpdateTag(registries);
         saveAdditional(tag, registries);
+        tag.put("Settings", SettingsNbt.write(settingsForClients()));   // без кодов «свой-чужой»
         tag.put("Summary", summary.copy());
         return tag;
     }

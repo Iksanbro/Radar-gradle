@@ -23,6 +23,8 @@ public final class SettingsNbt {
         t.putBoolean("HostileOnly", s.hostileOnly);
         t.put("Whitelist", list(s.whitelist));
         t.put("Blacklist", list(s.blacklist));
+        t.putBoolean("IffWhitelist", s.iffWhitelist);
+        t.put("IffCodes", list(s.iffCodes));
         t.putBoolean("DropMoving", s.dropMoving);
         t.putInt("DropShots", s.dropAfterShots);
         t.putString("Priority", s.priority.name());
@@ -50,6 +52,8 @@ public final class SettingsNbt {
         if (t.contains("HostileOnly")) s.hostileOnly = t.getBoolean("HostileOnly");
         read(t.getList("Whitelist", net.minecraft.nbt.Tag.TAG_STRING), s.whitelist);
         read(t.getList("Blacklist", net.minecraft.nbt.Tag.TAG_STRING), s.blacklist);
+        s.iffWhitelist = t.getBoolean("IffWhitelist");
+        read(t.getList("IffCodes", net.minecraft.nbt.Tag.TAG_STRING), s.iffCodes);
         s.dropMoving = t.getBoolean("DropMoving");
         s.dropAfterShots = t.getInt("DropShots");
         s.priority = enumOr(EngageSettings.Priority.class, t.getString("Priority"), s.priority);

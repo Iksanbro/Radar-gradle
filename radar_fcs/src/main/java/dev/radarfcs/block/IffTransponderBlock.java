@@ -1,7 +1,6 @@
 package dev.radarfcs.block;
 
 import com.mojang.serialization.MapCodec;
-import dev.radarfcs.iff.IffRegistry;
 import java.util.List;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
@@ -9,6 +8,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.ItemInteractionResult;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.DyeItem;
@@ -26,11 +27,11 @@ import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.phys.BlockHitResult;
 
 /**
- * Транспондер «свой».
- * - стоит в мире: всё в радиусе iffRadius своё (база);
- * - стоит на корабле Sable / Create Aeronautics: весь корабль свой;
- * - собран в контрапшен Create: весь контрапшен свой.
- * Канал задаётся красителем (ПКМ): вычислитель считает своими только транспондеры своего канала.
+ * Транспондер «свой». ПКМ - экран: код (цифры), режим выделения (сублевел, на котором стоит, или радиус), радиус.
+ * Вычислитель считает транспондер своим, если его правило (белый или чёрный список кодов) принимает код.
+ * - режим «сублевел»: свой - корабль Sable / Create Aeronautics или контрапшен Create, на котором стоит транспондер;
+ * - режим «радиус»: своё - всё в радиусе вокруг транспондера (на корабле корабль-носитель свой и в этом режиме).
+ * Краситель меняет только цвет.
  */
 public class IffTransponderBlock extends BaseEntityBlock {
     public static final MapCodec<IffTransponderBlock> CODEC = simpleCodec(IffTransponderBlock::new);
@@ -39,10 +40,6 @@ public class IffTransponderBlock extends BaseEntityBlock {
     public IffTransponderBlock(Properties props) {
         super(props);
         registerDefaultState(stateDefinition.any().setValue(CHANNEL, DyeColor.WHITE));
-    }
-
-    public static int channelOf(BlockState s) {
-        return s.hasProperty(CHANNEL) ? s.getValue(CHANNEL).getId() : DyeColor.WHITE.getId();
     }
 
     @Override
@@ -69,23 +66,26 @@ public class IffTransponderBlock extends BaseEntityBlock {
     protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player,
                                               InteractionHand hand, BlockHitResult hit) {
         if (!(stack.getItem() instanceof DyeItem dye)) return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
-        if (!level.isClientSide) {
-            level.setBlock(pos, state.setValue(CHANNEL, dye.getDyeColor()), 3);
-            IffRegistry.put(level, pos, dye.getDyeColor().getId());
-            player.displayClientMessage(Component.translatable("radar_fcs.msg.channel",
-                    Component.translatable("color.minecraft." + dye.getDyeColor().getName())), true);
-        }
+        if (!level.isClientSide) level.setBlock(pos, state.setValue(CHANNEL, dye.getDyeColor()), 3);       // только цвет
         return ItemInteractionResult.sidedSuccess(level.isClientSide);
     }
 
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
-        if (!level.isClientSide) {
-            DyeColor c = state.getValue(CHANNEL);
-            player.displayClientMessage(Component.translatable("radar_fcs.msg.transponder",
-                    Component.translatable("color.minecraft." + c.getName())), true);
+        if (player instanceof ServerPlayer sp && level.getBlockEntity(pos) instanceof IffTransponderBlockEntity be) {
+            if (be.canEdit(sp)) dev.radarfcs.net.TransponderPayloads.open(sp, be);
+            else sp.displayClientMessage(Component.translatable("radar_fcs.msg.transponder_locked").withStyle(ChatFormatting.RED), true);
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
+    }
+
+    @Override
+    public void setPlacedBy(Level level, BlockPos pos, BlockState state, @org.jetbrains.annotations.Nullable LivingEntity placer,
+                            ItemStack stack) {
+        super.setPlacedBy(level, pos, state, placer, stack);
+        if (!level.isClientSide && placer instanceof Player p && level.getBlockEntity(pos) instanceof IffTransponderBlockEntity be) {
+            be.setOwner(p);
+        }
     }
 
     @Override

@@ -7,12 +7,9 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
@@ -36,7 +33,8 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Радарный монитор: круговая развёртка целей радаров своей сети. Блоки, поставленные стеной, складываются в один экран.
  * ПКМ по отметке - назначить цель вычислителям сети (ручное наведение), ПКМ мимо отметок - снять назначение,
- * Shift+ПКМ - экран монитора (список целей, назначение, фильтры, масштаб), ПКМ красителем - канал свой-чужой.
+ * Shift+ПКМ - экран монитора (список целей, назначение, фильтры, масштаб). Свои и чужие - по правилу кодов
+ * «свой-чужой» вычислителя его сети.
  */
 public class RadarMonitorBlock extends BaseEntityBlock {
     public static final MapCodec<RadarMonitorBlock> CODEC = simpleCodec(RadarMonitorBlock::new);
@@ -99,15 +97,6 @@ public class RadarMonitorBlock extends BaseEntityBlock {
         if (!level.isClientSide && placer instanceof Player p && level.getBlockEntity(pos) instanceof RadarMonitorBlockEntity be) {
             be.setOwner(p);
         }
-    }
-
-    @Override
-    protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player,
-                                              InteractionHand hand, BlockHitResult hit) {
-        if (!(stack.getItem() instanceof net.minecraft.world.item.DyeItem di)) return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
-        DyeColor dye = di.getDyeColor();
-        if (!level.isClientSide && level.getBlockEntity(pos) instanceof RadarMonitorBlockEntity be) be.setChannel(dye, player);
-        return ItemInteractionResult.sidedSuccess(level.isClientSide);
     }
 
     @Override

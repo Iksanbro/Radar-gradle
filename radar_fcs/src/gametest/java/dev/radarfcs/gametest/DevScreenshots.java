@@ -112,17 +112,20 @@ public final class DevScreenshots {
                 be.applySettings(st, null);
             }
         });
-        if (tick >= 470 && tick < 530 && (tick - 470) % 10 == 0) {
+        if (tick >= 470 && tick < 540 && (tick - 470) % 10 == 0) {
             int tab = (tick - 470) / 10;
-            if (tab == 0) dev.radarfcs.client.FcsClientHooks.openFcsSettings(base);
+            // настройки клиентского блока (без кодов «свой-чужой» - примеры кодов подставляются для снимка)
+            if (tab == 0 && mc.level != null && mc.level.getBlockEntity(base) instanceof dev.radarfcs.block.FireControlBlockEntity be) {
+                dev.radarfcs.client.FcsClientHooks.openFcsSettings(base, be.settings().copy(), true);
+            }
             if (mc.screen instanceof dev.radarfcs.client.FcsSettingsScreen sc) {
                 if (tab == 2) sc.fillListsForScreenshot();
                 sc.showTab(tab);
             }
         }
-        if (tick >= 475 && tick < 535 && (tick - 475) % 10 == 0) shot(mc, "fcs_settings_" + (tick - 475) / 10);
+        if (tick >= 475 && tick < 545 && (tick - 475) % 10 == 0) shot(mc, "fcs_settings_" + (tick - 475) / 10);
         // радарный линк: настроенный на сеть сцены линк в руке, взгляд на линк станка - вся сеть подсвечена
-        if (tick == 540) {
+        if (tick == 550) {
             if (mc.screen != null) mc.setScreen(null);
             server.execute(() -> {
                 ServerPlayer p = server.getPlayerList().getPlayers().get(0);
@@ -133,11 +136,15 @@ public final class DevScreenshots {
                 look(server, link.getCenter().add(0, 0, 0.3), new Vec3(link.getX() + 1.5, link.getY() + 1.62, link.getZ() - 2.5));
             });
         }
-        if (tick == 580) shot(mc, "radar_link");
+        if (tick == 590) shot(mc, "radar_link");
         // окно монитора: список целей, фильтры
-        if (tick == 590) dev.radarfcs.client.FcsClientHooks.openMonitor(base.offset(-3, 0, -3));
-        if (tick == 600) shot(mc, "monitor_gui");
-        if (tick == 610) mc.stop();
+        if (tick == 600) dev.radarfcs.client.FcsClientHooks.openMonitor(base.offset(-3, 0, -3));
+        if (tick == 610) shot(mc, "monitor_gui");
+        // экран транспондера
+        if (tick == 620) dev.radarfcs.client.FcsClientHooks.openTransponder(new dev.radarfcs.net.TransponderPayloads.Open(
+                base.offset(8, 0, -3), "2077", dev.radarfcs.iff.TransponderMode.RADIUS.ordinal(), 16, false, 64));
+        if (tick == 630) shot(mc, "transponder_gui");
+        if (tick == 640) mc.stop();
     }
 
     /** Поставить игрока глазами в eye и повернуть к точке target. */

@@ -70,6 +70,13 @@ public final class EngageSettings {
      */
     public final java.util.List<String> whitelist = new java.util.ArrayList<>(), blacklist = new java.util.ArrayList<>();
     public static final int MAX_LIST = 10, MAX_ENTRY = 64;
+    /**
+     * Свой-чужой по кодам транспондеров: true - белый список (свои только коды из списка), false - чёрный (свои все,
+     * кроме кодов из списка). Код - от 1 до CODE_LENGTH цифр.
+     */
+    public boolean iffWhitelist = false;
+    public final java.util.List<String> iffCodes = new java.util.ArrayList<>();
+    public static final int MAX_IFF_CODES = 16, CODE_LENGTH = 8;
     /** Скорость цели от и до, м/с; 0 - без ограничения. */
     public double speedMin = 0, speedMax = 0;
 
@@ -133,6 +140,7 @@ public final class EngageSettings {
         staticTicks = clamp(staticTicks, 0, 1200);
         cleanList(whitelist);
         cleanList(blacklist);
+        cleanCodes(iffCodes);
         switchShots = clamp(switchShots, 1, 10000);
         switchSeconds = clamp(switchSeconds, 1, 3600);
         if (fireMode == null) fireMode = FireMode.AUTO;
@@ -155,6 +163,8 @@ public final class EngageSettings {
         s.hostileOnly = hostileOnly;
         s.whitelist.addAll(whitelist);
         s.blacklist.addAll(blacklist);
+        s.iffWhitelist = iffWhitelist;
+        s.iffCodes.addAll(iffCodes);
         s.dropMoving = dropMoving;
         s.dropAfterShots = dropAfterShots;
         s.priority = priority;
@@ -163,6 +173,29 @@ public final class EngageSettings {
         s.switchShots = switchShots;
         s.switchSeconds = switchSeconds;
         return s;
+    }
+
+    /** Правило «свой-чужой» по кодам транспондеров. */
+    public IffRule iffRule() {
+        return new IffRule(iffWhitelist, new java.util.HashSet<>(iffCodes));
+    }
+
+    /** Код транспондера: только цифры, не длиннее CODE_LENGTH; иначе "" (без кода). */
+    public static String cleanCode(String code) {
+        if (code == null) return "";
+        String t = code.trim();
+        return t.length() <= CODE_LENGTH && t.chars().allMatch(ch -> ch >= '0' && ch <= '9') ? t : "";
+    }
+
+    /** Коды: только допустимые, без повторов, не больше MAX_IFF_CODES. */
+    static void cleanCodes(java.util.List<String> list) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        for (String e : list) {
+            String c = cleanCode(e);
+            if (!c.isEmpty() && out.size() < MAX_IFF_CODES) out.add(c);
+        }
+        list.clear();
+        list.addAll(out);
     }
 
     /** Обрезать пробелы, убрать пустые и повторы, не больше MAX_LIST записей по MAX_ENTRY символов. */

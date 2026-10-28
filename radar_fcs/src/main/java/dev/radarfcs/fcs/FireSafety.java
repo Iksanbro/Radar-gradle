@@ -3,6 +3,7 @@ package dev.radarfcs.fcs;
 import dev.radarfcs.FcsConfig;
 import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.core.BallisticSolver;
+import dev.radarfcs.core.IffRule;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.core.Vec;
 import dev.radarfcs.iff.IffRegistry;
@@ -29,7 +30,7 @@ public final class FireSafety {
      * @param platform  корабли, на которых стоит сама батарея (их корпус не считается помехой)
      */
     public static Verdict check(ServerLevel level, List<Vec> path, Collection<Track> tracks, Track target,
-                                int channel, Set<UUID> platform) {
+                                IffRule iff, Set<UUID> platform) {
         if (path.size() < 2) return Verdict.CLEAR;
         Vec muzzle = path.get(0);
         double cone = Math.tan(Math.toRadians(FcsConfig.SAFETY_CONE.get()));
@@ -47,13 +48,12 @@ public final class FireSafety {
             if (pathNear(path, t.pos, t.hitRadius + margin, cone)) return Verdict.FRIENDLY;
         }
 
-        double iff = FcsConfig.IFF_RADIUS.get();
-        for (Vec b : IffRegistry.groundBeacons(level, channel)) {
-            if (b.distance(muzzle) <= iff) continue;                       // своя база - стреляем изнутри
-            // враг внутри своей базы (зона транспондера его не прикрывает) - стрелять в зону можно; свои на линии
-            // огня проверены выше. Через базу по цели снаружи - нельзя.
-            if (target.pos.distance(b) <= iff) continue;
-            if (pathNear(path, b, iff, 0)) return Verdict.FRIENDLY;
+        for (IffRegistry.Zone z : IffRegistry.zones(level, iff)) {
+            if (z.contains(muzzle)) continue;                               // своя зона - стреляем изнутри
+            // враг внутри своей зоны (она его не прикрывает) - стрелять в неё можно; свои на линии огня проверены выше.
+            // Через свою зону по цели снаружи - нельзя.
+            if (z.contains(target.pos)) continue;
+            if (pathNear(path, z.center(), z.radius(), 0)) return Verdict.FRIENDLY;
         }
 
         if (FcsConfig.REQUIRE_LOS.get() && terrainBlocked(level, path, target)) return Verdict.TERRAIN;

@@ -6,6 +6,7 @@ import dev.radarfcs.compat.ContraptionCompat;
 import dev.radarfcs.compat.RadarLink;
 import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.core.EngageSettings;
+import dev.radarfcs.core.IffRule;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.core.TrackTable;
 import dev.radarfcs.core.Vec;
@@ -42,8 +43,8 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class TargetSensor {
 
-    /** Кто «свои» для этого вычислителя. */
-    public record Context(@Nullable UUID owner, String ownerTeam, int channel, Set<UUID> platformShips, Vec origin) {}
+    /** Кто «свои» для этого вычислителя: владелец и его команда, правило кодов транспондеров, корабли-носители батареи. */
+    public record Context(@Nullable UUID owner, String ownerTeam, IffRule iff, Set<UUID> platformShips, Vec origin) {}
 
     private final TrackTable table = new TrackTable();
     /** Треки, у которых раньше была живая сущность: если она пропала - цель уничтожена или ушла. */
@@ -305,15 +306,15 @@ public final class TargetSensor {
      */
     public static boolean isFriendly(ServerLevel level, @Nullable Object handle, Track.Kind kind, String id, Vec pos,
                                      Context ctx, long now) {
-        int ch = ctx.channel();
+        IffRule iff = ctx.iff();
         if (handle instanceof SableCompat.Ship ship) {
             UUID sid = ship.id();
             if (ctx.platformShips().contains(sid)) return true;
-            if (IffRegistry.shipFriendly(level, sid, ch)) return true;
+            if (IffRegistry.shipFriendly(level, sid, iff)) return true;
             if (RadarLink.shipHasFriendlyRadarId(sid, FcsConfig.FRIENDLY_RADAR_IDS.get())) return true;
         } else if (kind == Track.Kind.SHIP) {
             UUID sid = uuid(id);
-            if (sid != null && (ctx.platformShips().contains(sid) || IffRegistry.shipFriendly(level, sid, ch))) return true;
+            if (sid != null && (ctx.platformShips().contains(sid) || IffRegistry.shipFriendly(level, sid, iff))) return true;
             if (sid != null && RadarLink.shipHasFriendlyRadarId(sid, FcsConfig.FRIENDLY_RADAR_IDS.get())) return true;
         }
         if (handle instanceof Entity e) {
@@ -324,24 +325,24 @@ public final class TargetSensor {
                 if (own.getOwnerUUID().equals(ctx.owner())) return true;
                 if (own.getOwner() instanceof Player op && isFriendlyPlayer(op, ctx)) return true;
             }
-            if (ContraptionCompat.isContraption(e) && ContraptionCompat.hasTransponder(e, ch, now)) return true;
+            if (ContraptionCompat.isContraption(e) && ContraptionCompat.hasTransponder(e, iff, now)) return true;
             Entity vehicle = e.getVehicle();
-            if (vehicle != null && ContraptionCompat.isContraption(vehicle) && ContraptionCompat.hasTransponder(vehicle, ch, now))
+            if (vehicle != null && ContraptionCompat.isContraption(vehicle) && ContraptionCompat.hasTransponder(vehicle, iff, now))
                 return true;
             UUID onShip = SableCompat.trackingShipId(e);
-            if (onShip != null && (ctx.platformShips().contains(onShip) || IffRegistry.shipFriendly(level, onShip, ch)))
+            if (onShip != null && (ctx.platformShips().contains(onShip) || IffRegistry.shipFriendly(level, onShip, iff)))
                 return true;
         } else if (kind == Track.Kind.PLAYER && !FcsConfig.TARGET_PLAYERS.get()) {
             return true;
         }
-        // зона наземного транспондера бережёт своё на базе (мирных мобов, транспорт, контрапшены), но не прикрывает
-        // врагов: враждебные мобы, игроки (у них свои правила), снаряды и корабли в зоне - цели
+        // зона транспондера в режиме «радиус» бережёт своё (мирных мобов, транспорт, контрапшены), но не прикрывает
+        // врагов: враждебные мобы, игроки (у них свои правила), снаряды и чужие корабли в зоне - цели
         boolean zoneProtects = switch (kind) {
             case MOB -> !(handle instanceof Enemy);
             case PLAYER, PROJECTILE, SHIP -> false;
             default -> true;
         };
-        return zoneProtects && IffRegistry.protectsPoint(level, pos, ch, FcsConfig.IFF_RADIUS.get());
+        return zoneProtects && IffRegistry.protectsPoint(level, pos, iff);
     }
 
     private static boolean isFriendlyPlayer(Player p, Context ctx) {

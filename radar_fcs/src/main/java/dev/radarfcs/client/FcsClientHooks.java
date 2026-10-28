@@ -2,6 +2,8 @@ package dev.radarfcs.client;
 
 import dev.radarfcs.block.FireControlBlockEntity;
 import dev.radarfcs.block.RadarMonitorBlockEntity;
+import dev.radarfcs.core.EngageSettings;
+import dev.radarfcs.net.TransponderPayloads;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 
@@ -9,11 +11,17 @@ import net.minecraft.core.BlockPos;
 public final class FcsClientHooks {
     private FcsClientHooks() {}
 
-    public static void openFcsSettings(BlockPos pos) {
+    /** Экран вычислителя с настройками от сервера (коды «свой-чужой» - если iffAccess). */
+    public static void openFcsSettings(BlockPos pos, EngageSettings settings, boolean iffAccess) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level != null && mc.level.getBlockEntity(pos) instanceof FireControlBlockEntity be) {
-            mc.setScreen(new FcsSettingsScreen(pos, be.settings()));
+        if (mc.level != null && mc.level.getBlockEntity(pos) instanceof FireControlBlockEntity) {
+            mc.setScreen(new FcsSettingsScreen(pos, settings, iffAccess));
         }
+    }
+
+    public static void openTransponder(TransponderPayloads.Open p) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level != null) mc.setScreen(new TransponderScreen(p));
     }
 
     public static void openMonitor(BlockPos pos) {

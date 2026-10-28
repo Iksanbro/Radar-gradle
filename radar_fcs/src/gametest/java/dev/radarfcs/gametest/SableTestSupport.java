@@ -30,9 +30,21 @@ final class SableTestSupport {
      */
     static Object ship(GameTestHelper h, BlockPos minRel, int size, Vec3 velPerTick, double span,
                        boolean transponder) {
+        return ship(h, minRel, size, velPerTick, span, transponder ? "" : null);
+    }
+
+    /** То же; transponderCode != null - на корабле транспондер «свой» с этим кодом в режиме «сублевел». */
+    static Object ship(GameTestHelper h, BlockPos minRel, int size, Vec3 velPerTick, double span,
+                       @org.jetbrains.annotations.Nullable String transponderCode) {
         for (int x = 0; x < size; x++) for (int y = 0; y < size; y++) for (int z = 0; z < size; z++)
             h.setBlock(minRel.offset(x, y, z), Blocks.IRON_BLOCK.defaultBlockState());
-        if (transponder) h.setBlock(minRel.offset(size / 2, size - 1, size / 2), FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState());
+        if (transponderCode != null) {
+            BlockPos tp = minRel.offset(size / 2, size - 1, size / 2);
+            h.setBlock(tp, FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState());
+            if (!transponderCode.isEmpty() && h.getLevel().getBlockEntity(h.absolutePos(tp)) instanceof dev.radarfcs.block.IffTransponderBlockEntity t) {
+                t.apply(transponderCode, dev.radarfcs.iff.TransponderMode.SUBLEVEL, 12, null);
+            }
+        }
         BlockPos min = h.absolutePos(minRel), max = min.offset(size - 1, size - 1, size - 1);
         ServerSubLevel sub = SubLevelAssemblyHelper.assembleBlocks(h.getLevel(), min, BlockPos.betweenClosed(min, max),
                 new BoundingBox3i(min.getX(), min.getY(), min.getZ(), max.getX(), max.getY(), max.getZ()));

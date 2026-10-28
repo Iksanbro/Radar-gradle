@@ -3,6 +3,7 @@ package dev.radarfcs.block;
 import dev.radarfcs.FcsConfig;
 import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.core.EngageSettings;
+import dev.radarfcs.core.IffRule;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.core.Vec;
 import dev.radarfcs.fcs.TargetSensor;
@@ -30,7 +31,6 @@ import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -79,7 +79,6 @@ public class RadarMonitorBlockEntity extends BlockEntity {
 
     private record Target(UUID id, String name, double dx, double dz, double dist) {}
 
-    private DyeColor channel = DyeColor.WHITE;
     @Nullable private UUID owner;
     private String ownerTeam = "";
     private int scaleIndex;
@@ -157,7 +156,6 @@ public class RadarMonitorBlockEntity extends BlockEntity {
 
     public List<Site> sites() { return sites; }
 
-    public DyeColor channel() { return channel; }
 
     public int scaleIndex() { return scaleIndex; }
 
@@ -261,8 +259,9 @@ public class RadarMonitorBlockEntity extends BlockEntity {
 
     private void refresh(ServerLevel level, long now) {
         Vec3 center = screenCenter(level);
-        // радары Create Radars на линках с любым блоком экрана
+        // радары Create Radars в сети любого блока экрана; правило «свой-чужой» - первого вычислителя сети
         List<BlockEntity> radars = new ArrayList<>();
+        IffRule iff = null;
         for (BlockPos p : wallPositions()) {
             for (BlockPos q : LinkRegistry.linkedTo(level, p)) {
                 if (!level.isLoaded(q)) continue;
@@ -270,8 +269,10 @@ public class RadarMonitorBlockEntity extends BlockEntity {
                 if (be != null && !be.isRemoved() && RadarLink.isRadar(be) && RadarLink.isRunning(be) && !radars.contains(be)) {
                     radars.add(be);
                 }
+                if (iff == null && be instanceof FireControlBlockEntity fcs) iff = fcs.settings().iffRule();
             }
         }
+        if (iff == null) iff = IffRule.DEFAULT;
         radarCount = radars.size();
         double reach = 0;
         List<Site> siteList = new ArrayList<>();
@@ -283,7 +284,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         UUID ship = SableCompat.containingId(level, worldPosition);
         Vec origin = new Vec(center.x, center.y, center.z);
         this.center = center;
-        TargetSensor.Context ctx = new TargetSensor.Context(owner, ownerTeam, channel.getId(), ship == null ? Set.of() : Set.of(ship), origin);
+        TargetSensor.Context ctx = new TargetSensor.Context(owner, ownerTeam, iff, ship == null ? Set.of() : Set.of(ship), origin);
         UUID designated = localDesignation(now);
         sensor.sense(level, radars, ctx, now, SHOW_ALL, t -> false, designated == null ? null : designated.toString());
         // назначенная цель пропала (уничтожена, ушла) - назначение снимается
@@ -387,16 +388,6 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         setChanged();
     }
 
-    public void setChannel(DyeColor c, Player p) {
-        RadarMonitorBlockEntity m = masterBe();
-        for (RadarMonitorBlockEntity be : List.of(this, m == null ? this : m)) {
-            be.channel = c;
-            be.setChanged();
-        }
-        p.displayClientMessage(Component.translatable("radar_fcs.msg.channel",
-                Component.translatable("color.minecraft." + c.getName())), true);
-    }
-
 
     /** Назначить цель по id (экран монитора); null - снять назначение. */
     public void designate(@Nullable UUID id, @Nullable Player p) {
@@ -490,7 +481,6 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         t.putLong("Master", master.asLong());
         t.putInt("W", width);
         t.putInt("H", height);
-        t.putInt("Channel", channel.getId());
         t.putInt("Scale", scaleIndex);
         t.putInt("Show", show);
         if (isMaster()) {
@@ -554,7 +544,6 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
-        tag.putInt("Channel", channel.getId());
         tag.putInt("Scale", scaleIndex);
         tag.putInt("Show", show);
         if (owner != null) tag.putUUID("Owner", owner);
@@ -564,7 +553,6 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
-        channel = DyeColor.byId(tag.getInt("Channel"));
         scaleIndex = Math.floorMod(tag.getInt("Scale"), SCALES.length);
         show = tag.contains("Show") ? tag.getInt("Show") & Show.ALL : Show.ALL;
         owner = tag.hasUUID("Owner") ? tag.getUUID("Owner") : null;
