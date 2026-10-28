@@ -52,7 +52,15 @@ public final class ContraptionCompat {
     }
 
     /** Транспондер в контрапшене: код, режим (null - по месту), радиус, позиция блока в контрапшене. */
-    public record Beacon(String code, @Nullable TransponderMode mode, int radius, BlockPos local) {}
+    public record Beacon(String code, @Nullable TransponderMode mode, int radius, BlockPos local, String name,
+                         dev.radarfcs.iff.InheritPolicy inherit) {}
+
+    /** Имя контрапшена по транспондеру в нём (первый с именем) или null. */
+    @Nullable
+    public static String name(Entity e, long now) {
+        for (Beacon b : beacons(e, now)) if (!b.name().isEmpty()) return b.name();
+        return null;
+    }
 
     /** Есть ли в контрапшене свой (по правилу вычислителя) транспондер. Транспондеры кэшируются на 5 секунд. */
     public static boolean hasTransponder(Entity e, IffRule rule, long now) {
@@ -105,7 +113,9 @@ public final class ContraptionCompat {
             String code = nbt == null ? "" : EngageSettings.cleanCode(nbt.getString("Code"));
             TransponderMode mode = nbt == null ? null : IffTransponderBlockEntity.modeOf(nbt.getString("Mode"));
             int radius = nbt != null && nbt.contains("Radius") ? Math.max(1, nbt.getInt("Radius")) : 12;
-            out.add(new Beacon(code, mode, radius, en.getKey()));
+            String name = nbt == null ? "" : IffTransponderBlockEntity.cleanName(nbt.getString("Name"));
+            var inherit = nbt == null ? dev.radarfcs.iff.InheritPolicy.ALL : dev.radarfcs.iff.InheritPolicy.read(nbt.getCompound("Inherit"));
+            out.add(new Beacon(code, mode, radius, en.getKey(), name, inherit));
         }
         return out;
     }

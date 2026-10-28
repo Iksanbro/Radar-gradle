@@ -48,8 +48,9 @@ final class SableTestSupport {
             BlockPos tp = minRel.offset(size / 2, size - 1, size / 2);
             h.setBlock(tp, FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState());
             if (h.getLevel().getBlockEntity(h.absolutePos(tp)) instanceof dev.radarfcs.block.IffTransponderBlockEntity t
-                    && (!transponderCode.isEmpty() || mode != dev.radarfcs.iff.TransponderMode.SUBLEVEL)) {
-                t.apply(transponderCode, mode, radius, null);
+                    && (!transponderCode.isEmpty() || mode != dev.radarfcs.iff.TransponderMode.SUBLEVEL || NAME.get() != null)) {
+                t.apply(new dev.radarfcs.iff.TransponderSettings(transponderCode, NAME.get() == null ? "" : NAME.get(), mode, radius,
+                        dev.radarfcs.iff.InheritPolicy.ALL), null);
             }
         }
         BlockPos min = h.absolutePos(minRel), max = min.offset(size - 1, size - 1, size - 1);
@@ -84,6 +85,9 @@ final class SableTestSupport {
         });
         return sub;
     }
+
+    /** Имя транспондера следующего корабля (для теста имён). */
+    static final ThreadLocal<String> NAME = new ThreadLocal<>();
 
     /** Мировые границы корабля. */
     static net.minecraft.world.phys.AABB box(Object handle) {

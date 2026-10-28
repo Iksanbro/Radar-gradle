@@ -3,6 +3,7 @@ package dev.radarfcs.client;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
+import dev.radarfcs.block.MonitorIcons;
 import dev.radarfcs.block.RadarMonitorBlockEntity;
 import dev.radarfcs.block.RadarMonitorBlockEntity.Blip;
 import dev.radarfcs.block.RadarMonitorBlockEntity.Site;
@@ -20,6 +21,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import java.util.ArrayList;
 import java.util.List;
 import org.joml.Matrix4f;
 
@@ -30,7 +32,8 @@ import org.joml.Matrix4f;
  * отметка под взглядом - белая рамка и сведения о цели (имя, координаты, дальность, высота, скорость).
  */
 public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlockEntity> {
-    private static final int BG = 0xF0060D08;
+    private static final int BG = 0xFF060D08;
+    private static final int BEZEL = 0xFF3A3F48;
     private static final int DISK = 0xF00B2412;
     private static final int RING = 0xB040C060;
     private static final int GRID = 0x6040C060;
@@ -66,7 +69,9 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         VertexConsumer vc = buffers.getBuffer(RenderType.debugQuads());
 
         float e = 1 / 16f;
-        rect(vc, m, -0.5f + e, -0.5f + e, w - 0.5f - e, h - 0.5f - e, 0, BG);
+        // рамка и экран - сплошными квадами на всю стену: стыки блоков не видны
+        rect(vc, m, -0.5f, -0.5f, w - 0.5f, h - 0.5f, 0, BEZEL);
+        rect(vc, m, -0.5f + e, -0.5f + e, w - 0.5f - e, h - 0.5f - e, 0.0002f, BG);
         if (!be.powered()) {
             // нет электричества: тёмный экран с надписью
             float sc = 0.0075f * (float) Math.sqrt(Math.min(w, h));
@@ -111,9 +116,29 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         // точка экрана под взглядом игрока (в тех же осях: X вправо, Y вверх от центра ведущего блока)
         float[] look = lookPoint(be, f, right, w, h);
         Blip hovered = null;
+        RadarMonitorBlockEntity.Mark hoveredMark = null;
         float hoverD = Math.max(s * 3f, 0.06f);
         int count = 0;
         List<Blip> blips = be.blips();
+        boolean always = be.labels() == RadarMonitorBlockEntity.LABELS_ALWAYS;
+        List<Label> labels = new ArrayList<>();
+        // метки наземных транспондеров
+        int tIcon = be.icon(MonitorIcons.TRANSPONDER);
+        for (RadarMonitorBlockEntity.Mark mk : be.marks()) {
+            float[] p = toScreen(mk.dx(), mk.dz(), f, right, range, r, cx, cy);
+            if (p == null) continue;
+            float ms = s * MonitorIcons.SIZES[MonitorIcons.size(tIcon)];
+            int col = MonitorIcons.color(tIcon) == 0 ? (mk.friendly() ? FRIENDLY : HOSTILE) : MonitorIcons.PALETTE[MonitorIcons.color(tIcon)];
+            shape(vc, m, MonitorIcons.shape(tIcon), p[0], p[1], ms, 0.0017f, col);
+            if (look != null) {
+                float d = (float) Math.hypot(p[0] - look[0], p[1] - look[1]);
+                if (d < hoverD) {
+                    hoverD = d;
+                    hoveredMark = mk;
+                }
+            }
+            if (always && !mk.name().isEmpty()) labels.add(new Label(p[0] + ms * 1.4f, p[1], mk.name(), col));
+        }
         // неактивные и свои - снизу, активные - поверх
         for (int pass = 0; pass < 2; pass++) {
             for (Blip b : blips) {
@@ -123,9 +148,10 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
                 float[] p = toScreen(b.dx(), b.dz(), f, right, range, r, cx, cy);
                 if (p == null) continue;
                 if (!minor) count++;
-                boolean ship = (b.flags() & RadarMonitorBlockEntity.FLAG_SHIP) != 0;
-                float bs = (ship ? s * 1.5f : s) * (minor ? 0.7f : 1f);
-                rect(vc, m, p[0] - bs, p[1] - bs, p[0] + bs, p[1] + bs, minor ? 0.0018f : 0.002f, blipColor(b));
+                int ic = be.icon(b.category());
+                float bs = s * MonitorIcons.SIZES[MonitorIcons.size(ic)] * (minor ? 0.8f : 1f);
+                int col = iconColor(b, ic);
+                shape(vc, m, MonitorIcons.shape(ic), p[0], p[1], bs, minor ? 0.0018f : 0.002f, col);
                 if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) {
                     float o = bs * 2.2f, th = bs * 0.45f;
                     frame(vc, m, p[0] - o, p[1] - o, p[0] + o, p[1] + o, th, 0.0024f, DESIGNATED);
@@ -135,19 +161,33 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
                     if (d < hoverD) {
                         hoverD = d;
                         hovered = b;
+                        hoveredMark = null;
                     }
                 }
+                if (always && !b.tag().isEmpty()) labels.add(new Label(p[0] + bs * 1.4f, p[1], b.tag(), col));
             }
         }
         if (hovered != null) {
             float[] p = toScreen(hovered.dx(), hovered.dz(), f, right, range, r, cx, cy);
             float o = s * 1.8f, th = s * 0.3f;
             frame(vc, m, p[0] - o, p[1] - o, p[0] + o, p[1] + o, th, 0.0026f, HOVER);
+            if (!always && !hovered.tag().isEmpty()) labels.add(new Label(p[0] + o * 1.2f, p[1], hovered.tag(), HOVER));
+        } else if (hoveredMark != null) {
+            float[] p = toScreen(hoveredMark.dx(), hoveredMark.dz(), f, right, range, r, cx, cy);
+            float o = s * 1.8f, th = s * 0.3f;
+            frame(vc, m, p[0] - o, p[1] - o, p[0] + o, p[1] + o, th, 0.0026f, HOVER);
+            if (!always && !hoveredMark.name().isEmpty()) labels.add(new Label(p[0] + o * 1.2f, p[1], hoveredMark.name(), HOVER));
         } else if (look != null) {
             // курсор взгляда
             float c = s * 0.8f, th = s * 0.15f;
             rect(vc, m, look[0] - c, look[1] - th, look[0] + c, look[1] + th, 0.0026f, 0xA0FFFFFF);
             rect(vc, m, look[0] - th, look[1] - c, look[0] + th, look[1] + c, 0.0026f, 0xA0FFFFFF);
+        }
+        // подложки подписей (текст - ниже, после всех квадов)
+        float ls = 0.0055f * (float) Math.sqrt(Math.min(w, h));
+        for (Label lb : labels) {
+            float lw = font.width(lb.text()) * ls, lh = font.lineHeight * ls;
+            rect(vc, m, lb.x() - ls, lb.y() - lh / 2 - ls, lb.x() + lw + ls, lb.y() + lh / 2, 0.0027f, 0xB0000000);
         }
 
         // сведения о цели под взглядом (или назначенной): подложка - квадом здесь, текст - ниже. Свой фон текста шрифта
@@ -155,8 +195,11 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         float scale = 0.0075f * (float) Math.sqrt(Math.min(w, h));
         float boxW = (w - 2 * e * 1.6f) / scale;
         Blip info = hovered;
-        if (info == null) for (Blip b : blips) if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) info = b;
-        List<Component> lines = info == null ? List.of() : RadarMonitorScreen.describe(be, info);
+        if (info == null && hoveredMark == null) {
+            for (Blip b : blips) if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) info = b;
+        }
+        List<Component> lines = info != null ? RadarMonitorScreen.describe(be, info)
+                : hoveredMark != null ? RadarMonitorScreen.describeMark(be, hoveredMark) : List.of();
         int widest = 1;
         for (Component c : lines) widest = Math.max(widest, font.width(c));
         float k = Math.min(1f, boxW / widest);
@@ -167,6 +210,14 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         }
 
         // подписи - последними: текст берёт из буферов свой тип рендера, и буфер квадов после него недействителен
+        for (Label lb : labels) {
+            ps.pushPose();
+            ps.translate(lb.x(), lb.y() + font.lineHeight * ls / 2, 0.003f);
+            ps.scale(ls, -ls, ls);
+            font.drawInBatch(lb.text(), 0, 0, 0xFF000000 | lb.color(), false, ps.last().pose(), buffers, Font.DisplayMode.POLYGON_OFFSET, 0,
+                    LightTexture.FULL_BRIGHT);
+            ps.popPose();
+        }
         ps.pushPose();
         ps.translate(-0.5f + e * 1.6f, h - 0.5f - e * 1.6f, 0.003f);
         ps.scale(scale, -scale, scale);
@@ -198,6 +249,31 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         ps.popPose();
 
         ps.popPose();
+    }
+
+    /** Подпись у значка (локальные координаты экрана). */
+    private record Label(float x, float y, String text, int color) {}
+
+    private static final int SHAPE_ROWS = 8;
+
+    /** Значок формы shape с центром (x, y) и полуразмером size. */
+    private static final float[][][] SPANS = new float[MonitorIcons.Shape.values().length][][];
+
+    static {
+        for (MonitorIcons.Shape sh : MonitorIcons.Shape.values()) SPANS[sh.ordinal()] = MonitorIcons.spans(sh, SHAPE_ROWS);
+    }
+
+    static void shape(VertexConsumer vc, Matrix4f m, MonitorIcons.Shape shape, float x, float y, float size, float z, int argb) {
+        for (float[] sp : SPANS[shape.ordinal()]) {
+            rect(vc, m, x + sp[2] * size, y + sp[0] * size, x + sp[3] * size, y + sp[1] * size, z, argb);
+        }
+    }
+
+    /** Цвет значка отметки: по состоянию или постоянный из настроек типа. */
+    public static int iconColor(Blip b, int icon) {
+        if ((b.flags() & RadarMonitorBlockEntity.FLAG_ENGAGED) != 0) return ENGAGED;   // под огнём - всегда красный
+        int c = MonitorIcons.color(icon);
+        return c == 0 ? blipColor(b) : MonitorIcons.PALETTE[c];
     }
 
     /** Цвет отметки по её флагам (общий для экрана в мире и окна монитора). */

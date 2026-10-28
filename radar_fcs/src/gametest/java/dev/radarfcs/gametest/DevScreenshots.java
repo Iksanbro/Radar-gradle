@@ -68,6 +68,12 @@ public final class DevScreenshots {
                 if (husk.isAlive()) husk.setPos(base.getX() + 36.5, base.getY(), base.getZ() - 6 + off);
             });
         }
+        if (tick == 100) server.execute(() -> {
+            // подписи имён с транспондеров на экране монитора - всегда
+            if (server.overworld().getBlockEntity(base.offset(-3, 0, -3)) instanceof dev.radarfcs.block.RadarMonitorBlockEntity mon) {
+                mon.setLabels(dev.radarfcs.block.RadarMonitorBlockEntity.LABELS_ALWAYS);
+            }
+        });
         if (tick == 50) shot(mc, "fcs_aiming");
         if (tick == 200) shot(mc, "fcs_overview");
         if (tick == 240) server.execute(() -> {
@@ -137,14 +143,22 @@ public final class DevScreenshots {
             });
         }
         if (tick == 590) shot(mc, "radar_link");
-        // окно монитора: список целей, фильтры
+        // окно монитора: развёртка, список целей, вид (фильтры, значки, подписи)
         if (tick == 600) dev.radarfcs.client.FcsClientHooks.openMonitor(base.offset(-3, 0, -3));
-        if (tick == 610) shot(mc, "monitor_gui");
-        // экран транспондера
-        if (tick == 620) dev.radarfcs.client.FcsClientHooks.openTransponder(new dev.radarfcs.net.TransponderPayloads.Open(
-                base.offset(8, 0, -3), "2077", dev.radarfcs.iff.TransponderMode.RADIUS.ordinal(), 16, 2, 64));
-        if (tick == 630) shot(mc, "transponder_gui");
-        if (tick == 640) mc.stop();
+        if (tick == 610) shot(mc, "monitor_gui_0");
+        if (tick == 612 && mc.screen instanceof dev.radarfcs.client.RadarMonitorScreen ms) ms.showTab(1);
+        if (tick == 618) shot(mc, "monitor_gui_1");
+        if (tick == 620 && mc.screen instanceof dev.radarfcs.client.RadarMonitorScreen ms) ms.showTab(2);
+        if (tick == 626) shot(mc, "monitor_gui_2");
+        // экран транспондера: основное и наследование
+        if (tick == 630) dev.radarfcs.client.FcsClientHooks.openTransponder(new dev.radarfcs.net.TransponderPayloads.Open(
+                base.offset(8, 0, -3), new dev.radarfcs.iff.TransponderSettings("2077", "Аврора", dev.radarfcs.iff.TransponderMode.SUBLEVEL_AND_DISTANCE, 16,
+                        new dev.radarfcs.iff.InheritPolicy(dev.radarfcs.core.TargetCategory.ALL & ~dev.radarfcs.core.TargetCategory.HOSTILE.bit,
+                                java.util.List.of("minecraft:zombie_villager"), java.util.List.of("minecraft:creeper", "#minecraft:raiders"))).write(), 3, 64));
+        if (tick == 638) shot(mc, "transponder_gui_0");
+        if (tick == 640 && mc.screen instanceof dev.radarfcs.client.TransponderScreen ts) ts.showTab(1);
+        if (tick == 646) shot(mc, "transponder_gui_1");
+        if (tick == 656) mc.stop();
     }
 
     /** Поставить игрока глазами в eye и повернуть к точке target. */
@@ -233,9 +247,14 @@ public final class DevScreenshots {
         placeLink(level, base.offset(-3, 1, -2), Direction.UP, base);
         placeLink(level, base, Direction.NORTH, base);
         DyeColor[] colors = {DyeColor.WHITE, DyeColor.RED, DyeColor.LIME, DyeColor.BLUE};
+        String[] names = {"База", "Склад", "Ангар", "Порт"};
         for (int i = 0; i < colors.length; i++) {
-            level.setBlock(base.offset(8, 0, -3 - i * 2), FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState()
-                    .setValue(IffTransponderBlock.CHANNEL, colors[i]), 3);
+            BlockPos tp = base.offset(8, 0, -3 - i * 2);
+            level.setBlock(tp, FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState().setValue(IffTransponderBlock.CHANNEL, colors[i]), 3);
+            if (level.getBlockEntity(tp) instanceof dev.radarfcs.block.IffTransponderBlockEntity t) {
+                t.apply(new dev.radarfcs.iff.TransponderSettings("", names[i], dev.radarfcs.iff.TransponderMode.RADIUS, 3,
+                        dev.radarfcs.iff.InheritPolicy.ALL), null);
+            }
         }
         husk = EntityType.HUSK.create(level);
         if (husk != null) {

@@ -263,8 +263,10 @@ public final class TargetSensor {
         double hr = kind == Track.Kind.CONTRAPTION
                 ? Math.min(6.0, Math.max(1.0, Math.min(bb.getXsize(), bb.getZsize()) * 0.5))
                 : Math.max(0.35, Math.min(bb.getXsize(), bb.getYsize()) * 0.5);
-        Track t = table.observe(id, kind, e.getName().getString(), new Vec(c.x, c.y, c.z), hr, now,
+        String named = kind == Track.Kind.CONTRAPTION ? ContraptionCompat.name(e, now) : null;   // имя с транспондера
+        Track t = table.observe(id, kind, named != null ? named : e.getName().getString(), new Vec(c.x, c.y, c.z), hr, now,
                 isGrounded(e), null, s);
+        t.tagName = named;
         t.handle = e;
         t.hostile = e instanceof Enemy;
         t.typeId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
@@ -277,10 +279,12 @@ public final class TargetSensor {
     private void observeShip(ServerLevel level, SableCompat.Ship ship, long now, TrackTable.Settings s) {
         Vec3 c = ship.center();
         Vec3 v = ship.velocity();
-        Track t = table.observe(ship.id().toString(), Track.Kind.SHIP, ship.name(), new Vec(c.x, c.y, c.z),
+        String named = IffRegistry.shipName(level, ship.id());                // имя корабля с его транспондера
+        Track t = table.observe(ship.id().toString(), Track.Kind.SHIP, named != null ? named : ship.name(), new Vec(c.x, c.y, c.z),
                 ship.radius(), now, false, new Vec(v.x, v.y, v.z), s);
         t.handle = ship;
         t.hostile = true;
+        t.tagName = named;
         t.volume = ship.box().getXsize() * ship.box().getYsize() * ship.box().getZsize();
     }
 
@@ -297,15 +301,17 @@ public final class TargetSensor {
     // ----------------------------------------------------------- свой-чужой
 
     private boolean isFriendly(ServerLevel level, Track t, Context ctx, long now) {
-        return isFriendly(level, t.handle, t.kind, t.id, t.pos, ctx, now);
+        return isFriendly(level, t, ctx, now, true);
     }
 
     /**
      * Свой ли объект для вычислителя (или монитора) с этим контекстом.
      * @param handle сущность, корабль Sable ({@link SableCompat.Ship}) или null
      */
-    public static boolean isFriendly(ServerLevel level, @Nullable Object handle, Track.Kind kind, String id, Vec pos,
-                                     Context ctx, long now) {
+    public static boolean isFriendly(ServerLevel level, Track t, Context ctx, long now, boolean zones) {
+        Object handle = t.handle;
+        Track.Kind kind = t.kind;
+        String id = t.id;
         IffRule iff = ctx.iff();
         if (handle instanceof SableCompat.Ship ship) {
             UUID sid = ship.id();
@@ -335,9 +341,9 @@ public final class TargetSensor {
         } else if (kind == Track.Kind.PLAYER && !FcsConfig.TARGET_PLAYERS.get()) {
             return true;
         }
-        // зона своего транспондера (корабль, радиус, корабль + расстояние) бережёт всё внутри: мобов, игроков,
-        // транспорт, снаряды и корабли
-        return IffRegistry.protectsPoint(level, pos, iff);
+        // зона своего транспондера (корабль, радиус, корабль + расстояние) бережёт тех, кто наследует её защиту
+        // (типы и списки наследования транспондера)
+        return zones && IffRegistry.protects(level, t, iff);
     }
 
     private static boolean isFriendlyPlayer(Player p, Context ctx) {

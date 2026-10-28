@@ -3,6 +3,7 @@ package dev.radarfcs.iff;
 import dev.radarfcs.compat.ContraptionCompat;
 import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.core.IffRule;
+import dev.radarfcs.core.Track;
 import dev.radarfcs.core.Vec;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,8 +34,14 @@ public final class IffRegistry {
     /** Запас вокруг границ корабля в режиме «сублевел»: стоящие на палубе и рядом с бортом. */
     public static final double SUBLEVEL_MARGIN = 2.0;
 
-    /** Транспондер: код ("" - без кода), режим (null - по месту: на сублевеле «сублевел», иначе «радиус»), радиус. */
-    public record Beacon(String code, @Nullable TransponderMode mode, int radius) {}
+    /**
+     * Транспондер: код ("" - без кода), режим (null - по месту: на сублевеле «сублевел», иначе «радиус»), радиус,
+     * имя (корабля, базы; "" - без имени) и кто в зоне наследует защиту.
+     */
+    public record Beacon(String code, @Nullable TransponderMode mode, int radius, String name, InheritPolicy inherit) {}
+
+    /** Транспондер для монитора: мировая точка, имя, код, корабль-носитель (или null). */
+    public record Info(Vec3 pos, String name, String code, @Nullable UUID ship) {}
 
     /** Защитная зона в мировых координатах: шар (box == null) или прямоугольник. */
     public record Zone(Vec center, double radius, @Nullable AABB box) {
@@ -44,7 +51,7 @@ public final class IffRegistry {
         }
     }
 
-    private record CodedZone(String code, Zone zone) {}
+    private record CodedZone(String code, Zone zone, InheritPolicy inherit) {}
 
     private record Cached(long tick, List<CodedZone> zones) {}
 
@@ -103,7 +110,7 @@ public final class IffRegistry {
                 AABB ship = SableCompat.worldBox(level, pos);
                 TransponderMode mode = b.mode() != null ? b.mode() : ship != null ? TransponderMode.SUBLEVEL : TransponderMode.RADIUS;
                 Zone z = zoneOf(mode, b.radius(), ship, SableCompat.toWorld(level, Vec3.atCenterOf(pos)));
-                if (z != null) out.add(new CodedZone(b.code(), z));
+                if (z != null) out.add(new CodedZone(b.code(), z, b.inherit()));
             }
         }
         // транспондеры в движущихся контрапшенах Create (там они без питания: блок контрапшена его не получает)
@@ -112,7 +119,7 @@ public final class IffRegistry {
                 for (ContraptionCompat.Beacon b : ContraptionCompat.beacons(ce, now)) {
                     TransponderMode mode = b.mode() != null ? b.mode() : TransponderMode.SUBLEVEL;
                     Zone z = zoneOf(mode, b.radius(), ce.getBoundingBox(), ContraptionCompat.toWorld(ce, b.local()));
-                    if (z != null) out.add(new CodedZone(b.code(), z));
+                    if (z != null) out.add(new CodedZone(b.code(), z, b.inherit()));
                 }
             }
         }
@@ -127,10 +134,35 @@ public final class IffRegistry {
         return out;
     }
 
-    /** Точка внутри зоны своего транспондера. */
-    public static boolean protectsPoint(Level level, Vec p, IffRule rule) {
-        for (CodedZone cz : allZones(level)) if (rule.accepts(cz.code()) && cz.zone().contains(p)) return true;
+    /** Цель в зоне своего транспондера и наследует его защиту (по типам и спискам наследования транспондера). */
+    public static boolean protects(Level level, Track t, IffRule rule) {
+        for (CodedZone cz : allZones(level)) {
+            if (rule.accepts(cz.code()) && cz.zone().contains(t.pos) && cz.inherit().inherits(t)) return true;
+        }
         return false;
+    }
+
+    /** Имя корабля по транспондеру на нём (первый с именем) или null. */
+    @Nullable
+    public static String shipName(Level level, UUID ship) {
+        Map<BlockPos, Beacon> m = MAP.get(level.dimension());
+        if (m == null) return null;
+        for (Map.Entry<BlockPos, Beacon> e : m.entrySet()) {
+            if (!e.getValue().name().isEmpty() && ship.equals(SableCompat.containingId(level, e.getKey()))) return e.getValue().name();
+        }
+        return null;
+    }
+
+    /** Транспондеры уровня (с питанием) для монитора. */
+    public static List<Info> infos(Level level) {
+        List<Info> out = new ArrayList<>();
+        Map<BlockPos, Beacon> m = MAP.get(level.dimension());
+        if (m == null) return out;
+        for (Map.Entry<BlockPos, Beacon> e : m.entrySet()) {
+            out.add(new Info(SableCompat.toWorld(level, Vec3.atCenterOf(e.getKey())), e.getValue().name(), e.getValue().code(),
+                    SableCompat.containingId(level, e.getKey())));
+        }
+        return out;
     }
 
     /** На корабле стоит свой (по правилу) транспондер - в любом режиме. */

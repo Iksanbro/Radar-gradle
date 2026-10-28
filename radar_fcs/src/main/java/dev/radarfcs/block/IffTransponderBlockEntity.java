@@ -6,6 +6,8 @@ import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.energy.EnergyBuffer;
 import dev.radarfcs.iff.IffAccess;
 import dev.radarfcs.iff.IffRegistry;
+import dev.radarfcs.iff.InheritPolicy;
+import dev.radarfcs.iff.TransponderSettings;
 import dev.radarfcs.iff.TransponderMode;
 import dev.radarfcs.registry.FcsRegistry;
 import java.util.UUID;
@@ -32,6 +34,10 @@ public class IffTransponderBlockEntity extends BlockEntity {
     /** null - по месту: на сублевеле «сублевел», иначе «радиус». */
     @Nullable private TransponderMode mode;
     private int radius = defaultRadius();
+    /** Имя (корабля, базы) для мониторов и отчётов; "" - без имени. */
+    private String name = "";
+    /** Кто в зоне наследует защиту. */
+    private InheritPolicy inherit = InheritPolicy.ALL;
     /** Электричество (FE): без него транспондер ничего не защищает. */
     private final EnergyBuffer energy = new EnergyBuffer(64, this::setChanged);
     private boolean powered = true;
@@ -65,7 +71,7 @@ public class IffTransponderBlockEntity extends BlockEntity {
     private void register() {
         if (level == null || level.isClientSide) return;
         if (powered || !EnergyBuffer.required()) {
-            IffRegistry.put(level, worldPosition, new IffRegistry.Beacon(code, mode, Math.min(radius, maxRadius())));
+            IffRegistry.put(level, worldPosition, new IffRegistry.Beacon(code, mode, Math.min(radius, maxRadius()), name, inherit));
         } else {
             IffRegistry.remove(level, worldPosition);
         }
@@ -107,6 +113,19 @@ public class IffTransponderBlockEntity extends BlockEntity {
 
     public int radius() { return radius; }
 
+    public String name() { return name; }
+
+    public InheritPolicy inherit() { return inherit; }
+
+    public static String cleanName(String n) {
+        return TransponderSettings.cleanName(n);
+    }
+
+    /** Настройки для экрана. */
+    public TransponderSettings settings() {
+        return new TransponderSettings(code, name, effectiveMode(), radius, inherit);
+    }
+
     /** Режим с учётом места. */
     public TransponderMode effectiveMode() {
         return level == null ? (mode == null ? TransponderMode.RADIUS : mode) : IffRegistry.modeAt(level, worldPosition, mode);
@@ -133,12 +152,22 @@ public class IffTransponderBlockEntity extends BlockEntity {
      * @return приняты ли
      */
     public boolean apply(String newCode, TransponderMode newMode, int newRadius, @Nullable Player p) {
+        return apply(new TransponderSettings(newCode, name, newMode == null ? TransponderMode.RADIUS : newMode, newRadius, inherit), p);
+    }
+
+    /** Все настройки экрана транспондера (проверяются здесь); p - кто меняет (null - без проверки доступа). */
+    public boolean apply(TransponderSettings s, @Nullable Player p) {
+        String newCode = s.code();
+        TransponderMode newMode = s.mode();
+        int newRadius = s.radius();
         if (p != null && !canEdit(p)) {
             p.displayClientMessage(Component.translatable("radar_fcs.msg.transponder_locked").withStyle(ChatFormatting.RED), true);
             return false;
         }
         if (p != null && owner == null) setOwner(p);
         code = EngageSettings.cleanCode(newCode);
+        name = cleanName(s.name());
+        inherit = s.inherit() == null ? InheritPolicy.ALL : s.inherit();
         mode = newMode == null ? TransponderMode.RADIUS : newMode;
         radius = Math.max(1, Math.min(maxRadius(), newRadius));
         setChanged();
@@ -157,6 +186,8 @@ public class IffTransponderBlockEntity extends BlockEntity {
         tag.putString("Code", code);
         if (mode != null) tag.putString("Mode", mode.name());
         tag.putInt("Radius", radius);
+        tag.putString("Name", name);
+        tag.put("Inherit", inherit.write());
         energy.save(tag);
         tag.putBoolean("Powered", powered);
     }
@@ -170,6 +201,8 @@ public class IffTransponderBlockEntity extends BlockEntity {
         mode = modeOf(tag.getString("Mode"));
         radius = tag.contains("Radius") ? Math.max(1, tag.getInt("Radius")) : defaultRadius();
         energy.load(tag);
+        name = cleanName(tag.getString("Name"));
+        inherit = InheritPolicy.read(tag.getCompound("Inherit"));
         powered = !tag.contains("Powered") || tag.getBoolean("Powered");
         register();
     }

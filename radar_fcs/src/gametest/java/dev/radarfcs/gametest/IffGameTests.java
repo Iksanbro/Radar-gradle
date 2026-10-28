@@ -73,6 +73,16 @@ public class IffGameTests {
     @AfterBatch(batch = "iff_ship_escort") public static void a10(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "iff_ship_escort_out") public static void b11(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "iff_ship_escort_out") public static void a11(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "iff_inherit") public static void b12(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "iff_inherit") public static void a12(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "iff_inherit_white") public static void b13(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "iff_inherit_white") public static void a13(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "iff_inherit_black") public static void b14(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "iff_inherit_black") public static void a14(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "iff_ship_name") public static void b15(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "iff_ship_name") public static void a15(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "iff_monitor") public static void b16(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "iff_monitor") public static void a16(ServerLevel l) { FcsGameTests.cleanup(l); }
 
     /** Транспондер с кодом, режимом и радиусом (как сохранил бы игрок на экране транспондера). */
     static IffTransponderBlockEntity transponder(GameTestHelper h, BlockPos rel, String code, TransponderMode mode, int radius) {
@@ -364,6 +374,112 @@ public class IffGameTests {
         h.succeedWhen(() -> {
             if (friendly(be, esc)) throw new GameTestAssertException("mob 4 blocks off the ship is friendly in sublevel mode");
             if (hits.get() == 0) throw new GameTestAssertException("mob next to the ship not hit yet");
+        });
+    }
+
+    /**
+     * Наследование защиты: в зоне одного транспондера корова (белый список целей) и враждебный моб. Корова наследует
+     * защиту (своя, огня нет), враждебный моб - нет (цель, попадание).
+     */
+    static void inheritCase(GameTestHelper h, String batch, dev.radarfcs.iff.InheritPolicy policy) {
+        FireControlBlockEntity be = cowHunter(h, false);
+        IffTransponderBlockEntity t = transponder(h, new BlockPos(48, 1, 30), "", TransponderMode.RADIUS, 12);
+        t.apply(new dev.radarfcs.iff.TransponderSettings("", "", TransponderMode.RADIUS, 12, policy), null);
+        Mob cow = tough(movingTarget(h, EntityType.COW, new Vec3(46.5, 1, 22.5), 0.1, 4));
+        Mob husk = tough(movingTarget(h, EntityType.HUSK, new Vec3(44.5, 1, 32.5), 0.1, 4));
+        AtomicInteger cowHits = countHits(h, cow), huskHits = countHits(h, husk);
+        neverShot(h, be, cow, cowHits, "cow inheriting the transponder protection");
+        logEvery(h, be, batch, 40);
+        h.succeedWhen(() -> {
+            if (!friendly(be, cow)) throw new GameTestAssertException("cow does not inherit the protection");
+            if (friendly(be, husk)) throw new GameTestAssertException("husk inherits the protection");
+            if (huskHits.get() == 0) throw new GameTestAssertException("husk in the zone (not inheriting) not hit yet");
+            FcsMod.LOG.info("[radar_fcs test] {}: cow protected, husk hit {} times", batch, huskHits.get());
+        });
+    }
+
+    /** Типы: враждебные мобы не наследуют защиту, мирные - наследуют. */
+    @GameTest(template = ARENA, batch = "iff_inherit", timeoutTicks = 500)
+    public static void inheritByType(GameTestHelper h) {
+        inheritCase(h, "iff_inherit", new dev.radarfcs.iff.InheritPolicy(
+                dev.radarfcs.core.TargetCategory.ALL & ~dev.radarfcs.core.TargetCategory.HOSTILE.bit, List.of(), List.of()));
+    }
+
+    /** Типы выключены все, но корова в белом списке наследования - наследует только она. */
+    @GameTest(template = ARENA, batch = "iff_inherit_white", timeoutTicks = 500)
+    public static void inheritByWhitelist(GameTestHelper h) {
+        inheritCase(h, "iff_inherit_white", new dev.radarfcs.iff.InheritPolicy(0, List.of("minecraft:cow"), List.of()));
+    }
+
+    /** Все типы наследуют, но нежить (#minecraft:undead) в чёрном списке наследования - не наследует. */
+    @GameTest(template = ARENA, batch = "iff_inherit_black", timeoutTicks = 500)
+    public static void inheritByBlacklist(GameTestHelper h) {
+        inheritCase(h, "iff_inherit_black", new dev.radarfcs.iff.InheritPolicy(dev.radarfcs.core.TargetCategory.ALL, List.of(),
+                List.of("#minecraft:undead")));
+    }
+
+    /** Имя транспондера на корабле - имя цели у вычислителя (трек корабля). */
+    @GameTest(template = ARENA, batch = "iff_ship_name", timeoutTicks = 200)
+    public static void transponderNamesShip(GameTestHelper h) {
+        if (!ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        FireControlBlockEntity be = fcs(h, FCS);
+        configure(be, s -> { s.iffWhitelist = true; s.iffCodes.add("4242"); });   // корабль чужой - его видно в целях
+        SableTestSupport.NAME.set("Аврора");
+        try {
+            SableTestSupport.ship(h, new BlockPos(46, 9, 22), 3, new Vec3(0, 0, 0.12), 14, "1111", TransponderMode.SUBLEVEL, 12);
+        } finally {
+            SableTestSupport.NAME.remove();
+        }
+        h.succeedWhen(() -> {
+            var ship = be.sensor().all().stream().filter(t -> t.kind == dev.radarfcs.core.Track.Kind.SHIP).findFirst().orElse(null);
+            if (ship == null) throw new GameTestAssertException("ship not seen");
+            if (!"Аврора".equals(ship.name) || !"Аврора".equals(ship.tagName)) {
+                throw new GameTestAssertException("ship name " + ship.name + " / tag " + ship.tagName);
+            }
+        });
+    }
+
+    /**
+     * Монитор показывает наземные транспондеры с именами (свой - по правилу сети), значки и подписи настраиваются
+     * и сохраняются; имя транспондера чистится (служебные символы, длина).
+     */
+    @GameTest(template = ARENA, batch = "iff_monitor", timeoutTicks = 200)
+    public static void monitorShowsTransponderNames(GameTestHelper h) {
+        floor(h);
+        var mon = FcsRegistry.RADAR_MONITOR.get().defaultBlockState().setValue(dev.radarfcs.block.RadarMonitorBlock.FACING, Direction.SOUTH);
+        BlockPos monPos = new BlockPos(10, 2, 20);
+        h.setBlock(monPos, mon);
+        FcsGameTests.CREATED.add(h.absolutePos(monPos));
+        IffTransponderBlockEntity t = transponder(h, new BlockPos(18, 1, 26), "", TransponderMode.RADIUS, 4);
+        t.apply(new dev.radarfcs.iff.TransponderSettings("", "База-1", TransponderMode.RADIUS, 4, dev.radarfcs.iff.InheritPolicy.ALL), null);
+        String longName = "§cОчень длинное имя транспондера для проверки длины";
+        IffTransponderBlockEntity t2 = transponder(h, new BlockPos(14, 1, 30), "", TransponderMode.RADIUS, 4);
+        t2.apply(new dev.radarfcs.iff.TransponderSettings("", longName, TransponderMode.RADIUS, 4, dev.radarfcs.iff.InheritPolicy.ALL), null);
+        if (t2.name().length() > dev.radarfcs.iff.TransponderSettings.NAME_LENGTH || t2.name().contains("§")) h.fail("name not cleaned: " + t2.name());
+        h.runAtTickTime(60, () -> {
+            if (!(h.getLevel().getBlockEntity(h.absolutePos(monPos)) instanceof dev.radarfcs.block.RadarMonitorBlockEntity m)) {
+                h.fail("monitor missing");
+                return;
+            }
+            var mark = m.marks().stream().filter(x -> x.name().equals("База-1")).findFirst().orElse(null);
+            if (mark == null) h.fail("monitor has no mark for the named transponder: " + m.marks());
+            else if (!mark.friendly()) h.fail("transponder mark is not friendly under the default rule");
+            int packed = dev.radarfcs.block.MonitorIcons.pack(dev.radarfcs.block.MonitorIcons.Shape.CROSS, 2, 0);
+            m.setIcon(dev.radarfcs.core.TargetCategory.SHIPS.ordinal(), packed);
+            m.setLabels(dev.radarfcs.block.RadarMonitorBlockEntity.LABELS_ALWAYS);
+            if (m.icon(dev.radarfcs.core.TargetCategory.SHIPS.ordinal()) != packed) h.fail("icon not set");
+            if (m.labels() != dev.radarfcs.block.RadarMonitorBlockEntity.LABELS_ALWAYS) h.fail("labels not set");
+            var tag = m.saveWithoutMetadata(h.getLevel().registryAccess());
+            if (tag.getInt("Labels") != 1 || tag.getIntArray("Icons")[dev.radarfcs.core.TargetCategory.SHIPS.ordinal()] != packed) {
+                h.fail("monitor settings not saved: " + tag);
+            }
+            m.setShow(m.show() & ~dev.radarfcs.block.RadarMonitorBlockEntity.Show.TRANSPONDERS.bit);
+            if (!m.marks().isEmpty()) h.fail("transponder marks shown with the filter off");
+            h.succeed();
         });
     }
 }

@@ -4,6 +4,7 @@ import dev.radarfcs.FcsConfig;
 import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.core.IffRule;
+import dev.radarfcs.iff.IffRegistry;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.core.Vec;
 import dev.radarfcs.energy.EnergyBuffer;
@@ -57,13 +58,26 @@ public class RadarMonitorBlockEntity extends BlockEntity {
             FLAG_HOSTILE = 32;
 
     /** Фильтры показа (биты маски show). */
-    public enum Show { PLAYERS, HOSTILE, PASSIVE, SHIPS, CONTRAPTIONS, PROJECTILES, OTHER, FRIENDLY, INACTIVE;
+    public enum Show { PLAYERS, HOSTILE, PASSIVE, SHIPS, CONTRAPTIONS, PROJECTILES, OTHER, FRIENDLY, INACTIVE, TRANSPONDERS;
         public final int bit = 1 << ordinal();
         public static final int ALL = (1 << values().length) - 1;
     }
 
     /** Отметка на экране: смещение от центра экрана в мире, тип, флаги, id и имя цели, скорость м/с. */
-    public record Blip(float dx, float dz, float dy, int kind, int flags, String id, String name, float speed) {}
+    public record Blip(float dx, float dz, float dy, int kind, int flags, String id, String name, float speed, String tag) {
+        /** Категория значка (TargetCategory). */
+        public int category() {
+            Track.Kind[] kinds = Track.Kind.values();
+            Track.Kind k = kind >= 0 && kind < kinds.length ? kinds[kind] : Track.Kind.EXTERNAL;
+            return dev.radarfcs.core.TargetCategory.of(k, (flags & FLAG_HOSTILE) != 0).ordinal();
+        }
+    }
+
+    /** Наземный транспондер на экране: смещение, имя, свой ли (по правилу вычислителя сети). */
+    public record Mark(float dx, float dz, String name, boolean friendly) {}
+
+    /** Подписи (имена с транспондеров): 0 - при наведении курсора, 1 - всегда. */
+    public static final int LABELS_HOVER = 0, LABELS_ALWAYS = 1;
 
     /** Сенсор монитора берёт все типы целей (что показывать - решают фильтры). */
     private static final EngageSettings SHOW_ALL = showAllSettings();
@@ -84,6 +98,9 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     private String ownerTeam = "";
     private int scaleIndex;
     private int show = Show.ALL;
+    private int labels = LABELS_HOVER;
+    private int[] icons = MonitorIcons.defaults();
+    private List<Mark> marks = List.of();
 
     // мультиблок
     private BlockPos master;
@@ -192,6 +209,16 @@ public class RadarMonitorBlockEntity extends BlockEntity {
 
     public List<Site> sites() { return sites; }
 
+    public List<Mark> marks() { return marks; }
+
+    public int labels() { return master().labels; }
+
+    /** Значок типа (MonitorIcons, упакован). */
+    public int icon(int category) {
+        int[] ic = master().icons;
+        return category >= 0 && category < ic.length ? ic[category] : MonitorIcons.defaults()[0];
+    }
+
 
     public int scaleIndex() { return scaleIndex; }
 
@@ -297,6 +324,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         Vec3 center = screenCenter(level);
         if (!powered) {                                                    // без питания экран погашен
             blips = List.of();
+            marks = List.of();
             sites = List.of();
             targets = List.of();
             designatedName = "";
@@ -358,13 +386,24 @@ public class RadarMonitorBlockEntity extends BlockEntity {
                     | (t.kind == Track.Kind.SHIP ? FLAG_SHIP : 0) | (t.friendly ? FLAG_FRIENDLY : 0)
                     | (!t.active && !t.friendly ? FLAG_INACTIVE : 0) | (isThreat(t) ? FLAG_HOSTILE : 0);
             bl.add(new Blip((float) dx, (float) dz, (float) (t.pos.y() - center.y), t.kind.ordinal(), flags, t.id,
-                    t.name == null ? "?" : t.name, (float) (t.speedPerTick() * 20)));
+                    t.name == null ? "?" : t.name, (float) (t.speedPerTick() * 20), t.tagName == null ? "" : t.tagName));
+        }
+        // наземные транспондеры (метки с именами); транспондеры кораблей подписывают отметку своего корабля
+        List<Mark> ml = new ArrayList<>();
+        if ((show & Show.TRANSPONDERS.bit) != 0) {
+            for (IffRegistry.Info info : IffRegistry.infos(level)) {
+                if (info.ship() != null) continue;
+                double dx = info.pos().x - center.x, dz = info.pos().z - center.z;
+                ml.add(new Mark((float) dx, (float) dz, info.name(), iff.accepts(info.code())));
+            }
         }
         // авто: чтобы поместились все цели, но не дальше, чем видят радары
         double coverage = niceRange(reach);
         displayRange = (float) (scaleIndex != 0 ? SCALES[scaleIndex]
                 : farthest > 0 ? Math.min(coverage, niceRange(Math.max(48, farthest * 1.25))) : coverage);
         tl.removeIf(t -> t.dist() > displayRange);
+        ml.removeIf(m -> Math.hypot(m.dx(), m.dz()) > displayRange);
+        marks = ml.size() > MAX_BLIPS ? List.copyOf(ml.subList(0, MAX_BLIPS)) : ml;
         bl.removeIf(b -> Math.hypot(b.dx(), b.dz()) > displayRange);
         tl.sort(Comparator.comparingDouble(Target::dist));
         // назначенная и активные - первыми (на экран идёт не больше MAX_BLIPS)
@@ -466,6 +505,24 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         m.pushToClients(sl);
     }
 
+    /** Значок типа с экрана монитора. */
+    public void setIcon(int category, int packed) {
+        RadarMonitorBlockEntity m = masterBe();
+        if (m == null || !(level instanceof ServerLevel sl) || category < 0 || category >= MonitorIcons.COUNT) return;
+        m.icons[category] = MonitorIcons.pack(MonitorIcons.shape(packed), MonitorIcons.color(packed), MonitorIcons.size(packed));
+        m.setChanged();
+        m.pushToClients(sl);
+    }
+
+    /** Подписи (всегда / при наведении) с экрана монитора. */
+    public void setLabels(int mode) {
+        RadarMonitorBlockEntity m = masterBe();
+        if (m == null || !(level instanceof ServerLevel sl)) return;
+        m.labels = mode == LABELS_ALWAYS ? LABELS_ALWAYS : LABELS_HOVER;
+        m.setChanged();
+        m.pushToClients(sl);
+    }
+
     /** Фильтры показа с экрана монитора. */
     public void setShow(int mask) {
         RadarMonitorBlockEntity m = masterBe();
@@ -549,6 +606,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
                 c.putString("i", b.id());
                 c.putString("n", b.name());
                 c.putFloat("v", b.speed());
+                if (!b.tag().isEmpty()) c.putString("t", b.tag());
                 bl.add(c);
             }
             t.put("Blips", bl);
@@ -561,6 +619,18 @@ public class RadarMonitorBlockEntity extends BlockEntity {
                 sl.add(c);
             }
             t.put("Sites", sl);
+            ListTag mk = new ListTag();
+            for (Mark m : marks) {
+                CompoundTag c = new CompoundTag();
+                c.putFloat("x", m.dx());
+                c.putFloat("z", m.dz());
+                c.putString("n", m.name());
+                c.putBoolean("f", m.friendly());
+                mk.add(c);
+            }
+            t.put("Marks", mk);
+            t.putInt("Labels", labels);
+            t.putIntArray("Icons", icons);
         }
         return t;
     }
@@ -579,7 +649,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         for (Tag tag : t.getList("Blips", Tag.TAG_COMPOUND)) {
             CompoundTag c = (CompoundTag) tag;
             bl.add(new Blip(c.getFloat("x"), c.getFloat("z"), c.getFloat("y"), c.getByte("k"), c.getByte("f") & 0xFF,
-                    c.getString("i"), c.getString("n"), c.getFloat("v")));
+                    c.getString("i"), c.getString("n"), c.getFloat("v"), c.getString("t")));
         }
         blips = bl;
         List<Site> sl = new ArrayList<>();
@@ -588,6 +658,14 @@ public class RadarMonitorBlockEntity extends BlockEntity {
             sl.add(new Site(c.getFloat("x"), c.getFloat("z"), c.getByte("k")));
         }
         sites = sl;
+        List<Mark> mk = new ArrayList<>();
+        for (Tag tag : t.getList("Marks", Tag.TAG_COMPOUND)) {
+            CompoundTag c = (CompoundTag) tag;
+            mk.add(new Mark(c.getFloat("x"), c.getFloat("z"), c.getString("n"), c.getBoolean("f")));
+        }
+        marks = mk;
+        if (t.contains("Labels")) labels = t.getInt("Labels");
+        if (t.contains("Icons")) icons = MonitorIcons.sanitize(t.getIntArray("Icons"));
     }
 
     @Override
@@ -595,6 +673,9 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         super.saveAdditional(tag, registries);
         tag.putInt("Scale", scaleIndex);
         tag.putInt("Show", show);
+        tag.putBoolean("ShowV2", true);
+        tag.putInt("Labels", labels);
+        tag.putIntArray("Icons", icons);
         energy.save(tag);
         if (owner != null) tag.putUUID("Owner", owner);
         tag.putString("OwnerTeam", ownerTeam);
@@ -605,6 +686,9 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         super.loadAdditional(tag, registries);
         scaleIndex = Math.floorMod(tag.getInt("Scale"), SCALES.length);
         show = tag.contains("Show") ? tag.getInt("Show") & Show.ALL : Show.ALL;
+        if (tag.contains("Show") && !tag.getBoolean("ShowV2")) show |= Show.TRANSPONDERS.bit;   // фильтр появился в 0.11
+        labels = tag.getInt("Labels") == LABELS_ALWAYS ? LABELS_ALWAYS : LABELS_HOVER;
+        icons = MonitorIcons.sanitize(tag.contains("Icons") ? tag.getIntArray("Icons") : null);
         energy.load(tag);
         owner = tag.hasUUID("Owner") ? tag.getUUID("Owner") : null;
         ownerTeam = tag.getString("OwnerTeam");

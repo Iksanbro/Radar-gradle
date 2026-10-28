@@ -2,9 +2,10 @@ package dev.radarfcs.net;
 
 import dev.radarfcs.FcsMod;
 import dev.radarfcs.block.IffTransponderBlockEntity;
-import dev.radarfcs.iff.TransponderMode;
+import dev.radarfcs.iff.TransponderSettings;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -21,16 +22,12 @@ public final class TransponderPayloads {
 
     private static final double MAX_DIST_SQR = 10 * 10;
 
-    /** Сервер -> клиент: открыть экран транспондера с его настройками. */
-    /** flags: 1 - стоит на сублевеле, 2 - есть питание. */
-    public record Open(BlockPos pos, String code, int mode, int radius, int flags, int maxRadius)
-            implements CustomPacketPayload {
+    /** Сервер -> клиент: открыть экран транспондера. settings - TransponderSettings; flags: 1 - на сублевеле, 2 - есть питание. */
+    public record Open(BlockPos pos, CompoundTag settings, int flags, int maxRadius) implements CustomPacketPayload {
         public static final Type<Open> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(FcsMod.MODID, "transponder_open"));
         public static final StreamCodec<ByteBuf, Open> CODEC = StreamCodec.composite(
                 BlockPos.STREAM_CODEC, Open::pos,
-                ByteBufCodecs.stringUtf8(16), Open::code,
-                ByteBufCodecs.VAR_INT, Open::mode,
-                ByteBufCodecs.VAR_INT, Open::radius,
+                ByteBufCodecs.COMPOUND_TAG, Open::settings,
                 ByteBufCodecs.VAR_INT, Open::flags,
                 ByteBufCodecs.VAR_INT, Open::maxRadius,
                 Open::new);
@@ -41,14 +38,12 @@ public final class TransponderPayloads {
         }
     }
 
-    /** Клиент -> сервер: сохранить настройки транспондера. */
-    public record Save(BlockPos pos, String code, int mode, int radius) implements CustomPacketPayload {
+    /** Клиент -> сервер: сохранить настройки транспондера (TransponderSettings). */
+    public record Save(BlockPos pos, CompoundTag settings) implements CustomPacketPayload {
         public static final Type<Save> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(FcsMod.MODID, "transponder_save"));
         public static final StreamCodec<ByteBuf, Save> CODEC = StreamCodec.composite(
                 BlockPos.STREAM_CODEC, Save::pos,
-                ByteBufCodecs.stringUtf8(16), Save::code,
-                ByteBufCodecs.VAR_INT, Save::mode,
-                ByteBufCodecs.VAR_INT, Save::radius,
+                ByteBufCodecs.COMPOUND_TAG, Save::settings,
                 Save::new);
 
         @Override
@@ -65,7 +60,7 @@ public final class TransponderPayloads {
 
     /** Открыть экран транспондера игроку (если ему можно видеть код). */
     public static void open(ServerPlayer sp, IffTransponderBlockEntity be) {
-        PacketDistributor.sendToPlayer(sp, new Open(be.getBlockPos(), be.code(), be.effectiveMode().ordinal(), be.radius(),
+        PacketDistributor.sendToPlayer(sp, new Open(be.getBlockPos(), be.settings().write(),
                 (be.onSublevel() ? 1 : 0) | (be.powered() ? 2 : 0), IffTransponderBlockEntity.maxRadius()));
     }
 
@@ -74,8 +69,7 @@ public final class TransponderPayloads {
             if (!(ctx.player() instanceof ServerPlayer sp) || sp.isSpectator() || !sp.mayBuild()) return;
             if (!sp.level().isLoaded(p.pos()) || sp.distanceToSqr(Vec3.atCenterOf(p.pos())) > MAX_DIST_SQR) return;
             if (sp.level().getBlockEntity(p.pos()) instanceof IffTransponderBlockEntity be) {
-                TransponderMode[] modes = TransponderMode.values();
-                be.apply(p.code(), modes[Math.floorMod(p.mode(), modes.length)], p.radius(), sp);
+                be.apply(TransponderSettings.read(p.settings()), sp);
             }
         });
     }
