@@ -106,8 +106,9 @@ public final class EngageSettings {
     public boolean iffWhitelist = false;
     public final java.util.List<String> iffCodes = new java.util.ArrayList<>();
     public static final int MAX_IFF_CODES = 256, CODE_LENGTH = 8;
-    /** Скорость цели от и до, м/с; 0 - без ограничения. */
-    public double speedMin = 0, speedMax = 0;
+    /** Скорость цели от и до, м/с, у каждого типа цели своя; 0 - без ограничения. Шаг настройки - 0.1 м/с. */
+    public final double[] speedMin = new double[CATEGORIES], speedMax = new double[CATEGORIES];
+    public static final double MAX_SPEED = 1000;
 
     /** Сбрасывать (не брать) цели, которые стоят. */
     public boolean dropStatic = true;
@@ -126,7 +127,8 @@ public final class EngageSettings {
     public boolean switchByPriority = true;
     public SwitchMode switchMode = SwitchMode.NONE;
     public int switchShots = 10;
-    public int switchSeconds = 5;
+    /** Переключение через время, тиков (в настройках - секунды с шагом 0.1 с = 2 тика). */
+    public int switchTicks = 100;
 
     public boolean enabled(Category c) { return enabled[c.ordinal()]; }
 
@@ -135,10 +137,11 @@ public final class EngageSettings {
 
     public int level(Category c) { return level[c.ordinal()]; }
 
-    /** Скорость цели в окне «от-до» (м/с). */
-    public boolean speedAllowed(double metersPerSecond) {
-        if (speedMin > 0 && metersPerSecond < speedMin) return false;
-        return !(speedMax > 0 && metersPerSecond > speedMax);
+    /** Скорость цели в окне «от-до» её типа (м/с). */
+    public boolean speedAllowed(Category c, double metersPerSecond) {
+        double lo = speedMin[c.ordinal()], hi = speedMax[c.ordinal()];
+        if (lo > 0 && metersPerSecond < lo) return false;
+        return !(hi > 0 && metersPerSecond > hi);
     }
 
     /** Цель статична: стоит на месте не меньше staticTicks (или не двигалась ни разу). */
@@ -166,15 +169,17 @@ public final class EngageSettings {
         burstLength = clamp(burstLength, 2, 100);
         pauseTicks = clamp(pauseTicks, 0, 1200);
         for (int i = 0; i < CATEGORIES; i++) level[i] = clamp(level[i], 1, MAX_LEVEL);
-        speedMin = Double.isFinite(speedMin) ? Math.max(0, Math.min(1000, speedMin)) : 0;
-        speedMax = Double.isFinite(speedMax) ? Math.max(0, Math.min(1000, speedMax)) : 0;
+        for (int i = 0; i < CATEGORIES; i++) {
+            speedMin[i] = cleanSpeed(speedMin[i]);
+            speedMax[i] = cleanSpeed(speedMax[i]);
+        }
         dropAfterShots = clamp(dropAfterShots, 0, 10000);
         staticTicks = clamp(staticTicks, 0, 1200);
         cleanList(whitelist);
         cleanList(blacklist);
         cleanCodes(iffCodes);
         switchShots = clamp(switchShots, 1, 10000);
-        switchSeconds = clamp(switchSeconds, 1, 3600);
+        switchTicks = clamp(switchTicks, 2, 72000);
         if (fireMode == null) fireMode = FireMode.AUTO;
         if (priority == null) priority = Priority.NEAREST;
         if (switchMode == null) switchMode = SwitchMode.NONE;
@@ -190,8 +195,8 @@ public final class EngageSettings {
         s.pauseTicks = pauseTicks;
         System.arraycopy(enabled, 0, s.enabled, 0, CATEGORIES);
         System.arraycopy(level, 0, s.level, 0, CATEGORIES);
-        s.speedMin = speedMin;
-        s.speedMax = speedMax;
+        System.arraycopy(speedMin, 0, s.speedMin, 0, CATEGORIES);
+        System.arraycopy(speedMax, 0, s.speedMax, 0, CATEGORIES);
         s.dropStatic = dropStatic;
         s.staticTicks = staticTicks;
         s.hostileOnly = hostileOnly;
@@ -205,7 +210,7 @@ public final class EngageSettings {
         s.switchByPriority = switchByPriority;
         s.switchMode = switchMode;
         s.switchShots = switchShots;
-        s.switchSeconds = switchSeconds;
+        s.switchTicks = switchTicks;
         s.threat = threat;
         s.threatRadius = threatRadius;
         s.impactFirst = impactFirst;
@@ -259,6 +264,12 @@ public final class EngageSettings {
         }
         list.clear();
         list.addAll(out);
+    }
+
+    /** Скорость окна: 0..MAX_SPEED с шагом 0.1 м/с; меньше 0.1 - без ограничения. */
+    static double cleanSpeed(double v) {
+        if (!Double.isFinite(v) || v < 0.05) return 0;
+        return Math.round(Math.min(MAX_SPEED, v) * 10) / 10.0;
     }
 
     private static int clamp(int v, int lo, int hi) {

@@ -4,6 +4,7 @@ import dev.radarfcs.FcsConfig;
 import dev.radarfcs.block.FireControlBlockEntity;
 import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.core.EngageSettings.Category;
+import dev.radarfcs.core.WheelStep;
 import dev.radarfcs.fcs.SettingsNbt;
 import dev.radarfcs.net.FcsCommandPayload;
 import dev.radarfcs.net.FcsSettingsPayload;
@@ -93,31 +94,47 @@ public final class FcsSettingsScreen extends Screen {
                 () -> s.fireMode = next(s.fireMode, EngageSettings.FireMode.values()));
         y += ROW;
         if (s.fireMode == EngageSettings.FireMode.BURST) {
-            number(left + 190, y, () -> s.burstLength, v -> s.burstLength = v, 1, 2, 100, null);
+            intNumber(left + 190, y, () -> s.burstLength, v -> s.burstLength = v, 2, 100, v -> Component.literal(Integer.toString(v)));
             y += ROW;
         }
         if (s.fireMode != EngageSettings.FireMode.AUTO) {
-            number(left + 190, y, () -> s.pauseTicks, v -> s.pauseTicks = v, 5, 0, 1200, "radar_fcs.gui.ticks");
+            seconds(left + 190, y, () -> s.pauseTicks, v -> s.pauseTicks = v, 60, true, "radar_fcs.gui.off");
         }
     }
 
+    /** Столбцы строки типа цели: переключатель, уровень, скорость от, скорость до. */
+    private static final int COL_TOGGLE_W = 148, COL_LEVEL = 162, COL_FROM = 264, COL_TO = 366, HEADER = 12;
+
     private void targetsTab(int y) {
+        y += HEADER;
         for (Category c : Category.values()) {
             if (c.intercept()) continue;                            // снаряды и ракеты - на вкладке «Перехват»
-            int i = c.ordinal();
-            Component limit = serverLimit(c);
-            Button b = cycle(left + 8, y, 160, () -> {
-                        MutableComponent t = check(s.enabled[i], "radar_fcs.gui.type." + c.name().toLowerCase(Locale.ROOT));
-                        return limit == null ? t : t.append(Component.literal(" ⚠").withStyle(ChatFormatting.GOLD));
-                    }, () -> s.enabled[i] = !s.enabled[i]);
-            if (limit != null) b.setTooltip(Tooltip.create(limit));
-            number(left + 240, y, () -> s.level[i], v -> s.level[i] = v, 1, 1, EngageSettings.MAX_LEVEL, null);
+            categoryRow(c, y);
             y += ROW;
         }
-        number(left + 78, y, () -> (int) s.speedMin, v -> s.speedMin = v, 5, 0, 1000, null);
-        number(left + 240, y, () -> (int) s.speedMax, v -> s.speedMax = v, 5, 0, 1000, null);
-        y += ROW;
         cycle(left + 8, y, W - 16, () -> check(s.hostileOnly, "radar_fcs.gui.hostile_only"), () -> s.hostileOnly = !s.hostileOnly);
+    }
+
+    /** Строка типа цели: брать ли, уровень приоритета, окно скорости (своё у каждого типа). */
+    private void categoryRow(Category c, int y) {
+        int i = c.ordinal();
+        Component limit = serverLimit(c);
+        Button b = cycle(left + 8, y, COL_TOGGLE_W, () -> {
+            MutableComponent t = check(s.enabled[i], "radar_fcs.gui.type." + c.name().toLowerCase(Locale.ROOT));
+            return limit == null ? t : t.append(Component.literal(" ⚠").withStyle(ChatFormatting.GOLD));
+        }, () -> s.enabled[i] = !s.enabled[i]);
+        if (limit != null) b.setTooltip(Tooltip.create(limit));
+        intNumber(left + COL_LEVEL, y, () -> s.level[i], v -> s.level[i] = v, 1, EngageSettings.MAX_LEVEL,
+                v -> Component.literal(Integer.toString(v)));
+        speed(left + COL_FROM, y, s.speedMin, i);
+        speed(left + COL_TO, y, s.speedMax, i);
+    }
+
+    /** Заголовки столбцов строк типов целей. */
+    private void categoryHeader(GuiGraphics g, int y) {
+        g.drawCenteredString(font, Component.translatable("radar_fcs.gui.level"), left + COL_LEVEL + 48, y, 0xA0A0A0);
+        g.drawCenteredString(font, Component.translatable("radar_fcs.gui.col_speed_from"), left + COL_FROM + 48, y, 0xA0A0A0);
+        g.drawCenteredString(font, Component.translatable("radar_fcs.gui.col_speed_to"), left + COL_TO + 48, y, 0xA0A0A0);
     }
 
     /**
@@ -125,22 +142,17 @@ public final class FcsSettingsScreen extends Screen {
      * (угрожающие своим, приближающиеся, все чужие), радиус угрозы, порядок (первым - кто раньше долетит).
      */
     private void interceptTab(int y) {
+        y += HEADER;
         for (Category c : new Category[]{Category.SHELLS, Category.ROCKETS}) {
-            int i = c.ordinal();
-            Component limit = serverLimit(c);
-            Button b = cycle(left + 8, y, 220, () -> {
-                MutableComponent t = check(s.enabled[i], "radar_fcs.gui.type." + c.name().toLowerCase(Locale.ROOT));
-                return limit == null ? t : t.append(Component.literal(" ⚠").withStyle(ChatFormatting.GOLD));
-            }, () -> s.enabled[i] = !s.enabled[i]);
-            if (limit != null) b.setTooltip(Tooltip.create(limit));
-            number(left + 300, y, () -> s.level[i], v -> s.level[i] = v, 1, 1, EngageSettings.MAX_LEVEL, null);
+            categoryRow(c, y);
             y += ROW;
         }
         cycle(left + 190, y, W - 198, () -> Component.translatable("radar_fcs.gui.threat." + s.threat.name().toLowerCase(Locale.ROOT)),
                 () -> s.threat = next(s.threat, EngageSettings.Threat.values()));
         y += ROW;
         if (s.threat == EngageSettings.Threat.THREATENING) {
-            number(left + 190, y, () -> s.threatRadius, v -> s.threatRadius = v, 2, 1, EngageSettings.MAX_THREAT_RADIUS, "radar_fcs.gui.blocks");
+            intNumber(left + 190, y, () -> s.threatRadius, v -> s.threatRadius = v, 1, EngageSettings.MAX_THREAT_RADIUS,
+                    v -> Component.literal(v + " ").append(Component.translatable("radar_fcs.gui.blocks")));
             y += ROW;
         }
         cycle(left + 8, y, W - 16, () -> check(s.impactFirst, "radar_fcs.gui.impact_first"), () -> s.impactFirst = !s.impactFirst);
@@ -270,12 +282,12 @@ public final class FcsSettingsScreen extends Screen {
     private void dropTab(int y) {
         cycle(left + 8, y, W - 16, () -> check(s.dropStatic, "radar_fcs.gui.drop_static"), () -> s.dropStatic = !s.dropStatic);
         y += ROW;
-        number(left + 240, y, () -> s.staticTicks, v -> s.staticTicks = v, 2, 0, 1200,
-                v -> Component.translatable("radar_fcs.gui.seconds_value", String.format(Locale.ROOT, "%.1f", v / 20.0)), true);
+        seconds(left + 240, y, () -> s.staticTicks, v -> s.staticTicks = v, 60, true, null);
         y += ROW;
         cycle(left + 8, y, W - 16, () -> check(s.dropMoving, "radar_fcs.gui.drop_moving"), () -> s.dropMoving = !s.dropMoving);
         y += ROW;
-        number(left + 240, y, () -> s.dropAfterShots, v -> s.dropAfterShots = v, 1, 0, 10000, null);
+        intNumber(left + 240, y, () -> s.dropAfterShots, v -> s.dropAfterShots = v, 0, 10000,
+                v -> v == 0 ? Component.translatable("radar_fcs.gui.off") : Component.literal(Integer.toString(v)));
     }
 
     /** Что из типа целей запрещено конфигом сервера (null - ничего). */
@@ -304,9 +316,9 @@ public final class FcsSettingsScreen extends Screen {
                 () -> s.switchMode = next(s.switchMode, EngageSettings.SwitchMode.values()));
         y += ROW;
         if (s.switchMode == EngageSettings.SwitchMode.AFTER_SHOTS) {
-            number(left + 190, y, () -> s.switchShots, v -> s.switchShots = v, 1, 1, 10000, null);
+            intNumber(left + 190, y, () -> s.switchShots, v -> s.switchShots = v, 1, 10000, v -> Component.literal(Integer.toString(v)));
         } else if (s.switchMode == EngageSettings.SwitchMode.AFTER_TIME) {
-            number(left + 190, y, () -> s.switchSeconds, v -> s.switchSeconds = v, 1, 1, 3600, "radar_fcs.gui.seconds");
+            seconds(left + 190, y, () -> s.switchTicks, v -> s.switchTicks = v, 3600, false, null);
         }
     }
 
@@ -325,14 +337,8 @@ public final class FcsSettingsScreen extends Screen {
                 hint(g, "radar_fcs.gui.fire_hint." + s.fireMode.name().toLowerCase(Locale.ROOT), y + 6);
             }
             case TARGETS -> {
-                for (Category c : Category.values()) {
-                    if (c.intercept()) continue;
-                    g.drawString(font, Component.translatable("radar_fcs.gui.level"), left + 186, y, 0xA0A0A0, false);
-                    y += ROW;
-                }
-                g.drawString(font, Component.translatable("radar_fcs.gui.speed_from"), left + 8, y, 0xE0E0E0, false);
-                g.drawString(font, Component.translatable("radar_fcs.gui.speed_to"), left + 216, y, 0xE0E0E0, false);
-                y += 2 * ROW;
+                categoryHeader(g, top + 32);
+                y = top + 30 + HEADER + 5 * ROW + 6;
                 hint(g, "radar_fcs.gui.targets_hint", y);
             }
             case LISTS -> {
@@ -363,10 +369,8 @@ public final class FcsSettingsScreen extends Screen {
                 hint(g, s.iffWhitelist ? "radar_fcs.gui.iff_hint_white" : "radar_fcs.gui.iff_hint_black", hy);
             }
             case INTERCEPT -> {
-                for (int i = 0; i < 2; i++) {
-                    g.drawString(font, Component.translatable("radar_fcs.gui.level"), left + 246, y, 0xA0A0A0, false);
-                    y += ROW;
-                }
+                categoryHeader(g, top + 32);
+                y += HEADER + 2 * ROW;
                 label(g, "radar_fcs.gui.threat", y);
                 y += ROW;
                 if (s.threat == EngageSettings.Threat.THREATENING) { label(g, "radar_fcs.gui.threat_radius", y); y += ROW; }
@@ -442,30 +446,50 @@ public final class FcsSettingsScreen extends Screen {
         }).bounds(x, y, w, 20).build());
     }
 
-    /** Число: «−» значение «+», с Shift шаг x10. */
-    private void number(int x, int y, IntSupplier get, IntConsumer set, int step, int min, int max, String unitKey) {
-        number(x, y, get, set, step, min, max, v -> numberText(v, min, unitKey), true);
+    /**
+     * Число: «−» поле «+». Поле крутится колесом мыши; шаг - {@link WheelStep}: дробные - до 1 по 0.1, дальше по 1;
+     * целые - по 1; с Shift - в 10 раз больше.
+     */
+    private NumberField field(int x, int y, java.util.function.DoubleSupplier get, java.util.function.DoubleConsumer set,
+                              NumberField.Step step, java.util.function.DoubleFunction<Component> format) {
+        NumberField f = new NumberField(x + 22, y, 52, 20, get, set, step, format);
+        f.setTooltip(Tooltip.create(Component.translatable("radar_fcs.gui.wheel_hint")));
+        addRenderableWidget(Button.builder(Component.literal("−"), b -> f.nudge(-1)).bounds(x, y, 20, 20).build());
+        addRenderableWidget(f);
+        addRenderableWidget(Button.builder(Component.literal("+"), b -> f.nudge(1)).bounds(x + 76, y, 20, 20).build());
+        return f;
     }
 
-    private void number(int x, int y, IntSupplier get, IntConsumer set, int step, int min, int max,
-                        java.util.function.IntFunction<Component> format, boolean formatted) {
-        Button value = Button.builder(format.apply(get.getAsInt()), b -> { }).bounds(x + 22, y, 56, 20).build();
-        value.active = false;
-        addRenderableWidget(Button.builder(Component.literal("−"), b -> {
-            set.accept(Math.max(min, get.getAsInt() - step * (hasShiftDown() ? 10 : 1)));
-            value.setMessage(format.apply(get.getAsInt()));
-        }).bounds(x, y, 20, 20).build());
-        addRenderableWidget(value);
-        addRenderableWidget(Button.builder(Component.literal("+"), b -> {
-            set.accept(Math.min(max, get.getAsInt() + step * (hasShiftDown() ? 10 : 1)));
-            value.setMessage(format.apply(get.getAsInt()));
-        }).bounds(x + 80, y, 20, 20).build());
+    /** Целое число min..max. */
+    private void intNumber(int x, int y, IntSupplier get, IntConsumer set, int min, int max, java.util.function.IntFunction<Component> format) {
+        field(x, y, get::getAsInt, v -> set.accept((int) Math.round(v)),
+                (v, dir, shift) -> WheelStep.integer((int) Math.round(v), dir, shift, min, max), v -> format.apply((int) Math.round(v)));
     }
 
-    /** 0 у полей «без ограничения» (скорость, сброс) пишется как «нет». */
-    private static Component numberText(int v, int min, String unitKey) {
-        if (v == 0 && min == 0 && unitKey == null) return Component.translatable("radar_fcs.gui.off");
-        return unitKey == null ? Component.literal(Integer.toString(v)) : Component.literal(v + " ").append(Component.translatable(unitKey));
+    /** Скорость окна типа цели, м/с: от 0.1, ниже - «нет» (без ограничения). */
+    private void speed(int x, int y, double[] arr, int i) {
+        field(x, y, () -> arr[i], v -> arr[i] = v,
+                (v, dir, shift) -> WheelStep.fractional(v, dir, shift, 0.1, EngageSettings.MAX_SPEED, true),
+                v -> v <= 0 ? Component.translatable("radar_fcs.gui.off") : Component.literal(num(v)));
+    }
+
+    /**
+     * Время в секундах (хранится в тиках): от 0.1 с до maxSeconds.
+     * @param zeroKey подпись нуля (0 допустим), null - «0 с»; zero = false - 0 недопустим
+     */
+    private void seconds(int x, int y, IntSupplier ticks, IntConsumer setTicks, double maxSeconds, boolean zero, String zeroKey) {
+        field(x, y, () -> ticks.getAsInt() / 20.0, v -> setTicks.accept((int) Math.round(v * 20)),
+                (v, dir, shift) -> WheelStep.fractional(v, dir, shift, 0.1, maxSeconds, zero),
+                v -> v <= 0 && zeroKey != null ? Component.translatable(zeroKey)
+                        : Component.translatable("radar_fcs.gui.seconds_value", num(v)));
+    }
+
+    /** Число с десятыми (целое - без дробной части); в русском - с запятой. */
+    private static String num(double v) {
+        double r = WheelStep.round(v);
+        String t = r == Math.rint(r) ? Long.toString((long) r) : String.format(Locale.ROOT, "%.1f", r);
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        return mc != null && mc.options != null && mc.options.languageCode.startsWith("ru") ? t.replace('.', ',') : t;
     }
 
     private static <E extends Enum<E>> E next(E cur, E[] all) {

@@ -69,9 +69,9 @@
   "radar_fcs.gui.fire.burst": "Burst",
   "radar_fcs.gui.burst_length": "Rounds per burst",
   "radar_fcs.gui.pause": "Pause after",
-  "radar_fcs.gui.fire_hint.single": "One shot, then a pause. Fires only when the predicted miss is within tolerance. 20 ticks = 1 s.",
+  "radar_fcs.gui.fire_hint.single": "One shot, then a pause. Fires only when the predicted miss is within tolerance. Pause in seconds; numbers change with the mouse wheel.",
   "radar_fcs.gui.fire_hint.auto": "Continuous fire while the predicted miss is within tolerance.",
-  "radar_fcs.gui.fire_hint.burst": "A burst of the set length, then a pause. Counts projectiles that left the barrel. 20 ticks = 1 s.",
+  "radar_fcs.gui.fire_hint.burst": "A burst of the set length, then a pause. Counts projectiles that left the barrel. Pause in seconds; numbers change with the mouse wheel.",
   "radar_fcs.gui.type.ships": "Sublevels",
   "radar_fcs.gui.type.players": "Players",
   "radar_fcs.gui.type.mobs": "Mobs",
@@ -79,7 +79,7 @@
   "radar_fcs.gui.level": "Level",
   "radar_fcs.gui.speed_from": "Speed from",
   "radar_fcs.gui.speed_to": "to",
-  "radar_fcs.gui.targets_hint": "Sublevels are Sable / Create Aeronautics ships; entities are Create contraptions, boats, minecarts and the rest (shells and rockets: Intercept tab). Priority level: higher wins. Speed in m/s, \"off\" means no limit.",
+  "radar_fcs.gui.targets_hint": "Sublevels are Sable / Create Aeronautics ships; entities are Create contraptions, boats, minecarts and the rest (shells and rockets: Intercept tab). Priority level: higher wins. Speed window per target type, in m/s, \"off\" means no limit. Numbers change with the mouse wheel.",
   "radar_fcs.gui.server_forbids": "Forbidden by the server config",
   "radar_fcs.gui.server_no_projectiles": "Server forbids projectiles and rockets (allowProjectiles)",
   "radar_fcs.gui.server_no_contraptions": "Server forbids contraptions (allowContraptions)",
@@ -285,5 +285,8 @@
   "radar_fcs.gui.intercept_hint.approaching": "All hostile big cannon shells and rockets approaching this computer are shot down, even if they would miss. Friendly: fired by this computer's cannons, by computers of the same owner or team, or from friendly zones. Small ones (autocannons, machine guns, rocket pods) are not tracked.",
   "radar_fcs.gui.intercept_hint.all": "All hostile big cannon shells and rockets in reach are shot down wherever they fly. Friendly: fired by this computer's cannons, by computers of the same owner or team, or from friendly zones. Small ones (autocannons, machine guns, rocket pods) are not tracked.",
   "radar_fcs.report.intercept_on": "Projectile interception on, incoming targets: %s",
-  "radar_fcs.report.intercept_off": "Interception: CBC Interception is not installed, projectiles are not shot down"
+  "radar_fcs.report.intercept_off": "Interception: CBC Interception is not installed, projectiles are not shot down",
+  "radar_fcs.gui.col_speed_from": "Speed from, m/s",
+  "radar_fcs.gui.col_speed_to": "to, m/s",
+  "radar_fcs.gui.wheel_hint": "Mouse wheel: steps of 0.1 up to 1, then steps of 1; with Shift ten times more"
 }

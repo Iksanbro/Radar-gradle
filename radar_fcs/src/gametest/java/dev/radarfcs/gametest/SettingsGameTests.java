@@ -51,6 +51,8 @@ public class SettingsGameTests {
     @AfterBatch(batch = "set_burst") public static void a1(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "set_single") public static void b2(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "set_single") public static void a2(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "set_speed") public static void b11(ServerLevel l) { FcsGameTests.direct(l); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "set_speed") public static void a11(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "set_types") public static void b3(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "set_types") public static void a3(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "set_static") public static void b4(ServerLevel l) { FcsGameTests.direct(l); }
@@ -191,6 +193,52 @@ public class SettingsGameTests {
         h.runAtTickTime(360, () -> {
             checkSalvos(h, "set_single", rounds, 15, 1, 30, 5);
             h.succeed();
+        });
+    }
+
+    /**
+     * Окно скорости - у каждого типа своё: хаск идёт ~3 м/с; у мобов «от 5 м/с» - не цель (хотя у сущностей окна нет),
+     * у сущностей «от 5 м/с», у мобов «от 0,1» - цель, огонь. Старые настройки (общее окно, секунды переключения)
+     * переносятся во все типы и в тики.
+     */
+    @GameTest(template = ARENA, batch = "set_speed", timeoutTicks = 500)
+    public static void speedWindowPerCategory(GameTestHelper h) {
+        // перенос старого формата
+        net.minecraft.nbt.CompoundTag old = new net.minecraft.nbt.CompoundTag();
+        old.putDouble("SpeedMin", 7.5);
+        old.putDouble("SpeedMax", 40);
+        old.putInt("SwitchSeconds", 3);
+        EngageSettings mig = dev.radarfcs.fcs.SettingsNbt.read(old);
+        for (EngageSettings.Category c : EngageSettings.Category.values()) {
+            if (mig.speedMin[c.ordinal()] != 7.5 || mig.speedMax[c.ordinal()] != 40) h.fail("old speed window not applied to " + c);
+        }
+        if (mig.switchTicks != 60) h.fail("old switch seconds -> " + mig.switchTicks + " ticks");
+        EngageSettings rt = new EngageSettings();
+        rt.speedMin[EngageSettings.Category.ROCKETS.ordinal()] = 0.3;
+        rt.pauseTicks = 2;
+        rt = dev.radarfcs.fcs.SettingsNbt.read(dev.radarfcs.fcs.SettingsNbt.write(rt));
+        if (rt.speedMin[EngageSettings.Category.ROCKETS.ordinal()] != 0.3 || rt.speedMin[0] != 0 || rt.pauseTicks != 2) {
+            h.fail("per-category speed window not saved");
+        }
+
+        floor(h);
+        autocannon(h, MOUNT, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcs(h, FCS);
+        configure(be, s -> s.speedMin[EngageSettings.Category.MOBS.ordinal()] = 5);
+        // без разворота за время теста (на развороте оценка скорости на миг скачет)
+        tough(movingTarget(h, EntityType.HUSK, new Vec3(40.5, 1, 8.5), 0.15, 48));
+        List<Long> rounds = roundTicks(h, MOUNT);
+        logEvery(h, be, "set_speed", 40);
+        h.runAtTickTime(150, () -> {
+            if (!rounds.isEmpty()) h.fail("fired at a mob slower than the mob speed window: " + rounds);
+            if (be.sensor().all().isEmpty()) h.fail("target was not seen at all");
+            configure(be, s -> {
+                s.speedMin[EngageSettings.Category.MOBS.ordinal()] = 0.1;
+                s.speedMin[EngageSettings.Category.ENTITIES.ordinal()] = 5;
+            });
+        });
+        h.succeedWhen(() -> {
+            if (h.getTick() <= 150 || rounds.isEmpty()) throw new GameTestAssertException("no fire after lowering the mob speed window yet");
         });
     }
 

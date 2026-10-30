@@ -145,7 +145,7 @@ public final class TargetSensor {
         if (t.id.equals(forcedId)) return true;
         if (TargetLists.matches(settings.blacklist, t) || dropped.test(t)) return false;
         if (t.kind == Track.Kind.PROJECTILE && !threatens(t, ctx, settings)) return false;
-        if (!settings.speedAllowed(t.speedPerTick() * 20)) return false;
+        if (!settings.speedAllowed(EngageSettings.Category.of(t), t.speedPerTick() * 20)) return false;
         if (TargetLists.matches(settings.whitelist, t)) return true;
         if (!settings.enabled(EngageSettings.Category.of(t))) return false;
         return t.kind != Track.Kind.MOB || !settings.hostileOnly || t.hostile;

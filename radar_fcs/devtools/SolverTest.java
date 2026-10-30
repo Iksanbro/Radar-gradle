@@ -347,7 +347,7 @@ public class SolverTest {
 
         // через время
         s.switchMode = EngageSettings.SwitchMode.AFTER_TIME;
-        s.switchSeconds = 5;
+        s.switchTicks = 100;
         st = new TargetPicker.State();
         st.acquire("A", 0);
         expect("after time: not yet", first(all, pivot, s, st, 99), "A");
@@ -373,7 +373,8 @@ public class SolverTest {
 
         // фильтры и режимы огня
         EngageSettings f = new EngageSettings();
-        f.speedMin = 10; f.speedMax = 50;
+        java.util.Arrays.fill(f.speedMin, 10); java.util.Arrays.fill(f.speedMax, 50);
+        f.speedMin[EngageSettings.Category.SHELLS.ordinal()] = 0.1; f.speedMax[EngageSettings.Category.SHELLS.ordinal()] = 0;
         // стоящая с начала, движущаяся, на миг остановившаяся, давно стоящая
         Track still = table.observe("S1", Track.Kind.MOB, "S1", new Vec(5, 64, 0), 0.5, 50, false, null, TrackTable.Settings.DEFAULT);
         Track mov = table.observe("S2", Track.Kind.MOB, "S2", new Vec(6, 64, 0), 0.5, 50, false, null, TrackTable.Settings.DEFAULT);
@@ -381,7 +382,9 @@ public class SolverTest {
         Track parked = table.observe("S4", Track.Kind.MOB, "S4", new Vec(8, 64, 0), 0.5, 50, false, null, TrackTable.Settings.DEFAULT);
         mov.moving = true; brief.lastMovingTick = 45; parked.lastMovingTick = 20;
         f.staticTicks = 20;
-        boolean ok = !f.speedAllowed(5) && f.speedAllowed(30) && !f.speedAllowed(60)
+        EngageSettings.Category M = EngageSettings.Category.MOBS;
+        boolean ok = !f.speedAllowed(M, 5) && f.speedAllowed(M, 30) && !f.speedAllowed(M, 60)
+                && f.speedAllowed(EngageSettings.Category.SHELLS, 200) && !f.speedAllowed(EngageSettings.Category.SHELLS, 0.05)
                 && !f.motionAllowed(still) && f.motionAllowed(mov) && f.motionAllowed(brief) && !f.motionAllowed(parked);
         f.dropStatic = false; f.dropMoving = true;
         ok &= f.motionAllowed(still) && !f.motionAllowed(mov) && !f.motionAllowed(brief) && f.motionAllowed(parked);
@@ -393,9 +396,10 @@ public class SolverTest {
         ok &= f.roundsPerSalvo() == 7;
         f.fireMode = EngageSettings.FireMode.AUTO;
         ok &= f.roundsPerSalvo() == Integer.MAX_VALUE;
-        f.burstLength = 0; f.level[0] = 99; f.speedMin = Double.NaN; f.switchShots = -4;
+        f.burstLength = 0; f.level[0] = 99; f.speedMin[0] = Double.NaN; f.speedMax[1] = 0.04; f.speedMin[2] = 3.14159; f.switchShots = -4; f.switchTicks = 0;
         f.sanitize();
-        ok &= f.burstLength == 2 && f.level[0] == EngageSettings.MAX_LEVEL && f.speedMin == 0 && f.switchShots == 1;
+        ok &= f.burstLength == 2 && f.level[0] == EngageSettings.MAX_LEVEL && f.speedMin[0] == 0 && f.speedMax[1] == 0
+                && f.speedMin[2] == 3.1 && f.switchShots == 1 && f.switchTicks == 2;
         ok &= EngageSettings.Category.of(Track.Kind.PROJECTILE) == EngageSettings.Category.SHELLS
                 && EngageSettings.Category.of(Track.Kind.SHIP) == EngageSettings.Category.SHIPS;
         f.threatRadius = 9999; f.threat = null;
@@ -479,6 +483,27 @@ public class SolverTest {
         System.out.println("interception: " + (failures == before ? "all checks passed" : (failures - before) + " failed"));
     }
 
+    /** Шаг колеса мыши: до 1 по 0.1, дальше по 1, Shift - x10; 0 - «нет». */
+    static void wheelSteps() {
+        double[][] cases = {
+                // v, dir, shift(0/1), min, allowZero(0/1), ожидание
+                {0, 1, 0, 0.1, 1, 0.1}, {0.1, 1, 0, 0.1, 1, 0.2}, {0.9, 1, 0, 0.1, 1, 1.0}, {1.0, 1, 0, 0.1, 1, 2.0},
+                {2.0, -1, 0, 0.1, 1, 1.0}, {1.0, -1, 0, 0.1, 1, 0.9}, {0.1, -1, 0, 0.1, 1, 0}, {0.1, -1, 0, 0.1, 0, 0.1},
+                {0.3, 1, 1, 0.1, 1, 1.3}, {5, 1, 1, 0.1, 1, 15}, {5, -1, 1, 0.1, 1, 0.1}, {0, 1, 1, 0.1, 1, 1.0},
+                {999, 1, 1, 0.1, 1, 1000}};
+        boolean ok = true;
+        for (double[] c : cases) {
+            double got = WheelStep.fractional(c[0], (int) c[1], c[2] > 0, c[3], 1000, c[4] > 0);
+            if (Math.abs(got - c[5]) > 1e-9) {
+                ok = false;
+                System.out.printf(Locale.ROOT, "  FAIL: wheel %.1f dir %d shift %s -> %.2f, expected %.2f%n", c[0], (int) c[1], c[2] > 0, got, c[5]);
+            }
+        }
+        ok &= WheelStep.integer(4, 1, false, 1, 5) == 5 && WheelStep.integer(4, 1, true, 1, 5) == 5 && WheelStep.integer(30, -1, true, 1, 100) == 20;
+        if (!ok) failures++;
+        System.out.println("wheel steps: " + (ok ? "all checks passed" : "failed"));
+    }
+
     public static void main(String[] a) {
         ballisticCase("big cannon 4 charges", new Truth(8, -0.05, 0.01, false, 0, 0, 1, 1, 600), 300, false, 97);
         ballisticCase("big cannon 2 charges", new Truth(4, -0.05, 0.01, false, 0, 0, 1, 1, 600), 200, false, 97);
@@ -494,6 +519,7 @@ public class SolverTest {
         maneuver();
         targetPicker();
         interception();
+        wheelSteps();
         if (failures > 0) {
             System.out.println("FAILURES: " + failures);
             System.exit(1);

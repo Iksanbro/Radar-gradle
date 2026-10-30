@@ -16,8 +16,8 @@ public final class SettingsNbt {
         for (int i = 0; i < en.length; i++) en[i] = (byte) (s.enabled[i] ? 1 : 0);
         t.putByteArray("Types", en);
         t.putIntArray("Levels", s.level.clone());
-        t.putDouble("SpeedMin", s.speedMin);
-        t.putDouble("SpeedMax", s.speedMax);
+        t.put("SpeedMins", doubles(s.speedMin));
+        t.put("SpeedMaxs", doubles(s.speedMax));
         t.putBoolean("DropStatic", s.dropStatic);
         t.putInt("StaticTicks", s.staticTicks);
         t.putBoolean("HostileOnly", s.hostileOnly);
@@ -31,7 +31,7 @@ public final class SettingsNbt {
         t.putBoolean("SwitchByPriority", s.switchByPriority);
         t.putString("Switch", s.switchMode.name());
         t.putInt("SwitchShots", s.switchShots);
-        t.putInt("SwitchSeconds", s.switchSeconds);
+        t.putInt("SwitchTicks", s.switchTicks);
         t.putString("Threat", s.threat.name());
         t.putInt("ThreatRadius", s.threatRadius);
         t.putBoolean("ImpactFirst", s.impactFirst);
@@ -48,8 +48,14 @@ public final class SettingsNbt {
         for (int i = 0; i < Math.min(en.length, EngageSettings.CATEGORIES); i++) s.enabled[i] = en[i] != 0;
         int[] lv = t.getIntArray("Levels");
         for (int i = 0; i < Math.min(lv.length, EngageSettings.CATEGORIES); i++) s.level[i] = lv[i];
-        s.speedMin = t.getDouble("SpeedMin");
-        s.speedMax = t.getDouble("SpeedMax");
+        if (t.contains("SpeedMins")) {
+            readDoubles(t.getList("SpeedMins", net.minecraft.nbt.Tag.TAG_DOUBLE), s.speedMin);
+            readDoubles(t.getList("SpeedMaxs", net.minecraft.nbt.Tag.TAG_DOUBLE), s.speedMax);
+        } else {
+            // до 0.13 окно скорости было общим для всех типов целей
+            java.util.Arrays.fill(s.speedMin, t.getDouble("SpeedMin"));
+            java.util.Arrays.fill(s.speedMax, t.getDouble("SpeedMax"));
+        }
         if (t.contains("DropStatic")) s.dropStatic = t.getBoolean("DropStatic");
         if (t.contains("StaticTicks")) s.staticTicks = t.getInt("StaticTicks");
         if (t.contains("HostileOnly")) s.hostileOnly = t.getBoolean("HostileOnly");
@@ -63,7 +69,8 @@ public final class SettingsNbt {
         if (t.contains("SwitchByPriority")) s.switchByPriority = t.getBoolean("SwitchByPriority");
         s.switchMode = enumOr(EngageSettings.SwitchMode.class, t.getString("Switch"), s.switchMode);
         if (t.contains("SwitchShots")) s.switchShots = t.getInt("SwitchShots");
-        if (t.contains("SwitchSeconds")) s.switchSeconds = t.getInt("SwitchSeconds");
+        if (t.contains("SwitchTicks")) s.switchTicks = t.getInt("SwitchTicks");
+        else if (t.contains("SwitchSeconds")) s.switchTicks = t.getInt("SwitchSeconds") * 20;
         // перехват (0.12); у старых блоков типов было 4 - снаряды и ракеты берутся по умолчанию
         s.threat = enumOr(EngageSettings.Threat.class, t.getString("Threat"), s.threat);
         if (t.contains("ThreatRadius")) s.threatRadius = t.getInt("ThreatRadius");
@@ -75,6 +82,16 @@ public final class SettingsNbt {
         net.minecraft.nbt.ListTag out = new net.minecraft.nbt.ListTag();
         for (String e : l) out.add(net.minecraft.nbt.StringTag.valueOf(e));
         return out;
+    }
+
+    private static net.minecraft.nbt.ListTag doubles(double[] a) {
+        net.minecraft.nbt.ListTag out = new net.minecraft.nbt.ListTag();
+        for (double v : a) out.add(net.minecraft.nbt.DoubleTag.valueOf(v));
+        return out;
+    }
+
+    private static void readDoubles(net.minecraft.nbt.ListTag tag, double[] into) {
+        for (int i = 0; i < Math.min(tag.size(), into.length); i++) into[i] = tag.getDouble(i);
     }
 
     private static void read(net.minecraft.nbt.ListTag tag, java.util.List<String> into) {

@@ -99,7 +99,7 @@ public final class TargetPicker {
         return switch (s.switchMode) {
             case NONE -> false;
             case AFTER_SHOTS -> st.shotsAtCurrent >= s.switchShots;
-            case AFTER_TIME -> now - st.acquiredTick >= s.switchSeconds * 20L;
+            case AFTER_TIME -> now - st.acquiredTick >= s.switchTicks;
             case ON_STOP -> s.isStatic(cur);
         };
     }
