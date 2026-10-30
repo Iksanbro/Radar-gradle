@@ -8,6 +8,7 @@ import dev.radarfcs.core.FlightCorrection;
 import dev.radarfcs.core.FlightModel;
 import dev.radarfcs.core.Vec;
 import java.util.List;
+import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
@@ -143,10 +144,16 @@ public final class MountState implements ShotObserver.Listener {
         }
     }
 
+    /** Вычислитель, управляющий станком (его снаряды свои для него, его владельца и команды). */
+    @Nullable public BlockPos fcsPos;
+    @Nullable public UUID fcsOwner;
+    public String fcsTeam = "";
+
     @Override
     public void onShotCounted(Entity projectile) {
         pendingShots++;
         shotsFired++;
+        if (fcsPos != null) ProjectileTracking.markFired(projectile, fcsPos, fcsOwner, fcsTeam);
     }
 
     @Override

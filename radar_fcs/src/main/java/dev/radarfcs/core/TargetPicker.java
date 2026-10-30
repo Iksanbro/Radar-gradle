@@ -64,8 +64,8 @@ public final class TargetPicker {
             st.shotsAtCurrent = 0;
         }
 
-        Comparator<Track> byPriority = Comparator.<Track>comparingInt(t -> -s.level(EngageSettings.Category.of(t.kind)))
-                .thenComparing(metric(s.priority, pivot));
+        Comparator<Track> byPriority = Comparator.<Track>comparingInt(t -> -s.level(t))
+                .thenComparing(sameLevel(s, pivot));
         List<Track> fresh = new ArrayList<>(), visited = new ArrayList<>();
         for (Track t : cands) (st.left.containsKey(t.id) && t != cur ? visited : fresh).add(t);
         fresh.sort(byPriority);
@@ -106,8 +106,12 @@ public final class TargetPicker {
 
     /** Цель a настолько лучше текущей b, что на неё стоит перейти. */
     static boolean betterThan(Track a, Track b, EngageSettings s, Vec pivot, double ratio) {
-        int la = s.level(EngageSettings.Category.of(a.kind)), lb = s.level(EngageSettings.Category.of(b.kind));
+        int la = s.level(a), lb = s.level(b);
         if (la != lb) return la > lb;
+        boolean ia = byImpact(a, s), ib = byImpact(b, s);
+        if (ia != ib) return ia;
+        // снаряды: переходить на тот, что долетит заметно раньше
+        if (ia) return a.threatTicks < b.threatTicks * ratio - 1;
         return switch (s.priority) {
             case NEAREST -> a.pos.distance(pivot) < b.pos.distance(pivot) * ratio;
             case FARTHEST -> a.pos.distance(pivot) * ratio > b.pos.distance(pivot);
@@ -116,6 +120,28 @@ public final class TargetPicker {
             case SMALLEST -> a.volume < b.volume * ratio;
             case FASTEST -> a.speedPerTick() * ratio > b.speedPerTick() + 0.01;
             case SLOWEST -> a.speedPerTick() < b.speedPerTick() * ratio - 0.01;
+        };
+    }
+
+    /** Снаряд-цель, который при равном уровне выбирается по времени до удара. */
+    static boolean byImpact(Track t, EngageSettings s) {
+        return s.impactFirst && t.kind == Track.Kind.PROJECTILE;
+    }
+
+    /**
+     * Порядок при равном уровне: снаряды-цели (если «первым - кто раньше долетит») - впереди остальных и между
+     * собой по времени до удара; остальные - по режиму приоритета.
+     */
+    static Comparator<Track> sameLevel(EngageSettings s, Vec pivot) {
+        Comparator<Track> m = metric(s.priority, pivot);
+        return (a, b) -> {
+            boolean ia = byImpact(a, s), ib = byImpact(b, s);
+            if (ia != ib) return ia ? -1 : 1;
+            if (ia) {
+                int c = Double.compare(a.threatTicks, b.threatTicks);
+                return c != 0 ? c : Double.compare(a.pos.distance(pivot), b.pos.distance(pivot));
+            }
+            return m.compare(a, b);
         };
     }
 

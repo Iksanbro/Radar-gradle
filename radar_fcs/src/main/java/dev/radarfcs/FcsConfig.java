@@ -18,6 +18,8 @@ public final class FcsConfig {
     // цели
     public static final ModConfigSpec.BooleanValue TARGET_MOBS, TARGET_PLAYERS, TARGET_SHIPS,
             TARGET_CONTRAPTIONS, TARGET_PROJECTILES, TARGET_OTHER;
+    // перехват снарядов
+    public static final ModConfigSpec.BooleanValue INTERCEPT_REQUIRES_MOD;
     public static final ModConfigSpec.ConfigValue<List<? extends String>> IGNORED_ENTITIES, IGNORED_CONTRAPTION_HINTS,
             FRIENDLY_PLAYERS, FRIENDLY_RADAR_IDS;
     // свой-чужой и безопасность
@@ -82,7 +84,8 @@ public final class FcsConfig {
                 .define("allowPlayers", true);
         TARGET_SHIPS = b.comment("Физические конструкции Sable / Create Aeronautics").define("allowShips", true);
         TARGET_CONTRAPTIONS = b.comment("Движущиеся контрапшены Create").define("allowContraptions", true);
-        TARGET_PROJECTILES = b.comment("Снаряды и ракеты, летящие к вычислителю (противоракетная оборона)").define("allowProjectiles", true);
+        TARGET_PROJECTILES = b.comment("Перехват летящих снарядов больших пушек и ракет (мелкие - патроны автопушек и пулемётов,",
+                        "ракеты ракетных блоков - не отслеживаются)").define("allowProjectiles", true);
         TARGET_OTHER = b.comment("Прочие сущности: лодки, вагонетки, стойки для брони, динамит и т.п.").define("allowOtherEntities", true);
         IGNORED_ENTITIES = b.defineListAllowEmpty("ignoredEntities", List.of("minecraft:bat"), () -> "", o -> o instanceof String);
         IGNORED_CONTRAPTION_HINTS = b.comment("Контрапшены, чьё имя класса содержит эти фрагменты, не цели (поезда, гантри...)")
@@ -91,6 +94,12 @@ public final class FcsConfig {
         FRIENDLY_PLAYERS = b.defineListAllowEmpty("friendlyPlayers", List.of(), () -> "", o -> o instanceof String);
         FRIENDLY_RADAR_IDS = b.comment("Корабли с идентификационным транспондером Create Radars и одним из этих секретных ID - свои")
                 .defineListAllowEmpty("friendlyRadarIds", List.of(), () -> "", o -> o instanceof String);
+        b.pop();
+
+        b.comment("Перехват снарядов и ракет").push("interception");
+        INTERCEPT_REQUIRES_MOD = b.comment("Сбивать снаряды только с модом CBC Interception (cbcintercept): без него снаряды CBC",
+                        "пролетают друг сквозь друга и стрельба по ним - пустая трата боеприпасов. Мониторы показывают снаряды всегда")
+                .define("requireInterceptionMod", true);
         b.pop();
 
         b.comment("Свой-чужой и безопасность стрельбы").push("iff");

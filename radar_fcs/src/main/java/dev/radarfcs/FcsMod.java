@@ -30,6 +30,8 @@ public final class FcsMod {
         modBus.addListener(dev.radarfcs.net.TransponderPayloads::register);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onEntityJoin);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onLevelTick);
+        // после ShotObserver: снаряд своей пушки уже помечен вычислителем, здесь - только точка запуска чужих
+        NeoForge.EVENT_BUS.addListener(dev.radarfcs.fcs.ProjectileTracking::onEntityJoin);
         // радарный линк в руке: ПКМ по аппаратуре - работа предмета (выбор, установка), а не блока (экран, назначение цели)
         NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock.class, e -> {
             if (e.getItemStack().getItem() instanceof dev.radarfcs.item.RadarLinkItem
@@ -40,6 +42,7 @@ public final class FcsMod {
         });
         NeoForge.EVENT_BUS.addListener(ServerStoppedEvent.class, e -> {
             ShotObserver.clear();
+            dev.radarfcs.fcs.ProjectileTracking.clear();
             IffRegistry.clear();
             dev.radarfcs.fcs.FcsControl.clearClaims();
             dev.radarfcs.link.LinkRegistry.clear();

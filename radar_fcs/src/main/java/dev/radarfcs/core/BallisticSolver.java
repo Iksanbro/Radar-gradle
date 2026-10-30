@@ -128,7 +128,7 @@ public final class BallisticSolver {
      * @param hintPitch  прошлое решение по этой цели (радианы) или NaN
      * @param maxRange   предельная горизонтальная дальность
      */
-    public Solution solve(Muzzle muzzle, TargetMotion target, double lagTicks, FlightModel m,
+    public Solution solve(Muzzle muzzle, TargetPath target, double lagTicks, FlightModel m,
                           int iterations, double hintPitch, double maxRange) {
         Vec dir = target.pos().sub(muzzle.at(Vec.ZERO)).normalize();
         double t = target.pos().distance(muzzle.at(dir)) / Math.max(0.05, m.muzzleSpeed());
@@ -173,7 +173,7 @@ public final class BallisticSolver {
      * Потиковое решение: точка прицеливания - положение цели на конец тика k, причём снаряд проходит её
      * в течение этого тика (время полёта в (k-1, k]).
      */
-    private Solution snapshot(Solution cont, Muzzle muzzle, TargetMotion target, double lagTicks, FlightModel m, double maxRange) {
+    private Solution snapshot(Solution cont, Muzzle muzzle, TargetPath target, double lagTicks, FlightModel m, double maxRange) {
         int k = Math.max(1, (int) Math.ceil(cont.flightTicks() - 1e-6));
         Vec dir = cont.direction();
         double hint = Math.toRadians(cont.pitchDeg());
@@ -211,14 +211,19 @@ public final class BallisticSolver {
     }
 
     /**
-     * Промах выстрела: наименьшее расстояние снаряд-цель (до центра цели или до её габарита), тик сближения
-     * и вектор от центра цели к снаряду в этот момент.
+     * Промах выстрела: наименьшее расстояние снаряд-цель (до центра цели или до её габарита), тик сближения,
+     * вектор от центра цели к снаряду в этот момент и скорость сближения (относительная скорость, блоков/тик).
      */
-    public record Miss(double distance, double tick, Vec relative) {}
+    public record Miss(double distance, double tick, Vec relative, double closing) {}
 
-    public static Miss miss(Vec launch, Vec dir, FlightModel m, TargetMotion target, double lagTicks, int maxTicks,
+    public static Miss miss(Vec launch, Vec dir, FlightModel m, TargetPath target, double lagTicks, int maxTicks,
                             boolean discrete) {
         return miss(launch, dir, m, target, lagTicks, maxTicks, discrete, null);
+    }
+
+    public static Miss miss(Vec launch, Vec dir, FlightModel m, TargetPath target, double lagTicks, int maxTicks,
+                            boolean discrete, Vec half) {
+        return miss(launch, dir, m, target, lagTicks, maxTicks, discrete, half, 0);
     }
 
     /**
@@ -230,9 +235,11 @@ public final class BallisticSolver {
      * @param lagTicks через сколько тиков после замера цели снаряд появится в launch
      * @param half     полуразмеры габарита цели по осям: промах считается до габарита (0 - отрезок его задевает);
      *                 null - до центра цели
+     * @param armTicks первые столько тиков полёта снаряд не сталкивается (перехват снарядов: только что вылетевший
+     *                 снаряд CBC Interception не проверяет)
      */
-    public static Miss miss(Vec launch, Vec dir, FlightModel m, TargetMotion target, double lagTicks, int maxTicks,
-                            boolean discrete, Vec half) {
+    public static Miss miss(Vec launch, Vec dir, FlightModel m, TargetPath target, double lagTicks, int maxTicks,
+                            boolean discrete, Vec half, int armTicks) {
         Vec d = dir.normalize();
         Vec h = new Vec(d.x(), 0, d.z());
         double hl = h.length();
@@ -241,7 +248,7 @@ public final class BallisticSolver {
         double pitch = Math.asin(Math.max(-1, Math.min(1, d.y())));
         double vx = s * Math.cos(pitch), vy = s * Math.sin(pitch), x = 0, y = 0;
         Vec prevP = launch, prevT = target.predict(lagTicks);
-        double best = discrete ? Double.MAX_VALUE : gap(prevP.sub(prevT), half), bestT = 0;
+        double best = discrete || armTicks > 0 ? Double.MAX_VALUE : gap(prevP.sub(prevT), half), bestT = 0, bestClosing = 0;
         Vec bestRel = prevP.sub(prevT);
         double prevGap = prevP.distanceSqr(prevT);
         double reach = half == null ? 0 : half.length();
@@ -270,7 +277,8 @@ public final class BallisticSolver {
             double u = l2 < 1e-12 ? 1 : Math.max(e, Math.min(1 - e, -r0.dot(seg) / l2));
             Vec c = r0.add(seg.scale(u));
             double dist = c.length();
-            if (half != null && dist - reach < best) {
+            if (t < armTicks) dist = Double.MAX_VALUE;                // снаряд ещё не взведён
+            else if (half != null && dist - reach < best) {
                 // расстояние до прямоугольного габарита выпукло вдоль отрезка: золотое сечение
                 double lo = e, hi = 1 - e;
                 for (int it = 0; it < 30; it++) {
@@ -286,6 +294,7 @@ public final class BallisticSolver {
                 best = dist;
                 bestT = t + u;
                 bestRel = c;
+                bestClosing = Math.sqrt(l2);
             }
             double gp = p.distanceSqr(tp);
             away = gp > prevGap ? away + 1 : 0;
@@ -294,7 +303,7 @@ public final class BallisticSolver {
             prevP = p;
             prevT = tp;
         }
-        return new Miss(best, bestT, bestRel);
+        return new Miss(best, bestT, bestRel, bestClosing);
     }
 
     /** Расстояние от точки (относительно центра цели) до габарита с полуразмерами half; без габарита - до центра. */

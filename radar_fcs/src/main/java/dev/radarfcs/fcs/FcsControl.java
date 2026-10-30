@@ -12,7 +12,9 @@ import dev.radarfcs.core.Aim;
 import dev.radarfcs.core.BallisticSolver;
 import dev.radarfcs.core.FlightModel;
 import dev.radarfcs.core.IffRule;
-import dev.radarfcs.core.TargetMotion;
+import dev.radarfcs.compat.Interception;
+import dev.radarfcs.core.ProjectileType;
+import dev.radarfcs.core.TargetPath;
 import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.core.TargetPicker;
 import dev.radarfcs.core.Track;
@@ -66,6 +68,9 @@ public final class FcsControl {
             return;
         }
         m.claimed = true;
+        m.fcsPos = fcs.getBlockPos();
+        m.fcsOwner = fcs.owner();
+        m.fcsTeam = fcs.ownerTeam();
         if (!d.isAssembled()) {
             setTrigger(m, false);
             m.cmdYaw = Double.NaN;
@@ -150,15 +155,17 @@ public final class FcsControl {
         // Команда станку исполнится к следующему тику: решаем для снаряда, вылетающего через тик.
         BallisticSolver.Solution sol = null;
         Track target = null;
-        TargetMotion motion = null;
+        TargetPath motion = null;
         double age = 0;
         for (int i = 0; i < Math.min(3, cands.size()); i++) {
             Track t = cands.get(i);
             double horizon = FcsConfig.USE_ACCELERATION.get() && !t.grounded ? FcsConfig.ACCEL_HORIZON.get() : 0;
-            TargetMotion mo = t.motion(horizon);
-            if (platformVel.lengthSqr() > 0) mo = new TargetMotion(mo.pos(), mo.vel().sub(platformVel), mo.acc(), mo.grounded(), mo.accelHorizon());
+            // снаряд-цель: его путь по тикам (физика CBC или замеры); прочие цели - движение по оценке
+            TargetPath mo = t.predictor(horizon).relativeTo(platformVel);
             double a = (now - t.lastTick) + FcsConfig.LATENCY.get();
             double hint = t.id.equals(m.targetId) ? m.hintPitch : Double.NaN;
+            // встреча снарядов проверяется непрерывно (отрезки обоих за тик), а не по положению цели на конец тика
+            solver.discrete(discrete && t.kind != Track.Kind.PROJECTILE);
             sol = solver.solve(muzzle, mo, a + 1, model, FcsConfig.LEAD_ITERATIONS.get(), hint, FcsConfig.MAX_RANGE.get());
             if (sol != null) {
                 target = t;
@@ -239,7 +246,15 @@ public final class FcsControl {
         double margin = big ? 0 : FcsConfig.RAPID_SPREAD.get() + spreadBlocks;
         Vec half = null;
         double allowed;
-        if (target.half != null) {
+        boolean intercept = target.kind == Track.Kind.PROJECTILE;
+        if (intercept) {
+            // CBC Interception: снаряды сталкиваются, если сблизились меньше суммы половин их размеров плюс extraHitRadius
+            double contact = target.hitRadius + reach + Interception.extraHitRadius();
+            double inset = big
+                    ? Math.min(0.35 * contact, 0.1 + m.distance * Math.tan(Math.toRadians(FcsConfig.FIRE_TOLERANCE.get())))
+                    : Math.min(0.15, 0.25 * contact);
+            allowed = Math.max(0.1, contact - inset) + margin;
+        } else if (target.half != null) {
             Vec th = target.half;
             double minHalf = Math.min(th.x(), Math.min(th.y(), th.z())) + reach;
             // запас внутрь габарита на ошибку прогноза: у автопушки промах стоит один патрон - небольшой;
@@ -259,9 +274,12 @@ public final class FcsControl {
             Vec sd = new Vec(shotW.x, shotW.y, shotW.z);
             Vec launch = muzzle.at(sd.normalize());
             int horizonTicks = (int) Math.ceil(sol.flightTicks() * 1.5) + 20;
-            BallisticSolver.Miss mm = BallisticSolver.miss(launch, sd, model, motion, big ? age : age + 1, horizonTicks,
-                    discrete, half);
+            BallisticSolver.Miss mm = intercept
+                    ? BallisticSolver.miss(launch, sd, model, motion, big ? age : age + 1, horizonTicks, false, null, Interception.ARMING_TICKS)
+                    : BallisticSolver.miss(launch, sd, model, motion, big ? age : age + 1, horizonTicks, discrete, half);
             missDist = mm.distance();
+            // снаряды, летящие почти вместе («один залп»), CBC Interception не сталкивает - догонять бесполезно
+            if (intercept && mm.closing() < Interception.SAME_VOLLEY_SPEED + 0.25) missDist = Double.POSITIVE_INFINITY;
             m.predictedMissTick = mm.tick();
             m.predictedLaunch = launch;
             m.predictedDir = sd;
@@ -274,9 +292,15 @@ public final class FcsControl {
         // Промах считается для каждого следующего выстрела автопушки, поэтому очередь держим, пока он мал;
         // небольшой запас на продолжение очереди убирает дребезг сигнала на границе порога
         boolean onTarget = missDist <= allowed || (!big && m.triggerOn && missDist <= allowed + 0.5 * margin);
-        // молодой трек или резкий манёвр: оценка движения ненадёжна - наводимся, но не стреляем
-        if (target.observedSpan() < FcsConfig.FIRE_MIN_TRACK.get()) onTarget = false;
-        if (target.residual > Math.max(Track.MANEUVER_RESIDUAL, target.hitRadius * 0.25)) onTarget = false;
+        // молодой трек или резкий манёвр: оценка движения ненадёжна - наводимся, но не стреляем.
+        // Снаряд-цель с точной физикой ведётся с первого замера; ракете - пара тиков на оценку разгона.
+        if (target.path != null) {
+            boolean exactPath = target.munition == ProjectileType.SHELL;
+            if (target.observedSpan() < (exactPath ? 1 : 3)) onTarget = false;
+        } else {
+            if (target.observedSpan() < FcsConfig.FIRE_MIN_TRACK.get()) onTarget = false;
+            if (target.residual > Math.max(Track.MANEUVER_RESIDUAL, target.hitRadius * 0.25)) onTarget = false;
+        }
         // без вращения на нужном валу станок не довернуть: не стреляем, даже если цель случайно на линии огня
         boolean aligned = onTarget && !outOfArc && !noPower;
         boolean loaded = m.estimate == null || m.estimate.loaded();

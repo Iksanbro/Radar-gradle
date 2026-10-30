@@ -22,17 +22,38 @@ public final class EngageSettings {
         SHIPS,
         PLAYERS,
         MOBS,
-        /** Прочие сущности: контрапшены Create, снаряды и ракеты. */
-        ENTITIES;
+        /** Прочие сущности: контрапшены Create, лодки, вагонетки... */
+        ENTITIES,
+        /** Перехват: снаряды больших пушек. */
+        SHELLS,
+        /** Перехват: ракеты. */
+        ROCKETS;
 
         public static Category of(Track.Kind kind) {
             return switch (kind) {
                 case SHIP -> SHIPS;
                 case PLAYER -> PLAYERS;
                 case MOB -> MOBS;
-                case CONTRAPTION, PROJECTILE, EXTERNAL -> ENTITIES;
+                case CONTRAPTION, EXTERNAL -> ENTITIES;
+                case PROJECTILE -> SHELLS;
             };
         }
+
+        public static Category of(Track t) {
+            return t.kind == Track.Kind.PROJECTILE && t.munition == ProjectileType.ROCKET ? ROCKETS : of(t.kind);
+        }
+
+        public boolean intercept() { return this == SHELLS || this == ROCKETS; }
+    }
+
+    /** Какие снаряды и ракеты перехватывать. */
+    public enum Threat {
+        /** Только угрожающие: прогноз полёта проходит ближе threatRadius от батареи или своих зон. */
+        THREATENING,
+        /** Все, что приближается к вычислителю. */
+        APPROACHING,
+        /** Все чужие. */
+        ALL
     }
 
     /** Какая цель главнее при равном уровне приоритета. */
@@ -59,9 +80,16 @@ public final class EngageSettings {
     /** Пауза после одиночного выстрела или очереди, тиков. */
     public int pauseTicks = 20;
 
-    public final boolean[] enabled = {true, false, true, true};
-    /** Уровень приоритета типа цели: 1..MAX_LEVEL, выше - главнее. */
-    public final int[] level = {2, 3, 1, 1};
+    public final boolean[] enabled = {true, false, true, true, true, true};
+    /** Уровень приоритета типа цели: 1..MAX_LEVEL, выше - главнее (летящие снаряды - угроза прямо сейчас). */
+    public final int[] level = {2, 3, 1, 1, 4, 4};
+    /** Перехват: какие снаряды и ракеты брать. */
+    public Threat threat = Threat.THREATENING;
+    /** Перехват: «угрожающий» - проходит ближе стольких блоков от батареи или своей зоны. */
+    public int threatRadius = 16;
+    public static final int MAX_THREAT_RADIUS = 128;
+    /** Перехват: при равном уровне первым - снаряд, который раньше долетит до своих (иначе - по режиму приоритета). */
+    public boolean impactFirst = true;
     /** Мобы: только враждебные (зомби, скелеты...), мирные и нейтральные - не цели. */
     public boolean hostileOnly = true;
     /**
@@ -101,6 +129,9 @@ public final class EngageSettings {
     public int switchSeconds = 5;
 
     public boolean enabled(Category c) { return enabled[c.ordinal()]; }
+
+    /** Уровень приоритета цели по её типу (снаряд большой пушки и ракета - свои уровни). */
+    public int level(Track t) { return level[Category.of(t).ordinal()]; }
 
     public int level(Category c) { return level[c.ordinal()]; }
 
@@ -147,6 +178,8 @@ public final class EngageSettings {
         if (fireMode == null) fireMode = FireMode.AUTO;
         if (priority == null) priority = Priority.NEAREST;
         if (switchMode == null) switchMode = SwitchMode.NONE;
+        if (threat == null) threat = Threat.THREATENING;
+        threatRadius = clamp(threatRadius, 1, MAX_THREAT_RADIUS);
         return this;
     }
 
@@ -173,6 +206,9 @@ public final class EngageSettings {
         s.switchMode = switchMode;
         s.switchShots = switchShots;
         s.switchSeconds = switchSeconds;
+        s.threat = threat;
+        s.threatRadius = threatRadius;
+        s.impactFirst = impactFirst;
         return s;
     }
 

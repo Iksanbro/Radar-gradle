@@ -49,6 +49,15 @@ public final class Track {
     public Vec knownVel;
     /** Произвольная ссылка для слоя совместимости (сущность, корабль...). */
     public Object handle;
+    /** Снаряд-цель (перехват): снаряд большой пушки или ракета; у прочих целей null. */
+    public ProjectileType munition;
+    /** Прогноз полёта снаряда-цели по тикам от последнего замера (по физике CBC или по замерам), иначе null. */
+    public PathMotion path;
+    /**
+     * Снаряд-цель: как близко его прогноз проходит от своих (батарея, свои зоны), блоков, и через сколько тиков
+     * (время до удара). Бесконечность - не угрожает или не считалось.
+     */
+    public double threatDistance = Double.POSITIVE_INFINITY, threatTicks = Double.POSITIVE_INFINITY;
 
     private final long[] ht = new long[CAP];
     private final double[] hx = new double[CAP], hy = new double[CAP], hz = new double[CAP];
@@ -68,6 +77,11 @@ public final class Track {
     }
 
     public long observedSpan() { return lastTick - firstTick; }
+
+    /** Прогноз для упреждения: у снаряда-цели - его путь по тикам, у прочих - движение по оценке. */
+    public TargetPath predictor(double accelHorizon) {
+        return path != null ? path : motion(accelHorizon);
+    }
 
     public TargetMotion motion(double accelHorizon) {
         Vec v = grounded ? new Vec(vel.x(), 0, vel.z()) : vel;

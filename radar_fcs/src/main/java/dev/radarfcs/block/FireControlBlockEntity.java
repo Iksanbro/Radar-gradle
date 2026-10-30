@@ -173,8 +173,27 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     }
 
     private TargetSensor.Context context(ServerLevel level) {
-        return new TargetSensor.Context(owner, ownerTeam, effectiveSettings().iffRule(), platformShips, origin(level));
+        Vec o = origin(level);
+        // от снарядов защищаются вычислитель и его пушки (и свои зоны транспондеров - по правилу кодов)
+        List<Vec> guard = new ArrayList<>();
+        guard.add(o);
+        for (MountState m : mounts.values()) {
+            Vec3 w = SableCompat.toWorld(level, Vec3.atCenterOf(m.pos));
+            guard.add(new Vec(w.x, w.y, w.z));
+        }
+        return new TargetSensor.Context(owner, ownerTeam, effectiveSettings().iffRule(), platformShips, o, guard, worldPosition,
+                interceptAllowed());
     }
+
+    /** Можно ли сбивать снаряды: установлен CBC Interception (или сервер разрешил без него). */
+    public static boolean interceptAllowed() {
+        return dev.radarfcs.compat.Interception.available() || !FcsConfig.INTERCEPT_REQUIRES_MOD.get();
+    }
+
+    @Nullable
+    public UUID owner() { return owner; }
+
+    public String ownerTeam() { return ownerTeam; }
 
     /** Мировая позиция вычислителя (на корабле - через позу корабля). */
     public Vec origin(Level level) {
@@ -427,6 +446,10 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         tag.putInt("Targets", sensor.active().size());
         tag.putInt("Contacts", sensor.usedRadar() ? sensor.contacts() : sensor.all().size());
         tag.putBoolean("Direct", !sensor.usedRadar());
+        tag.putBoolean("Intercept", interceptAllowed());
+        int incoming = 0;
+        for (dev.radarfcs.core.Track t : sensor.active()) if (t.kind == dev.radarfcs.core.Track.Kind.PROJECTILE) incoming++;
+        tag.putInt("Incoming", incoming);
         tag.putIntArray("Links", new int[]{mounts.size(), radars.size(), linkedMonitors.size() + crMonitors.size()});
         Set<String> engaged = new HashSet<>();
         ListTag ml = new ListTag();
@@ -498,6 +521,9 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         int[] links = s.getIntArray("Links");
         if (full && links.length == 3) out.add(Component.translatable("radar_fcs.report.links", links[0], links[1], links[2])
                 .withStyle(ChatFormatting.AQUA));
+        if (full && s.contains("Intercept")) out.add(s.getBoolean("Intercept")
+                ? Component.translatable("radar_fcs.report.intercept_on", s.getInt("Incoming")).withStyle(ChatFormatting.GRAY)
+                : Component.translatable("radar_fcs.report.intercept_off").withStyle(ChatFormatting.GOLD));
         if (full && s.contains("Capacity")) out.add(Component.translatable("radar_fcs.report.memory", s.getInt("Capacity"),
                 s.getInt("Memory")).withStyle(ChatFormatting.GRAY));
         if (full && s.getInt("Usage") > 0) out.add(Component.translatable("radar_fcs.energy.stored", s.getInt("Energy"),

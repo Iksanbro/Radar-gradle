@@ -32,6 +32,9 @@ public final class SettingsNbt {
         t.putString("Switch", s.switchMode.name());
         t.putInt("SwitchShots", s.switchShots);
         t.putInt("SwitchSeconds", s.switchSeconds);
+        t.putString("Threat", s.threat.name());
+        t.putInt("ThreatRadius", s.threatRadius);
+        t.putBoolean("ImpactFirst", s.impactFirst);
         return t;
     }
 
@@ -61,6 +64,10 @@ public final class SettingsNbt {
         s.switchMode = enumOr(EngageSettings.SwitchMode.class, t.getString("Switch"), s.switchMode);
         if (t.contains("SwitchShots")) s.switchShots = t.getInt("SwitchShots");
         if (t.contains("SwitchSeconds")) s.switchSeconds = t.getInt("SwitchSeconds");
+        // перехват (0.12); у старых блоков типов было 4 - снаряды и ракеты берутся по умолчанию
+        s.threat = enumOr(EngageSettings.Threat.class, t.getString("Threat"), s.threat);
+        if (t.contains("ThreatRadius")) s.threatRadius = t.getInt("ThreatRadius");
+        if (t.contains("ImpactFirst")) s.impactFirst = t.getBoolean("ImpactFirst");
         return s.sanitize();
     }
 

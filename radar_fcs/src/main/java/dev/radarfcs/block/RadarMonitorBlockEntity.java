@@ -86,6 +86,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         EngageSettings s = new EngageSettings();
         java.util.Arrays.fill(s.enabled, true);
         s.hostileOnly = false;
+        s.threat = EngageSettings.Threat.ALL;                     // все чужие снаряды - активные отметки
         return s;
     }
 

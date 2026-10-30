@@ -10,8 +10,8 @@ import java.util.function.Predicate;
 
 /** Таблица треков: приём замеров, оценка движения, отсев неподвижных целей с гистерезисом. */
 public final class TrackTable {
-    /** Блоков/тик: скачок быстрее считается телепортом, история сбрасывается. */
-    private static final double TELEPORT_SPEED = 12.0;
+    /** Блоков/тик: скачок быстрее считается телепортом, история сбрасывается (снаряды летят быстрее). */
+    private static final double TELEPORT_SPEED = 12.0, PROJECTILE_TELEPORT_SPEED = 64.0;
     /** Ниже этой доли порога скорости цель снова считается неподвижной. */
     private static final double HYSTERESIS = 0.6;
 
@@ -47,7 +47,7 @@ public final class TrackTable {
         long dt = tick - t.lastTick;
         if (dt <= 0) return t;                              // замер не новее: нечего добавлять
         double jump = pos.distance(t.pos) / dt;
-        if (jump > TELEPORT_SPEED) {
+        if (jump > (kind == Track.Kind.PROJECTILE ? PROJECTILE_TELEPORT_SPEED : TELEPORT_SPEED)) {
             t.reset(pos, tick);
         } else {
             t.add(pos, tick);
@@ -86,8 +86,9 @@ public final class TrackTable {
             if (t.moving) t.lastMovingTick = t.lastTick;
             t.friendly = isFriendly.test(t);
             double d = t.pos.distance(origin);
-            t.active = !t.friendly && motionOk.test(t) && t.samples >= minSamples && t.observedSpan() >= 3
-                    && d >= minRange && d <= maxRange && isEligible.test(t);
+            // снаряд-цель с прогнозом по физике: положение и скорость точные - хватает двух замеров
+            boolean seasoned = t.path != null ? t.samples >= 2 : t.samples >= minSamples && t.observedSpan() >= 3;
+            t.active = !t.friendly && motionOk.test(t) && seasoned && d >= minRange && d <= maxRange && isEligible.test(t);
         }
     }
 

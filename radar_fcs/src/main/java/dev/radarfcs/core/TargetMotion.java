@@ -9,13 +9,14 @@ package dev.radarfcs.core;
  * @param grounded     цель идёт по земле: вертикальное движение не экстраполируется
  * @param accelHorizon сколько тиков вперёд доверять ускорению (дальше движение равномерное)
  */
-public record TargetMotion(Vec pos, Vec vel, Vec acc, boolean grounded, double accelHorizon) {
+public record TargetMotion(Vec pos, Vec vel, Vec acc, boolean grounded, double accelHorizon) implements TargetPath {
 
     public static TargetMotion of(Vec pos, Vec vel) {
         return new TargetMotion(pos, vel, Vec.ZERO, false, 0);
     }
 
     /** Позиция через t тиков: ускорение действует только accelHorizon тиков, затем скорость постоянна. */
+    @Override
     public Vec predict(double t) {
         if (t <= 0) return pos;
         double ta = Math.min(t, Math.max(0, accelHorizon));

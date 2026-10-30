@@ -396,8 +396,11 @@ public class SolverTest {
         f.burstLength = 0; f.level[0] = 99; f.speedMin = Double.NaN; f.switchShots = -4;
         f.sanitize();
         ok &= f.burstLength == 2 && f.level[0] == EngageSettings.MAX_LEVEL && f.speedMin == 0 && f.switchShots == 1;
-        ok &= EngageSettings.Category.of(Track.Kind.PROJECTILE) == EngageSettings.Category.ENTITIES
+        ok &= EngageSettings.Category.of(Track.Kind.PROJECTILE) == EngageSettings.Category.SHELLS
                 && EngageSettings.Category.of(Track.Kind.SHIP) == EngageSettings.Category.SHIPS;
+        f.threatRadius = 9999; f.threat = null;
+        f.sanitize();
+        ok &= f.threatRadius == EngageSettings.MAX_THREAT_RADIUS && f.threat == EngageSettings.Threat.THREATENING;
         if (!ok) { failures++; System.out.println("  FAIL: settings filters"); }
         System.out.println("target picker: " + (failures == before ? "all checks passed" : (failures - before) + " failed"));
     }
@@ -409,6 +412,71 @@ public class SolverTest {
 
     static void expect(String what, String got, String want) {
         if (!want.equals(got)) { failures++; System.out.println("  FAIL " + what + ": got " + got + ", expected " + want); }
+    }
+
+    /**
+     * Перехват снарядов: прогноз пути по тикам, непрерывная встреча двух снарядов (как CBC Interception: отрезки обоих
+     * за тик), взвод (первые тики не сталкиваются), скорость сближения, решение по летящему снаряду, порядок перехвата.
+     */
+    static void interception() {
+        int before = failures;
+        // путь: внутри тика - по прямой, после конца - с последней скоростью
+        PathMotion path = new PathMotion(new Vec[]{new Vec(0, 0, 0), new Vec(4, 1, 0), new Vec(8, 1.5, 0)});
+        boolean ok = path.predict(0.5).distance(new Vec(2, 0.5, 0)) < 1e-9 && path.predict(3).distance(new Vec(12, 2, 0)) < 1e-9
+                && path.pos().equals(new Vec(0, 0, 0)) && path.velocity(1).distance(new Vec(4, 0.5, 0)) < 1e-9;
+        TargetPath shifted = path.relativeTo(new Vec(1, 0, 0));
+        ok &= shifted.predict(2).distance(new Vec(6, 1.5, 0)) < 1e-9;
+        if (!ok) { failures++; System.out.println("  FAIL: path motion"); }
+
+        // снаряд-цель летит навстречу по прямой 5 бл/тик, перехватчик 6 бл/тик без сопротивления
+        FlightModel interceptor = CbcFlightModel.ballistic(6, 0, 0, false, 60);
+        Vec[] pts = new Vec[60];
+        for (int k = 0; k < pts.length; k++) pts[k] = new Vec(200 - 5.0 * k, 10, 0.3);
+        PathMotion incoming = new PathMotion(pts);
+        BallisticSolver solver = new BallisticSolver(-10, 60, false).discrete(false);
+        BallisticSolver.Muzzle muzzle = BallisticSolver.Muzzle.fixed(new Vec(0, 10, 0));
+        BallisticSolver.Solution sol = solver.solve(muzzle, incoming, 1, interceptor, 16, Double.NaN, 400);
+        if (sol == null) {
+            failures++;
+            System.out.println("  FAIL: no solution against an incoming shell");
+        } else {
+            BallisticSolver.Miss m = BallisticSolver.miss(new Vec(0, 10, 0), sol.direction(), interceptor, incoming, 1, 80, false, null, 2);
+            System.out.printf(Locale.ROOT, "  head-on shell: miss %.3f at tick %.2f, closing %.2f b/t%n", m.distance(), m.tick(), m.closing());
+            if (m.distance() > 0.1 || Math.abs(m.closing() - 11) > 0.01) { failures++; System.out.println("  FAIL: head-on interception"); }
+        }
+        // взвод: встреча на первом тике полёта не считается
+        Vec[] close = new Vec[10];
+        for (int k = 0; k < close.length; k++) close[k] = new Vec(9 - 3.0 * k, 10, 0);
+        BallisticSolver.Miss early = BallisticSolver.miss(new Vec(0, 10, 0), new Vec(1, 0, 0), interceptor, new PathMotion(close), 0, 20,
+                false, null, 0);
+        BallisticSolver.Miss armed = BallisticSolver.miss(new Vec(0, 10, 0), new Vec(1, 0, 0), interceptor, new PathMotion(close), 0, 20,
+                false, null, 2);
+        if (!(early.distance() < 0.01 && early.tick() < 1.1 && armed.distance() > 3)) {
+            failures++;
+            System.out.printf(Locale.ROOT, "  FAIL: arming (unarmed %.2f at %.2f, armed %.2f)%n", early.distance(), early.tick(), armed.distance());
+        }
+
+        // порядок: снаряды равного уровня - кто раньше долетит; ракета уровнем выше - первой
+        TrackTable table = new TrackTable();
+        Vec pivot = new Vec(0, 64, 0);
+        Track near = table.observe("N", Track.Kind.PROJECTILE, "N", new Vec(30, 70, 0), 0.4, 1, false, null, TrackTable.Settings.DEFAULT);
+        Track soon = table.observe("S", Track.Kind.PROJECTILE, "S", new Vec(80, 70, 0), 0.4, 1, false, null, TrackTable.Settings.DEFAULT);
+        Track mob = table.observe("M", Track.Kind.MOB, "M", new Vec(5, 64, 0), 0.4, 1, false, null, TrackTable.Settings.DEFAULT);
+        near.munition = ProjectileType.SHELL; soon.munition = ProjectileType.SHELL;
+        near.threatTicks = 30; soon.threatTicks = 8;
+        EngageSettings s = new EngageSettings();
+        List<Track> all = List.of(near, soon, mob);
+        expect("intercept: sooner impact first", first(all, pivot, s, new TargetPicker.State(), 100), "S");
+        s.impactFirst = false;
+        expect("intercept: nearest without impact order", first(all, pivot, s, new TargetPicker.State(), 100), "N");
+        s.impactFirst = true;
+        near.munition = ProjectileType.ROCKET;
+        s.level[EngageSettings.Category.ROCKETS.ordinal()] = 5;
+        expect("intercept: rocket level first", first(all, pivot, s, new TargetPicker.State(), 100), "N");
+        s.level[EngageSettings.Category.ROCKETS.ordinal()] = 4;
+        s.level[EngageSettings.Category.MOBS.ordinal()] = 5;
+        expect("intercept: mob level above shells", first(all, pivot, s, new TargetPicker.State(), 100), "M");
+        System.out.println("interception: " + (failures == before ? "all checks passed" : (failures - before) + " failed"));
     }
 
     public static void main(String[] a) {
@@ -425,6 +493,7 @@ public class SolverTest {
         trackFilter();
         maneuver();
         targetPicker();
+        interception();
         if (failures > 0) {
             System.out.println("FAILURES: " + failures);
             System.exit(1);

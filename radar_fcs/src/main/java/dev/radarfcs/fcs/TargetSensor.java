@@ -3,10 +3,12 @@ package dev.radarfcs.fcs;
 import dev.radarfcs.FcsConfig;
 import dev.radarfcs.FcsDev;
 import dev.radarfcs.compat.ContraptionCompat;
+import dev.radarfcs.compat.Munitions;
 import dev.radarfcs.compat.RadarLink;
 import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.core.IffRule;
+import dev.radarfcs.core.ProjectileType;
 import dev.radarfcs.core.Track;
 import dev.radarfcs.core.TrackTable;
 import dev.radarfcs.core.Vec;
@@ -43,12 +45,27 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class TargetSensor {
 
-    /** Кто «свои» для этого вычислителя: владелец и его команда, правило кодов транспондеров, корабли-носители батареи. */
-    public record Context(@Nullable UUID owner, String ownerTeam, IffRule iff, Set<UUID> platformShips, Vec origin) {}
+    /**
+     * Кто «свои» для этого вычислителя: владелец и его команда, правило кодов транспондеров, корабли-носители батареи.
+     * @param guard     что защищать от снарядов (вычислитель и его пушки): угроза - прогноз снаряда проходит рядом
+     * @param self      позиция блока вычислителя (его снаряды - свои) или null (монитор)
+     * @param intercept можно ли сбивать снаряды (установлен CBC Interception); монитор показывает их всегда
+     */
+    public record Context(@Nullable UUID owner, String ownerTeam, IffRule iff, Set<UUID> platformShips, Vec origin,
+                          List<Vec> guard, @Nullable net.minecraft.core.BlockPos self, boolean intercept) {
+        public Context(@Nullable UUID owner, String ownerTeam, IffRule iff, Set<UUID> platformShips, Vec origin) {
+            this(owner, ownerTeam, iff, platformShips, origin, List.of(origin), null, true);
+        }
+    }
 
     private final TrackTable table = new TrackTable();
     /** Треки, у которых раньше была живая сущность: если она пропала - цель уничтожена или ушла. */
     private final Set<String> liveSeen = new HashSet<>();
+    /**
+     * Цели радара, отсеянные сенсором (мелкие снаряды, служебные сущности): когда их сущность пропадёт, радар ещё
+     * какое-то время отдаёт старую отметку - она не должна стать «призрачной» целью по данным радара.
+     */
+    private Set<String> filtered = new HashSet<>(), filteredNow = new HashSet<>();
     private List<Track> active = List.of();
     private int contacts;
     private boolean usedRadar;
@@ -88,6 +105,7 @@ public final class TargetSensor {
         Set<String> seen = new HashSet<>();
         contacts = 0;
         usedRadar = false;
+        filteredNow = new HashSet<>();
         if (FcsDev.radarless) {
             directScan(level, ctx, FcsDev.radarlessRange, now, s);
         } else if (RadarLink.apiAvailable() && !radars.isEmpty()) {
@@ -102,9 +120,11 @@ public final class TargetSensor {
                 }
             }
         }
+        filtered = filteredNow;
         if (forcedId != null && !seen.contains(forcedId)) trackDirectly(level, forcedId, now, s);
         table.prune(now, FcsConfig.TRACK_TIMEOUT.get());
         liveSeen.removeIf(id -> table.get(id) == null);
+        assessThreats(level, ctx);
         table.classify(FcsConfig.MIN_SPEED.get() / 20.0, FcsConfig.MIN_SAMPLES.get(),
                 t -> isFriendly(level, t, ctx, now),
                 t -> wanted(t, ctx, settings, dropped, forcedId),
@@ -120,12 +140,84 @@ public final class TargetSensor {
     private boolean wanted(Track t, Context ctx, EngageSettings settings, java.util.function.Predicate<Track> dropped,
                            @Nullable String forcedId) {
         if (!isEligible(t, ctx)) return false;
+        // снаряды сбиваются только с CBC Interception (без него снаряды пролетают друг сквозь друга)
+        if (t.kind == Track.Kind.PROJECTILE && !ctx.intercept()) return false;
         if (t.id.equals(forcedId)) return true;
         if (TargetLists.matches(settings.blacklist, t) || dropped.test(t)) return false;
+        if (t.kind == Track.Kind.PROJECTILE && !threatens(t, ctx, settings)) return false;
         if (!settings.speedAllowed(t.speedPerTick() * 20)) return false;
         if (TargetLists.matches(settings.whitelist, t)) return true;
-        if (!settings.enabled(EngageSettings.Category.of(t.kind))) return false;
+        if (!settings.enabled(EngageSettings.Category.of(t))) return false;
         return t.kind != Track.Kind.MOB || !settings.hostileOnly || t.hostile;
+    }
+
+    /** Снаряд-цель по фильтру угрозы: угрожающий своим, приближающийся или любой чужой. */
+    static boolean threatens(Track t, Context ctx, EngageSettings settings) {
+        return switch (settings.threat) {
+            case ALL -> true;
+            case APPROACHING -> t.vel.dot(ctx.origin().sub(t.pos)) > 0;
+            case THREATENING -> t.threatDistance <= settings.threatRadius;
+        };
+    }
+
+    // ------------------------------------------------------------- угроза
+
+    /**
+     * Насколько близко прогноз полёта каждого снаряда-цели проходит от своих: вычислителя и его пушек (guard)
+     * и своих зон транспондеров (по правилу вычислителя), и через сколько тиков.
+     */
+    private void assessThreats(ServerLevel level, Context ctx) {
+        List<IffRegistry.Zone> zones = null;
+        for (Track t : table.all()) {
+            if (t.kind != Track.Kind.PROJECTILE || t.path == null) continue;
+            if (zones == null) zones = IffRegistry.zones(level, ctx.iff());
+            Vec[] pts = t.path.points();
+            double best = Double.POSITIVE_INFINITY, bestT = Double.POSITIVE_INFINITY;
+            for (int k = 0; k + 1 < pts.length; k++) {
+                Vec a = pts[k], b = pts[k + 1];
+                for (Vec g : ctx.guard()) {
+                    double u = segmentParam(g, a, b);
+                    double d = a.lerp(b, u).distance(g);
+                    if (d < best) { best = d; bestT = k + u; }
+                }
+                for (IffRegistry.Zone z : zones) {
+                    double d = zoneDistance(z, a, b);
+                    if (d < best) { best = d; bestT = k + 0.5; }
+                }
+                if (best <= 0) break;                       // уже в зоне: раньше не бывает
+            }
+            if (pts.length == 1) {
+                for (Vec g : ctx.guard()) best = Math.min(best, pts[0].distance(g));
+                bestT = 0;
+            }
+            t.threatDistance = Math.max(0, best);
+            t.threatTicks = bestT;
+        }
+    }
+
+    /** Параметр (0..1) ближайшей к точке p точки отрезка a-b. */
+    private static double segmentParam(Vec p, Vec a, Vec b) {
+        Vec ab = b.sub(a);
+        double l2 = ab.lengthSqr();
+        return l2 < 1e-12 ? 0 : Math.max(0, Math.min(1, p.sub(a).dot(ab) / l2));
+    }
+
+    /** Расстояние от отрезка до зоны (шар - точно, прямоугольник - по точкам отрезка), 0 - внутри. */
+    private static double zoneDistance(IffRegistry.Zone z, Vec a, Vec b) {
+        if (z.box() == null) {
+            double u = segmentParam(z.center(), a, b);
+            return a.lerp(b, u).distance(z.center()) - z.radius();
+        }
+        AABB box = z.box();
+        double best = Double.POSITIVE_INFINITY;
+        for (int i = 0; i <= 4; i++) {
+            Vec p = a.lerp(b, i / 4.0);
+            double dx = Math.max(0, Math.max(box.minX - p.x(), p.x() - box.maxX));
+            double dy = Math.max(0, Math.max(box.minY - p.y(), p.y() - box.maxY));
+            double dz = Math.max(0, Math.max(box.minZ - p.z(), p.z() - box.maxZ));
+            best = Math.min(best, Math.sqrt(dx * dx + dy * dy + dz * dz));
+        }
+        return best;
     }
 
     /** Назначенная вручную цель, которую радары не видят: сопровождать по живой сущности. */
@@ -161,12 +253,25 @@ public final class TargetSensor {
                 liveSeen.remove(c.id());
                 return;
             }
-            if (!isCandidateEntity(e)) return;
+            if (!isCandidateEntity(e)) {
+                filteredNow.add(c.id());
+                table.remove(c.id());
+                return;
+            }
             observeEntity(e, c.id(), now, s);
             liveSeen.add(c.id());
             return;
         }
         if (liveSeen.remove(c.id())) {          // сущность была и исчезла: уничтожена или выгружена
+            table.remove(c.id());
+            return;
+        }
+        if (filtered.contains(c.id())) {        // отсеянная цель исчезла, а радар ещё помнит её отметку
+            filteredNow.add(c.id());
+            return;
+        }
+        // снаряд без живой сущности (уже сбит или упал; ложная отметка) - не цель: ни прогноза, ни свой-чужой
+        if ("PROJECTILE".equals(cat) || "MISSILE".equals(cat)) {
             table.remove(c.id());
             return;
         }
@@ -220,6 +325,10 @@ public final class TargetSensor {
         if (!e.isAlive() || e.isSpectator() || e.isRemoved()) return false;
         if (e instanceof Player) return true;
         if (ContraptionCompat.isContraption(e)) return !ContraptionCompat.isIgnored(e);
+        // снаряды: только крупные (снаряды больших пушек и ракеты) и только летящие; мелких бывает очень много
+        if (e instanceof Projectile || Munitions.classify(e) != null) {
+            return Munitions.classify(e) != null && Munitions.flying(e) && !isIgnoredEntity(e);
+        }
         if (e instanceof net.minecraft.world.entity.item.ItemEntity || e instanceof net.minecraft.world.entity.ExperienceOrb
                 || e instanceof net.minecraft.world.entity.decoration.HangingEntity || e instanceof net.minecraft.world.entity.Marker
                 || e instanceof net.minecraft.world.entity.Display || e instanceof net.minecraft.world.entity.Interaction
@@ -249,7 +358,7 @@ public final class TargetSensor {
     public static Track.Kind kindOf(Entity e) {
         if (e instanceof Player) return Track.Kind.PLAYER;
         if (ContraptionCompat.isContraption(e)) return Track.Kind.CONTRAPTION;
-        if (e instanceof Projectile) return Track.Kind.PROJECTILE;
+        if (e instanceof Projectile || Munitions.classify(e) != null) return Track.Kind.PROJECTILE;
         if (e instanceof net.minecraft.world.entity.Mob) return Track.Kind.MOB;
         return Track.Kind.EXTERNAL;
     }
@@ -260,6 +369,10 @@ public final class TargetSensor {
         AABB bb = e.getBoundingBox();
         Vec3 c = bb.getCenter();
         Track.Kind kind = kindOf(e);
+        if (kind == Track.Kind.PROJECTILE && e.level() instanceof ServerLevel level) {
+            observeProjectile(level, e, id, now, s);
+            return;
+        }
         double hr = kind == Track.Kind.CONTRAPTION
                 ? Math.min(6.0, Math.max(1.0, Math.min(bb.getXsize(), bb.getZsize()) * 0.5))
                 : Math.max(0.35, Math.min(bb.getXsize(), bb.getYsize()) * 0.5);
@@ -274,6 +387,26 @@ public final class TargetSensor {
         // габарит сущности - точный прямоугольник по осям, как его проверяет CBC; у контрапшена он лишь описанный
         t.half = kind == Track.Kind.CONTRAPTION ? null : new Vec(bb.getXsize() * 0.5, bb.getYsize() * 0.5, bb.getZsize() * 0.5);
         t.volume = bb.getXsize() * bb.getYsize() * bb.getZsize();
+    }
+
+    /**
+     * Снаряд-цель: положение - точка сущности (по ней CBC Interception проверяет встречу снарядов), скорость точная,
+     * прогноз полёта по тикам; радиус - половина размера снаряда (как его считает CBC Interception).
+     */
+    private void observeProjectile(ServerLevel level, Entity e, String id, long now, TrackTable.Settings s) {
+        ProjectileType type = Munitions.classify(e);
+        if (type == null) type = ProjectileType.SHELL;
+        Vec3 v = e.getDeltaMovement();
+        Track t = table.observe(id, Track.Kind.PROJECTILE, e.getName().getString(), new Vec(e.getX(), e.getY(), e.getZ()),
+                Math.max(e.getBbWidth(), e.getBbHeight()) * 0.5, now, false, new Vec(v.x, v.y, v.z), s);
+        t.handle = e;
+        t.hostile = true;
+        t.munition = type;
+        t.path = ProjectileTracking.path(level, e, type);
+        t.typeId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString();
+        t.playerName = null;
+        t.half = null;
+        t.volume = e.getBbWidth() * e.getBbWidth() * e.getBbHeight();
     }
 
     private void observeShip(ServerLevel level, SableCompat.Ship ship, long now, TrackTable.Settings s) {
@@ -323,6 +456,10 @@ public final class TargetSensor {
             if (sid != null && (ctx.platformShips().contains(sid) || IffRegistry.shipFriendly(level, sid, iff))) return true;
             if (sid != null && RadarLink.shipHasFriendlyRadarId(sid, FcsConfig.FRIENDLY_RADAR_IDS.get())) return true;
         }
+        if (kind == Track.Kind.PROJECTILE && handle instanceof Entity e) {
+            Boolean own = projectileFriendly(level, e, ctx);
+            if (own != null) return own;
+        }
         if (handle instanceof Entity e) {
             if (e instanceof Player p && isFriendlyPlayer(p, ctx)) return true;
             // транспорт (лодка, вагонетка, контрапшен), в котором сидит свой игрок, - свой
@@ -346,6 +483,24 @@ public final class TargetSensor {
         return zones && IffRegistry.protects(level, t, iff);
     }
 
+    /**
+     * Снаряд свой по тому, откуда и кем выпущен: пушкой этого вычислителя, вычислителя того же владельца или его
+     * команды, своим игроком, из своей зоны транспондера. Где он сейчас - не важно: чужой снаряд в своей зоне
+     * остаётся целью. null - точка запуска неизвестна (снаряд появился раньше, чем его увидели): по общим правилам.
+     */
+    @Nullable
+    private static Boolean projectileFriendly(ServerLevel level, Entity e, Context ctx) {
+        if (e instanceof Projectile pr && pr.getOwner() instanceof Player p && isFriendlyPlayer(p, ctx)) return true;
+        ProjectileTracking.Origin o = ProjectileTracking.origin(e);
+        if (o == null) return null;
+        if (o.fcs() != null && o.fcs().equals(ctx.self())) return true;
+        if (o.fcsOwner() != null && o.fcsOwner().equals(ctx.owner())) return true;
+        if (!o.fcsTeam().isEmpty() && o.fcsTeam().equals(ctx.ownerTeam())) return true;
+        Vec from = new Vec(o.pos().x, o.pos().y, o.pos().z);
+        for (IffRegistry.Zone z : IffRegistry.zones(level, ctx.iff())) if (z.contains(from)) return true;
+        return false;
+    }
+
     private static boolean isFriendlyPlayer(Player p, Context ctx) {
         if (!FcsConfig.TARGET_PLAYERS.get() || p.isCreative() || p.isSpectator()) return true;
         if (p.getUUID().equals(ctx.owner())) return true;
@@ -365,8 +520,8 @@ public final class TargetSensor {
             case PLAYER -> FcsConfig.TARGET_PLAYERS.get();
             case SHIP -> FcsConfig.TARGET_SHIPS.get();
             case CONTRAPTION -> FcsConfig.TARGET_CONTRAPTIONS.get();
-            // только приближающиеся снаряды: свои уходящие снаряды не цели
-            case PROJECTILE -> FcsConfig.TARGET_PROJECTILES.get() && vel.dot(origin.sub(pos)) > 0;
+            // снаряды и ракеты: что из них брать - решает фильтр угрозы вычислителя
+            case PROJECTILE -> FcsConfig.TARGET_PROJECTILES.get();
             case EXTERNAL -> FcsConfig.TARGET_OTHER.get();
         };
     }

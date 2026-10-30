@@ -29,9 +29,9 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * (сборка и разборка пушек). Настройки уходят на сервер кнопкой «Сохранить», команды сборки - сразу.
  */
 public final class FcsSettingsScreen extends Screen {
-    private enum Tab { FIRE, TARGETS, LISTS, IFF, DROP, PICK, STATUS }
+    private enum Tab { FIRE, TARGETS, LISTS, IFF, INTERCEPT, DROP, PICK, STATUS }
 
-    private static final int W = 400, H = 240, ROW = 22, LIST_ROW = 14, CODE_COLS = 4, LIST_ROWS = 9, IFF_ROWS = 6;
+    private static final int W = 480, H = 240, ROW = 22, LIST_ROW = 14, CODE_COLS = 4, LIST_ROWS = 9, IFF_ROWS = 6;
 
     private final BlockPos pos;
     private final EngageSettings s;
@@ -55,11 +55,19 @@ public final class FcsSettingsScreen extends Screen {
     protected void init() {
         left = (width - W) / 2;
         top = (height - H) / 2;
-        int tw = (W - 8) / Tab.values().length;
-        for (Tab t : Tab.values()) {
+        // ширина вкладки - по длине подписи (длинные подписи не обрезаются)
+        Tab[] tabs = Tab.values();
+        int[] tw = new int[tabs.length];
+        int sum = 0;
+        for (Tab t : tabs) sum += tw[t.ordinal()] = font.width(Component.translatable("radar_fcs.gui.tab." + t.name().toLowerCase(Locale.ROOT))) + 10;
+        double k = (W - 8.0 - 2 * tabs.length) / sum;
+        int x0 = left + 4;
+        for (Tab t : tabs) {
+            int w = t.ordinal() == tabs.length - 1 ? left + W - 4 - x0 - 2 : (int) Math.floor(tw[t.ordinal()] * k);
             Button b = addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.tab." + t.name().toLowerCase(Locale.ROOT)),
-                    x -> { tab = t; rebuildWidgets(); }).bounds(left + 4 + t.ordinal() * tw, top + 4, tw - 2, 18).build());
+                    x -> { tab = t; rebuildWidgets(); }).bounds(x0, top + 4, w, 18).build());
             b.active = t != tab;
+            x0 += w + 2;
         }
         int y = top + 30;
         switch (tab) {
@@ -67,6 +75,7 @@ public final class FcsSettingsScreen extends Screen {
             case TARGETS -> targetsTab(y);
             case LISTS -> listsTab(y);
             case IFF -> iffTab(y);
+            case INTERCEPT -> interceptTab(y);
             case DROP -> dropTab(y);
             case PICK -> pickTab(y);
             case STATUS -> statusTab(y);
@@ -94,6 +103,7 @@ public final class FcsSettingsScreen extends Screen {
 
     private void targetsTab(int y) {
         for (Category c : Category.values()) {
+            if (c.intercept()) continue;                            // снаряды и ракеты - на вкладке «Перехват»
             int i = c.ordinal();
             Component limit = serverLimit(c);
             Button b = cycle(left + 8, y, 160, () -> {
@@ -108,6 +118,39 @@ public final class FcsSettingsScreen extends Screen {
         number(left + 240, y, () -> (int) s.speedMax, v -> s.speedMax = v, 5, 0, 1000, null);
         y += ROW;
         cycle(left + 8, y, W - 16, () -> check(s.hostileOnly, "radar_fcs.gui.hostile_only"), () -> s.hostileOnly = !s.hostileOnly);
+    }
+
+    /**
+     * Перехват снарядов: какие типы (снаряды больших пушек, ракеты) и их уровни приоритета, какие из них брать
+     * (угрожающие своим, приближающиеся, все чужие), радиус угрозы, порядок (первым - кто раньше долетит).
+     */
+    private void interceptTab(int y) {
+        for (Category c : new Category[]{Category.SHELLS, Category.ROCKETS}) {
+            int i = c.ordinal();
+            Component limit = serverLimit(c);
+            Button b = cycle(left + 8, y, 220, () -> {
+                MutableComponent t = check(s.enabled[i], "radar_fcs.gui.type." + c.name().toLowerCase(Locale.ROOT));
+                return limit == null ? t : t.append(Component.literal(" ⚠").withStyle(ChatFormatting.GOLD));
+            }, () -> s.enabled[i] = !s.enabled[i]);
+            if (limit != null) b.setTooltip(Tooltip.create(limit));
+            number(left + 300, y, () -> s.level[i], v -> s.level[i] = v, 1, 1, EngageSettings.MAX_LEVEL, null);
+            y += ROW;
+        }
+        cycle(left + 190, y, W - 198, () -> Component.translatable("radar_fcs.gui.threat." + s.threat.name().toLowerCase(Locale.ROOT)),
+                () -> s.threat = next(s.threat, EngageSettings.Threat.values()));
+        y += ROW;
+        if (s.threat == EngageSettings.Threat.THREATENING) {
+            number(left + 190, y, () -> s.threatRadius, v -> s.threatRadius = v, 2, 1, EngageSettings.MAX_THREAT_RADIUS, "radar_fcs.gui.blocks");
+            y += ROW;
+        }
+        cycle(left + 8, y, W - 16, () -> check(s.impactFirst, "radar_fcs.gui.impact_first"), () -> s.impactFirst = !s.impactFirst);
+    }
+
+    /** Есть ли на сервере мод перехвата (из сводки блока); неизвестно - true. */
+    private boolean interceptAvailable() {
+        if (minecraft != null && minecraft.level != null && minecraft.level.getBlockEntity(pos) instanceof FireControlBlockEntity be
+                && be.summary().contains("Intercept")) return be.summary().getBoolean("Intercept");
+        return true;
     }
 
     /** Белый и чёрный списки: поле ввода, кнопки «в белый» / «в чёрный», записи (клик - убрать). */
@@ -241,11 +284,11 @@ public final class FcsSettingsScreen extends Screen {
             case SHIPS -> FcsConfig.TARGET_SHIPS.get() ? null : "radar_fcs.gui.server_forbids";
             case PLAYERS -> FcsConfig.TARGET_PLAYERS.get() ? null : "radar_fcs.gui.server_forbids";
             case MOBS -> FcsConfig.TARGET_MOBS.get() ? null : "radar_fcs.gui.server_forbids";
-            case ENTITIES -> !FcsConfig.TARGET_CONTRAPTIONS.get() && !FcsConfig.TARGET_PROJECTILES.get() && !FcsConfig.TARGET_OTHER.get()
+            case ENTITIES -> !FcsConfig.TARGET_CONTRAPTIONS.get() && !FcsConfig.TARGET_OTHER.get()
                     ? "radar_fcs.gui.server_forbids"
-                    : !FcsConfig.TARGET_PROJECTILES.get() ? "radar_fcs.gui.server_no_projectiles"
                     : !FcsConfig.TARGET_CONTRAPTIONS.get() ? "radar_fcs.gui.server_no_contraptions"
                     : !FcsConfig.TARGET_OTHER.get() ? "radar_fcs.gui.server_no_other" : null;
+            case SHELLS, ROCKETS -> FcsConfig.TARGET_PROJECTILES.get() ? null : "radar_fcs.gui.server_no_projectiles";
         };
         return key == null ? null : Component.translatable(key);
     }
@@ -282,7 +325,8 @@ public final class FcsSettingsScreen extends Screen {
                 hint(g, "radar_fcs.gui.fire_hint." + s.fireMode.name().toLowerCase(Locale.ROOT), y + 6);
             }
             case TARGETS -> {
-                for (int i = 0; i < EngageSettings.CATEGORIES; i++) {
+                for (Category c : Category.values()) {
+                    if (c.intercept()) continue;
                     g.drawString(font, Component.translatable("radar_fcs.gui.level"), left + 186, y, 0xA0A0A0, false);
                     y += ROW;
                 }
@@ -317,6 +361,22 @@ public final class FcsSettingsScreen extends Screen {
                     hy += 22;
                 }
                 hint(g, s.iffWhitelist ? "radar_fcs.gui.iff_hint_white" : "radar_fcs.gui.iff_hint_black", hy);
+            }
+            case INTERCEPT -> {
+                for (int i = 0; i < 2; i++) {
+                    g.drawString(font, Component.translatable("radar_fcs.gui.level"), left + 246, y, 0xA0A0A0, false);
+                    y += ROW;
+                }
+                label(g, "radar_fcs.gui.threat", y);
+                y += ROW;
+                if (s.threat == EngageSettings.Threat.THREATENING) { label(g, "radar_fcs.gui.threat_radius", y); y += ROW; }
+                y += ROW + 4;
+                if (!interceptAvailable()) {
+                    g.drawWordWrap(font, Component.translatable("radar_fcs.gui.intercept_no_mod").withStyle(ChatFormatting.GOLD), left + 8, y,
+                            W - 16, 0xFFAA00);
+                    y += 22;
+                }
+                hint(g, "radar_fcs.gui.intercept_hint." + s.threat.name().toLowerCase(Locale.ROOT), y);
             }
             case DROP -> {
                 y += ROW;
