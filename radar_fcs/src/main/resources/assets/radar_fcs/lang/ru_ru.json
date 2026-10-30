@@ -288,5 +288,19 @@
   "radar_fcs.report.intercept_off": "Перехват: нет мода CBC Interception — снаряды не сбиваются",
   "radar_fcs.gui.col_speed_from": "Скорость от, м/с",
   "radar_fcs.gui.col_speed_to": "до, м/с",
-  "radar_fcs.gui.wheel_hint": "Колесо мыши: до 1 — шагом 0,1, дальше — шагом 1; с Shift — в 10 раз больше"
+  "radar_fcs.gui.wheel_hint": "Колесо мыши: до 1 — шагом 0,1, дальше — шагом 1; с Shift — в 10 раз больше",
+  "radar_fcs.gui.tab.mounts": "Пушки",
+  "radar_fcs.gui.mount_of": "Пушка %s из %s: %s (%s, %s, %s)",
+  "radar_fcs.gui.mount_custom": "Свои цели у этой пушки (иначе — общие настройки вычислителя)",
+  "radar_fcs.gui.type_short.ships": "Сублевелы",
+  "radar_fcs.gui.type_short.players": "Игроки",
+  "radar_fcs.gui.type_short.mobs": "Мобы",
+  "radar_fcs.gui.type_short.entities": "Сущности",
+  "radar_fcs.gui.type_short.shells": "Снаряды",
+  "radar_fcs.gui.type_short.rockets": "Ракеты",
+  "radar_fcs.gui.mounts_none": "К вычислителю не подключено ни одной пушки (радарный линк на станок).",
+  "radar_fcs.gui.mounts_hint_common": "Пушка берёт общие типы целей и уровни вычислителя (вкладки «Цели» и «Перехват»). Включите «свои цели», чтобы задать ей отдельно, по каким типам стрелять и какие главнее: например, одна автопушка только сбивает снаряды, другая бьёт мобов.",
+  "radar_fcs.gui.mounts_hint_own": "Свои типы целей и уровни этой пушки. Остальное общее: белый и чёрный списки (белый — в обход типов), окна скорости, свой-чужой, фильтр угрозы, режим огня, сброс и выбор. Назначенная с монитора цель — для всех пушек.",
+  "radar_fcs.report.own_targets": " [свои цели]",
+  "radar_fcs.gui.mount_unassembled": "станок, не собран"
 }

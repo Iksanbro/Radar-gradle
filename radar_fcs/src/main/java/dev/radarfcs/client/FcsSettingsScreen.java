@@ -30,7 +30,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * (сборка и разборка пушек). Настройки уходят на сервер кнопкой «Сохранить», команды сборки - сразу.
  */
 public final class FcsSettingsScreen extends Screen {
-    private enum Tab { FIRE, TARGETS, LISTS, IFF, INTERCEPT, DROP, PICK, STATUS }
+    private enum Tab { FIRE, TARGETS, LISTS, IFF, INTERCEPT, MOUNTS, DROP, PICK, STATUS }
 
     private static final int W = 480, H = 240, ROW = 22, LIST_ROW = 14, CODE_COLS = 4, LIST_ROWS = 9, IFF_ROWS = 6;
 
@@ -77,6 +77,7 @@ public final class FcsSettingsScreen extends Screen {
             case LISTS -> listsTab(y);
             case IFF -> iffTab(y);
             case INTERCEPT -> interceptTab(y);
+            case MOUNTS -> mountsTab(y);
             case DROP -> dropTab(y);
             case PICK -> pickTab(y);
             case STATUS -> statusTab(y);
@@ -156,6 +157,64 @@ public final class FcsSettingsScreen extends Screen {
             y += ROW;
         }
         cycle(left + 8, y, W - 16, () -> check(s.impactFirst, "radar_fcs.gui.impact_first"), () -> s.impactFirst = !s.impactFirst);
+    }
+
+    /** Выбранная пушка на вкладке «Пушки» (номер в списке пушек вычислителя). */
+    private int mountIndex;
+    private static final int MOUNT_COL = 232, MOUNT_TOGGLE_W = 134;
+
+    /** Пушки вычислителя из сводки блока: тип (N), позиция станка (Q), свои цели (C). */
+    private net.minecraft.nbt.ListTag mountList() {
+        if (minecraft != null && minecraft.level != null && minecraft.level.getBlockEntity(pos) instanceof FireControlBlockEntity be) {
+            return be.summary().getList("Mounts", net.minecraft.nbt.Tag.TAG_COMPOUND);
+        }
+        return new net.minecraft.nbt.ListTag();
+    }
+
+    /**
+     * Свои цели отдельной пушки: выбор пушки, «свои цели» (иначе - общие настройки вычислителя), разрешённые типы
+     * целей и их уровни приоритета.
+     */
+    private void mountsTab(int y) {
+        var ml = mountList();
+        if (ml.isEmpty()) return;
+        mountIndex = Math.floorMod(mountIndex, ml.size());
+        var mt = ml.getCompound(mountIndex);
+        long key = mt.getLong("Q");
+        BlockPos mp = BlockPos.of(key);
+        addRenderableWidget(Button.builder(Component.literal("◀"), b -> { mountIndex--; rebuildWidgets(); })
+                .bounds(left + 8, y, 20, 20).build()).active = ml.size() > 1;
+        String type = mt.getString("N");
+        Component typeName = type.isEmpty() || type.equals("-") || type.equals("?")
+                ? Component.translatable("radar_fcs.gui.mount_unassembled") : Component.literal(type);
+        Button name = addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.mount_of", mountIndex + 1, ml.size(),
+                typeName, mp.getX(), mp.getY(), mp.getZ()), b -> { }).bounds(left + 30, y, W - 60, 20).build());
+        name.active = false;
+        addRenderableWidget(Button.builder(Component.literal("▶"), b -> { mountIndex++; rebuildWidgets(); })
+                .bounds(left + W - 28, y, 20, 20).build()).active = ml.size() > 1;
+        y += ROW;
+        dev.radarfcs.core.MountTargets own = s.mountTargets.get(key);
+        cycle(left + 8, y, W - 16, () -> check(own != null, "radar_fcs.gui.mount_custom"), () -> {
+            if (own != null) s.mountTargets.remove(key);
+            else s.mountTargets.put(key, dev.radarfcs.core.MountTargets.from(s));
+        });
+        y += ROW + HEADER;
+        for (Category c : Category.values()) {
+            int i = c.ordinal();
+            int x = left + 8 + (i % 2) * MOUNT_COL, yy = y + (i / 2) * ROW;
+            String typeKey = "radar_fcs.gui.type_short." + c.name().toLowerCase(Locale.ROOT);
+            if (own != null) {
+                cycle(x, yy, MOUNT_TOGGLE_W, () -> check(own.enabled[i], typeKey), () -> own.enabled[i] = !own.enabled[i]);
+                intNumber(x + MOUNT_TOGGLE_W + 2, yy, () -> own.level[i], v -> own.level[i] = v, 1, EngageSettings.MAX_LEVEL,
+                        v -> Component.literal(Integer.toString(v)));
+            } else {
+                // общие настройки вычислителя - только показать
+                addRenderableWidget(Button.builder(check(s.enabled[i], typeKey), b -> { })
+                        .bounds(x, yy, MOUNT_TOGGLE_W, 20).build()).active = false;
+                addRenderableWidget(Button.builder(Component.literal(Integer.toString(s.level[i])), b -> { })
+                        .bounds(x + MOUNT_TOGGLE_W + 2, yy, 96, 20).build()).active = false;
+            }
+        }
     }
 
     /** Есть ли на сервере мод перехвата (из сводки блока); неизвестно - true. */
@@ -381,6 +440,21 @@ public final class FcsSettingsScreen extends Screen {
                     y += 22;
                 }
                 hint(g, "radar_fcs.gui.intercept_hint." + s.threat.name().toLowerCase(Locale.ROOT), y);
+            }
+            case MOUNTS -> {
+                var ml = mountList();
+                if (ml.isEmpty()) {
+                    hint(g, "radar_fcs.gui.mounts_none", y);
+                    break;
+                }
+                int hy = top + 30 + 2 * ROW + 2;
+                for (int c = 0; c < 2; c++) {
+                    g.drawCenteredString(font, Component.translatable("radar_fcs.gui.level"),
+                            left + 8 + c * MOUNT_COL + MOUNT_TOGGLE_W + 2 + 48, hy, 0xA0A0A0);
+                }
+                int ry = top + 30 + 2 * ROW + HEADER + 3 * ROW + 6;
+                long key = ml.getCompound(Math.floorMod(mountIndex, ml.size())).getLong("Q");
+                hint(g, s.mountTargets.containsKey(key) ? "radar_fcs.gui.mounts_hint_own" : "radar_fcs.gui.mounts_hint_common", ry);
             }
             case DROP -> {
                 y += ROW;

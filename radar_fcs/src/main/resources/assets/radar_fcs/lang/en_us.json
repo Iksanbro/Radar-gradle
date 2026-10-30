@@ -288,5 +288,19 @@
   "radar_fcs.report.intercept_off": "Interception: CBC Interception is not installed, projectiles are not shot down",
   "radar_fcs.gui.col_speed_from": "Speed from, m/s",
   "radar_fcs.gui.col_speed_to": "to, m/s",
-  "radar_fcs.gui.wheel_hint": "Mouse wheel: steps of 0.1 up to 1, then steps of 1; with Shift ten times more"
+  "radar_fcs.gui.wheel_hint": "Mouse wheel: steps of 0.1 up to 1, then steps of 1; with Shift ten times more",
+  "radar_fcs.gui.tab.mounts": "Cannons",
+  "radar_fcs.gui.mount_of": "Cannon %s of %s: %s (%s, %s, %s)",
+  "radar_fcs.gui.mount_custom": "Own targets for this cannon (otherwise the computer's common settings)",
+  "radar_fcs.gui.type_short.ships": "Sublevels",
+  "radar_fcs.gui.type_short.players": "Players",
+  "radar_fcs.gui.type_short.mobs": "Mobs",
+  "radar_fcs.gui.type_short.entities": "Entities",
+  "radar_fcs.gui.type_short.shells": "Shells",
+  "radar_fcs.gui.type_short.rockets": "Rockets",
+  "radar_fcs.gui.mounts_none": "No cannons are linked to this computer (put a radar link on a mount).",
+  "radar_fcs.gui.mounts_hint_common": "This cannon uses the computer's common target types and levels (Targets and Intercept tabs). Turn on own targets to set what it shoots at and what comes first: e.g. one autocannon only shoots down shells, another hits mobs.",
+  "radar_fcs.gui.mounts_hint_own": "Own target types and levels of this cannon. The rest is common: white and black lists (whitelist bypasses types), speed windows, IFF, threat filter, fire mode, drop and pick rules. A target designated on a monitor goes to all cannons.",
+  "radar_fcs.report.own_targets": " [own targets]",
+  "radar_fcs.gui.mount_unassembled": "mount, not assembled"
 }

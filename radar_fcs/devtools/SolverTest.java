@@ -483,6 +483,26 @@ public class SolverTest {
         System.out.println("interception: " + (failures == before ? "all checks passed" : (failures - before) + " failed"));
     }
 
+    /** Свои цели пушки: типы и уровни вместо общих; сенсор берёт объединение типов. */
+    static void mountTargets() {
+        EngageSettings s = new EngageSettings();
+        int mobs = EngageSettings.Category.MOBS.ordinal(), ent = EngageSettings.Category.ENTITIES.ordinal();
+        s.enabled[ent] = false;
+        MountTargets mt = MountTargets.from(s);
+        mt.enabled[mobs] = false;
+        mt.enabled[ent] = true;
+        mt.level[ent] = 5;
+        s.mountTargets.put(42L, mt);
+        EngageSettings a = s.forMount(42L), b = s.forMount(7L), u = s.sensorUnion();
+        boolean ok = !a.enabled[mobs] && a.enabled[ent] && a.level[ent] == 5 && b == s && b.enabled[mobs] && !b.enabled[ent]
+                && u.enabled[mobs] && u.enabled[ent] && s.copy().mountTargets.get(42L) != mt && s.copy().mountTargets.get(42L).level[ent] == 5;
+        mt.level[mobs] = 99;
+        s.sanitize();
+        ok &= mt.level[mobs] == EngageSettings.MAX_LEVEL;
+        if (!ok) failures++;
+        System.out.println("mount targets: " + (ok ? "all checks passed" : "failed"));
+    }
+
     /** Шаг колеса мыши: до 1 по 0.1, дальше по 1, Shift - x10; 0 - «нет». */
     static void wheelSteps() {
         double[][] cases = {
@@ -520,6 +540,7 @@ public class SolverTest {
         targetPicker();
         interception();
         wheelSteps();
+        mountTargets();
         if (failures > 0) {
             System.out.println("FAILURES: " + failures);
             System.exit(1);

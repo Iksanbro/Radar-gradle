@@ -83,6 +83,12 @@ public final class EngageSettings {
     public final boolean[] enabled = {true, false, true, true, true, true};
     /** Уровень приоритета типа цели: 1..MAX_LEVEL, выше - главнее (летящие снаряды - угроза прямо сейчас). */
     public final int[] level = {2, 3, 1, 1, 4, 4};
+    /**
+     * Свои цели отдельных пушек (ключ - позиция станка, BlockPos.asLong): разрешённые типы и уровни вместо общих.
+     * Пушки без записи берут общие настройки.
+     */
+    public final java.util.LinkedHashMap<Long, MountTargets> mountTargets = new java.util.LinkedHashMap<>();
+    public static final int MAX_MOUNT_TARGETS = 64;
     /** Перехват: какие снаряды и ракеты брать. */
     public Threat threat = Threat.THREATENING;
     /** Перехват: «угрожающий» - проходит ближе стольких блоков от батареи или своей зоны. */
@@ -131,6 +137,24 @@ public final class EngageSettings {
     public int switchTicks = 100;
 
     public boolean enabled(Category c) { return enabled[c.ordinal()]; }
+
+    /** Настройки для пушки key: со своими целями пушки (типы и уровни), если они заданы, иначе - эти же. */
+    public EngageSettings forMount(long key) {
+        MountTargets mt = mountTargets.get(key);
+        if (mt == null) return this;
+        EngageSettings s = copy();
+        System.arraycopy(mt.enabled, 0, s.enabled, 0, CATEGORIES);
+        System.arraycopy(mt.level, 0, s.level, 0, CATEGORIES);
+        return s;
+    }
+
+    /** Для сенсора: тип цели разрешён, если он разрешён вычислителю или хотя бы одной пушке со своими целями. */
+    public EngageSettings sensorUnion() {
+        if (mountTargets.isEmpty()) return this;
+        EngageSettings s = copy();
+        for (MountTargets mt : mountTargets.values()) for (int i = 0; i < CATEGORIES; i++) s.enabled[i] |= mt.enabled[i];
+        return s;
+    }
 
     /** Уровень приоритета цели по её типу (снаряд большой пушки и ракета - свои уровни). */
     public int level(Track t) { return level[Category.of(t).ordinal()]; }
@@ -185,6 +209,9 @@ public final class EngageSettings {
         if (switchMode == null) switchMode = SwitchMode.NONE;
         if (threat == null) threat = Threat.THREATENING;
         threatRadius = clamp(threatRadius, 1, MAX_THREAT_RADIUS);
+        mountTargets.values().removeIf(java.util.Objects::isNull);
+        while (mountTargets.size() > MAX_MOUNT_TARGETS) mountTargets.remove(mountTargets.keySet().iterator().next());
+        for (MountTargets mt : mountTargets.values()) for (int i = 0; i < CATEGORIES; i++) mt.level[i] = clamp(mt.level[i], 1, MAX_LEVEL);
         return this;
     }
 
@@ -214,6 +241,7 @@ public final class EngageSettings {
         s.threat = threat;
         s.threatRadius = threatRadius;
         s.impactFirst = impactFirst;
+        mountTargets.forEach((k, v) -> s.mountTargets.put(k, v.copy()));
         return s;
     }
 

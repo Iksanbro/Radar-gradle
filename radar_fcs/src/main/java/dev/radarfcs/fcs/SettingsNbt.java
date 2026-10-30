@@ -35,6 +35,17 @@ public final class SettingsNbt {
         t.putString("Threat", s.threat.name());
         t.putInt("ThreatRadius", s.threatRadius);
         t.putBoolean("ImpactFirst", s.impactFirst);
+        net.minecraft.nbt.ListTag mts = new net.minecraft.nbt.ListTag();
+        s.mountTargets.forEach((pos, mt) -> {
+            CompoundTag m = new CompoundTag();
+            m.putLong("Pos", pos);
+            byte[] e = new byte[EngageSettings.CATEGORIES];
+            for (int i = 0; i < e.length; i++) e[i] = (byte) (mt.enabled[i] ? 1 : 0);
+            m.putByteArray("Types", e);
+            m.putIntArray("Levels", mt.level.clone());
+            mts.add(m);
+        });
+        if (!mts.isEmpty()) t.put("MountTargets", mts);
         return t;
     }
 
@@ -75,6 +86,16 @@ public final class SettingsNbt {
         s.threat = enumOr(EngageSettings.Threat.class, t.getString("Threat"), s.threat);
         if (t.contains("ThreatRadius")) s.threatRadius = t.getInt("ThreatRadius");
         if (t.contains("ImpactFirst")) s.impactFirst = t.getBoolean("ImpactFirst");
+        net.minecraft.nbt.ListTag mts = t.getList("MountTargets", net.minecraft.nbt.Tag.TAG_COMPOUND);
+        for (int k = 0; k < mts.size(); k++) {
+            CompoundTag m = mts.getCompound(k);
+            dev.radarfcs.core.MountTargets mt = dev.radarfcs.core.MountTargets.from(s);
+            byte[] e = m.getByteArray("Types");
+            for (int i = 0; i < Math.min(e.length, EngageSettings.CATEGORIES); i++) mt.enabled[i] = e[i] != 0;
+            int[] l = m.getIntArray("Levels");
+            for (int i = 0; i < Math.min(l.length, EngageSettings.CATEGORIES); i++) mt.level[i] = l[i];
+            s.mountTargets.put(m.getLong("Pos"), mt);
+        }
         return s.sanitize();
     }
 

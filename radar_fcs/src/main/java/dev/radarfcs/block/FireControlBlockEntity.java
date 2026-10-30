@@ -135,7 +135,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             for (MountState m : mounts.values()) FcsControl.cease(level, m, Status.NO_RADAR);
         } else {
             if (now % FcsConfig.SCAN_INTERVAL.get() == 0) {
-                sensor.sense(level, live, context(level), now, effectiveSettings(), t -> dropped.contains(t.id), des);
+                sensor.sense(level, live, context(level), now, sensorSettings(), t -> dropped.contains(t.id), des);
                 // цели, которых больше нет, - из учёта выстрелов и сброса
                 if (now % 100 == 0) {
                     shotsAt.keySet().removeIf(id -> sensor.get(id) == null);
@@ -299,9 +299,20 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
 
     /** Настройки, которые действуют: в списках - первые capacity записей. */
     public EngageSettings effectiveSettings() {
-        if (effective == null) effective = settings.limited(capacity);
+        if (effective == null) {
+            effective = settings.limited(capacity);
+            sensorEffective = effective.sensorUnion();
+        }
         return effective;
     }
+
+    /** Для сенсора: типы целей, разрешённые вычислителю или хотя бы одной пушке со своими целями. */
+    private EngageSettings sensorSettings() {
+        effectiveSettings();
+        return sensorEffective;
+    }
+
+    @Nullable private EngageSettings sensorEffective;
 
     public EnergyBuffer energy() {
         return energy;
@@ -457,6 +468,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             CompoundTag mt = new CompoundTag();
             mt.putInt("S", m.status.ordinal());
             mt.putString("N", m.mount == null ? "?" : m.mount.typeName());
+            mt.putLong("Q", m.pos.asLong());
+            if (settings.mountTargets.containsKey(m.pos.asLong())) mt.putBoolean("C", true);
             if (m.targetName != null && (m.status == Status.FIRE || m.status == Status.AIMING || m.status == Status.HOLD
                     || m.status == Status.BLOCKED_FRIENDLY || m.status == Status.BLOCKED_TERRAIN || m.status == Status.NO_AMMO
                     || m.status == Status.NO_POWER || m.status == Status.NO_CONTROLLER || m.status == Status.PAUSE)) {
@@ -542,6 +555,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                         String.format(Locale.ROOT, "%.1f", m.getFloat("M"))).withStyle(ChatFormatting.DARK_GRAY));
             }
             if (m.contains("X")) line.append(Component.literal(" (" + m.getString("X") + ")").withStyle(ChatFormatting.DARK_GRAY));
+            if (m.getBoolean("C")) line.append(Component.translatable("radar_fcs.report.own_targets").withStyle(ChatFormatting.AQUA));
             if (full && m.contains("P") && m.getFloat("P") >= 0.5f) line.append(Component.translatable("radar_fcs.report.spread",
                     String.format(Locale.ROOT, "%.1f", m.getFloat("P"))).withStyle(m.getFloat("P") >= 2f ? ChatFormatting.GOLD : ChatFormatting.DARK_GRAY));
             if (full && m.getInt("L") > 0) line.append(Component.translatable("radar_fcs.report.learned", m.getInt("L"))

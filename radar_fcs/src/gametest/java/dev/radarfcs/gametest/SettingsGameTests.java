@@ -51,6 +51,8 @@ public class SettingsGameTests {
     @AfterBatch(batch = "set_burst") public static void a1(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "set_single") public static void b2(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "set_single") public static void a2(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "set_mounts") public static void b12(ServerLevel l) { FcsGameTests.direct(l); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "set_mounts") public static void a12(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "set_speed") public static void b11(ServerLevel l) { FcsGameTests.direct(l); }
     @net.minecraft.gametest.framework.AfterBatch(batch = "set_speed") public static void a11(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "set_types") public static void b3(ServerLevel l) { FcsGameTests.direct(l); }
@@ -239,6 +241,64 @@ public class SettingsGameTests {
         });
         h.succeedWhen(() -> {
             if (h.getTick() <= 150 || rounds.isEmpty()) throw new GameTestAssertException("no fire after lowering the mob speed window yet");
+        });
+    }
+
+    /**
+     * Свои цели пушек: у вычислителя сущности выключены; автопушке A разрешены только мобы, автопушке B - только
+     * сущности (уровень 5). A ведёт хаска и никогда лодку, B - лодку и никогда хаска. Настройки пушек сохраняются.
+     */
+    @GameTest(template = ARENA, batch = "set_mounts", timeoutTicks = 400)
+    public static void perMountTargets(GameTestHelper h) {
+        floor(h);
+        BlockPos mountB = new BlockPos(10, 1, 22);
+        autocannon(h, MOUNT, Direction.EAST, 4, 64);
+        autocannon(h, mountB, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcs(h, FCS);
+        long keyA = h.absolutePos(MOUNT).asLong(), keyB = h.absolutePos(mountB).asLong();
+        int mobs = EngageSettings.Category.MOBS.ordinal(), ent = EngageSettings.Category.ENTITIES.ordinal();
+        configure(be, s -> {
+            s.enabled[ent] = false;
+            dev.radarfcs.core.MountTargets a = dev.radarfcs.core.MountTargets.from(s);
+            a.enabled[ent] = false;
+            s.mountTargets.put(keyA, a);
+            dev.radarfcs.core.MountTargets b = dev.radarfcs.core.MountTargets.from(s);
+            b.enabled[mobs] = false;
+            b.enabled[ent] = true;
+            b.level[ent] = 5;
+            s.mountTargets.put(keyB, b);
+        });
+        var saved = dev.radarfcs.fcs.SettingsNbt.read(dev.radarfcs.fcs.SettingsNbt.write(be.settings()));
+        if (saved.mountTargets.size() != 2 || !saved.mountTargets.get(keyB).enabled[ent] || saved.mountTargets.get(keyB).level[ent] != 5) {
+            h.fail("mount targets not saved");
+        }
+        Mob husk = tough(movingTarget(h, EntityType.HUSK, new Vec3(40.5, 1, 40.5), 0.12, 12));
+        net.minecraft.world.entity.vehicle.Boat boat = new net.minecraft.world.entity.vehicle.Boat(EntityType.BOAT, h.getLevel());
+        Vec3 start = h.absoluteVec(new Vec3(40.5, 1, 10.5));
+        boat.setPos(start);
+        h.getLevel().addFreshEntity(boat);
+        java.util.concurrent.atomic.AtomicInteger tick = new java.util.concurrent.atomic.AtomicInteger();
+        h.onEachTick(() -> {
+            if (!boat.isAlive()) return;
+            double off = (tick.getAndIncrement() % 100) * 0.12;
+            boat.setPos(start.x, start.y, start.z + off);
+            boat.setDeltaMovement(Vec3.ZERO);
+        });
+        String huskId = husk.getUUID().toString(), boatId = boat.getUUID().toString();
+        java.util.Set<String> aTargets = new java.util.HashSet<>(), bTargets = new java.util.HashSet<>();
+        logEvery(h, be, "set_mounts", 40);
+        h.onEachTick(() -> {
+            for (dev.radarfcs.fcs.MountState m : be.mountStates()) {
+                if (m.targetId == null) continue;
+                if (m.pos.asLong() == keyA) aTargets.add(m.targetId);
+                if (m.pos.asLong() == keyB) bTargets.add(m.targetId);
+            }
+            if (aTargets.contains(boatId)) throw new GameTestAssertException("cannon A (mobs only) aimed at the boat");
+            if (bTargets.contains(huskId)) throw new GameTestAssertException("cannon B (entities only) aimed at the husk");
+        });
+        h.succeedWhen(() -> {
+            if (!aTargets.contains(huskId)) throw new GameTestAssertException("cannon A has not taken the husk yet");
+            if (!bTargets.contains(boatId)) throw new GameTestAssertException("cannon B has not taken the boat yet");
         });
     }
 

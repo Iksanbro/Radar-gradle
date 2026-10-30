@@ -115,10 +115,19 @@ public final class DevScreenshots {
                 st.fireMode = dev.radarfcs.core.EngageSettings.FireMode.BURST;
                 st.burstLength = 5;
                 st.switchMode = dev.radarfcs.core.EngageSettings.SwitchMode.AFTER_SHOTS;
+                // у первой пушки - свои цели (вкладка «Пушки»): только снаряды и ракеты, ракеты главнее
+                if (!be.mountStates().isEmpty()) {
+                    var mt = dev.radarfcs.core.MountTargets.from(st);
+                    java.util.Arrays.fill(mt.enabled, false);
+                    mt.enabled[dev.radarfcs.core.EngageSettings.Category.SHELLS.ordinal()] = true;
+                    mt.enabled[dev.radarfcs.core.EngageSettings.Category.ROCKETS.ordinal()] = true;
+                    mt.level[dev.radarfcs.core.EngageSettings.Category.ROCKETS.ordinal()] = 5;
+                    st.mountTargets.put(be.mountStates().get(0).pos.asLong(), mt);
+                }
                 be.applySettings(st, null);
             }
         });
-        if (tick >= 470 && tick < 550 && (tick - 470) % 10 == 0) {
+        if (tick >= 470 && tick < 560 && (tick - 470) % 10 == 0) {
             int tab = (tick - 470) / 10;
             // настройки клиентского блока (без кодов «свой-чужой» - примеры кодов подставляются для снимка)
             if (tab == 0 && mc.level != null && mc.level.getBlockEntity(base) instanceof dev.radarfcs.block.FireControlBlockEntity be) {
@@ -129,9 +138,9 @@ public final class DevScreenshots {
                 sc.showTab(tab);
             }
         }
-        if (tick >= 475 && tick < 555 && (tick - 475) % 10 == 0) shot(mc, "fcs_settings_" + (tick - 475) / 10);
+        if (tick >= 475 && tick < 565 && (tick - 475) % 10 == 0) shot(mc, "fcs_settings_" + (tick - 475) / 10);
         // радарный линк: настроенный на сеть сцены линк в руке, взгляд на линк станка - вся сеть подсвечена
-        if (tick == 550) {
+        if (tick == 568) {
             if (mc.screen != null) mc.setScreen(null);
             server.execute(() -> {
                 ServerPlayer p = server.getPlayerList().getPlayers().get(0);

@@ -151,7 +151,11 @@ public final class FcsControl {
         // переключение по приоритету и по правилу; назначенная с монитора - вне очереди.
         List<Track> pool = new ArrayList<>(active);
         pool.removeIf(t -> fcs.isDropped(t.id));
-        List<Track> cands = TargetPicker.order(pool, pivot, settings, m.pick, now, FcsConfig.TARGET_SWITCH_RATIO.get(), designated);
+        // свои цели пушки: разрешённые типы и уровни (назначенная вручную и белый список - в обход типов)
+        EngageSettings ms = fcs.effectiveSettings().forMount(m.pos.asLong());
+        pool.removeIf(t -> !t.id.equals(designated) && !TargetLists.matches(ms.whitelist, t)
+                && !ms.enabled(EngageSettings.Category.of(t)));
+        List<Track> cands = TargetPicker.order(pool, pivot, ms, m.pick, now, FcsConfig.TARGET_SWITCH_RATIO.get(), designated);
         // Команда станку исполнится к следующему тику: решаем для снаряда, вылетающего через тик.
         BallisticSolver.Solution sol = null;
         Track target = null;
