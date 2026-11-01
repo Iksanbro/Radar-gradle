@@ -47,6 +47,16 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
     private static final int ENGAGED = 0xFFFF3030;
     private static final int DESIGNATED = 0xFFFFFF40;
     private static final int TEXT = 0xFF70FF90;
+    private static final int RING_TEXT = 0xFF5FC878;
+
+    /** Подпись круга дальности: метры (от 1000 - километры с десятыми). */
+    static String ringLabel(float meters) {
+        if (meters >= 1000) {
+            float km = Math.round(meters / 100f) / 10f;
+            return (km == Math.rint(km) ? Integer.toString((int) km) : Float.toString(km)) + " км";
+        }
+        return Math.round(meters) + " м";
+    }
 
     private final Font font;
 
@@ -209,6 +219,19 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
             LabelLayout.Label lb = pl.label();
             rect(vc, m, lb.x(), pl.y() - lh / 2 - ls, lb.x() + lb.w(), pl.y() + lh / 2, 0.0027f, 0xB0000000);
         }
+        // дистанции кругов: на диагонали вниз-вправо, сразу за кругом - подписи не теснятся у центра
+        String[] ringText = new String[3];
+        float[] ringX = new float[3], ringY = new float[3];
+        float diag = (float) Math.sqrt(0.5);
+        for (int ri = 1; ri <= 3; ri++) {
+            ringText[ri - 1] = ringLabel(range * ri / 3f);
+            float tw = font.width(ringText[ri - 1]) * ls;
+            float rr = r * ri / 3f;
+            ringX[ri - 1] = cx + rr * diag + 2 * ls;
+            ringY[ri - 1] = cy - rr * diag - lh - ls;
+            if (ri == 3) ringX[2] = Math.min(ringX[2], cx + r - tw);    // крайняя - не за краем круга
+            rect(vc, m, ringX[ri - 1] - ls, ringY[ri - 1] - ls, ringX[ri - 1] + tw + ls, ringY[ri - 1] + lh, 0.0025f, 0x90000000);
+        }
 
         // сведения о цели под взглядом (или назначенной): подложка - квадом здесь, текст - ниже. Свой фон текста шрифта
         // лежит почти в одной плоскости с буквами и на расстоянии перекрывает их (мерцание по глубине)
@@ -230,6 +253,14 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         }
 
         // подписи - последними: текст берёт из буферов свой тип рендера, и буфер квадов после него недействителен
+        for (int ri = 0; ri < 3; ri++) {
+            ps.pushPose();
+            ps.translate(ringX[ri], ringY[ri] + lh, 0.003f);
+            ps.scale(ls, -ls, ls);
+            font.drawInBatch(ringText[ri], 0, 0, RING_TEXT, false, ps.last().pose(), buffers, Font.DisplayMode.POLYGON_OFFSET, 0,
+                    LightTexture.FULL_BRIGHT);
+            ps.popPose();
+        }
         for (LabelLayout.Placed pl : placed) {
             LabelLayout.Label lb = pl.label();
             ps.pushPose();

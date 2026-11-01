@@ -196,6 +196,20 @@ public final class RadarMonitorScreen extends Screen {
         for (int k = 1; k <= 3; k++) circle(g, cx, cy, R * k / 3f, 0xFF40C060);
         g.fill(cx - R, cy, cx + R, cy + 1, 0x6040C060);
         g.fill(cx, cy - R, cx + 1, cy + R, 0x6040C060);
+        // дистанции кругов: на диагонали вниз-вправо, сразу за кругом
+        float diag = (float) Math.sqrt(0.5);
+        for (int k = 1; k <= 3; k++) {
+            String txt = RadarMonitorRenderer.ringLabel(m.displayRange() * k / 3f);
+            g.pose().pushPose();
+            float sc = 0.75f, rr = R * k / 3f;
+            float tx = cx + rr * diag + 2, ty = cy + rr * diag + 1;
+            if (k == 3) tx = Math.min(tx, cx + R - font.width(txt) * sc);
+            g.pose().translate(tx, ty, 0);
+            g.pose().scale(sc, sc, 1f);
+            g.fill(-1, -1, font.width(txt) + 1, font.lineHeight, 0x90000000);
+            g.drawString(font, txt, 0, 0, 0xFF5FC878, false);
+            g.pose().popPose();
+        }
         if (!m.powered()) {
             g.drawCenteredString(font, Component.translatable("radar_fcs.monitor.no_energy_short"), cx, cy - 4, 0xFF5050);
             return;
