@@ -1107,6 +1107,27 @@ public class FcsGameTests {
     // Пушки из сборки пользователя против цели 70 м/с поперёк линии огня (как fastauto)
     private static final Vec3 USER_START = new Vec3(46.5, 9, -37.5), USER_VEL = new Vec3(0, 0, 3.5);
 
+    @BeforeBatch(batch = "far_qf") public static void bf1(ServerLevel l) { direct(l, 220); }
+    @AfterBatch(batch = "far_qf") public static void af1(ServerLevel l) { cleanup(l); }
+    @BeforeBatch(batch = "headon") public static void bf2(ServerLevel l) { direct(l, 160); }
+    @AfterBatch(batch = "headon") public static void af2(ServerLevel l) { cleanup(l); }
+
+    /** Дальняя стрельба: скорострельная большая пушка (CBC-AT) по цели в 150 блоках, идущей поперёк 5 м/с. */
+    @GameTest(template = ARENA, batch = "far_qf", timeoutTicks = 400)
+    public static void longRangeQf(GameTestHelper h) {
+        fastTarget(h, "far_qf", new Vec3(150.5, 1, 6.5), new Vec3(0, 0, 0.25), 100, () -> {
+            if (!qfRifledCannon(h, new BlockPos(10, 1, 32), Direction.EAST, "steel", 4)) return false;
+            qfAutoloader(h, new BlockPos(10, 1, 32), Direction.EAST, 10);
+            return true;
+        });
+    }
+
+    /** Цель 60 м/с летит прямо на батарею (и обратно): почти нулевой боковой угол, быстрое сближение. */
+    @GameTest(template = ARENA, batch = "headon", timeoutTicks = 400)
+    public static void headOnTarget(GameTestHelper h) {
+        fastAutocannon(h, "headon", new Vec3(120.5, 6, 30.5), new Vec3(-3.0, 0, 0), 28);
+    }
+
     @BeforeBatch(batch = "user_auto") public static void bu1(ServerLevel l) { direct(l, 160); }
     @AfterBatch(batch = "user_auto") public static void au1(ServerLevel l) { cleanup(l); }
     @BeforeBatch(batch = "user_rotary") public static void bu2(ServerLevel l) { direct(l, 160); }

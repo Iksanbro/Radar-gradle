@@ -64,7 +64,11 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         ps.translate(0.5, 0.5, 0.5);
         // локально: X - вправо от зрителя, Y - вверх, Z - к зрителю; центр ведущего блока в (0,0,0)
         ps.mulPose(Axis.YP.rotationDegrees(-f.toYRot()));
-        ps.translate(0, 0, 0.5 + 0.003);
+        // Картинка - слоями квадов на долях миллиблока друг над другом. Издалека точности буфера глубины на такие
+        // зазоры не хватало: слои и лицевая сторона блока мерцали друг сквозь друга («сетка» на части экрана).
+        // Отступ от блока - 0.01, зазоры между слоями растянуты в 10 раз.
+        ps.translate(0, 0, 0.5 + 0.01);
+        ps.scale(1, 1, 10);
         Matrix4f m = ps.last().pose();
         VertexConsumer vc = buffers.getBuffer(RenderType.debugQuads());
 
@@ -93,17 +97,27 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         rect(vc, m, cx - r, cy - t / 3, cx + r, cy + t / 3, 0.0008f, GRID);
         rect(vc, m, cx - t / 3, cy - r, cx + t / 3, cy + r, 0.0008f, GRID);
 
-        // развёртка: бегущий сектор с затуханием
-        float time = be.getLevel().getGameTime() + partialTick;
-        float a0 = (time * 4f) % 360f;
-        int seg = 16;
-        for (int i = 0; i < seg; i++) {
-            float from = a0 - 36f * (i + 1) / seg, to = a0 - 36f * i / seg;
-            int alpha = (int) (110 * (1 - i / (float) seg));
-            wedge(vc, m, cx, cy, r, from, to, 0.0012f, (alpha << 24) | SWEEP);
+        float range = Math.max(1f, be.displayRange());
+        // лучи радаров сети: от самого радара, по его курсу и ширине обзора; у вращающегося - след за лучом
+        double time = be.getLevel().getGameTime() + partialTick;
+        for (Site site : be.sites()) {
+            if (!Float.isFinite(site.angle())) continue;
+            float[] sp = toScreen(site.dx(), site.dz(), f, right, range, r, cx, cy);
+            if (sp == null) continue;
+            float len = site.range() > 0 ? site.range() * r / range : 2 * r;
+            float heading = site.angleAt(time), half = Math.max(1f, Math.min(180f, site.fov() / 2));
+            beam(vc, m, f, right, sp, heading - half, heading + half, len, cx, cy, r, 0.0012f, (70 << 24) | SWEEP);
+            if (site.speed() != 0) {
+                float dir = Math.signum(site.speed()), trail = 40f;
+                int seg = 10;
+                for (int i = 0; i < seg; i++) {
+                    float a1 = heading - dir * (half + trail * i / seg), a2 = heading - dir * (half + trail * (i + 1) / seg);
+                    int alpha = (int) (60 * (1 - (i + 1) / (float) (seg + 1)));
+                    beam(vc, m, f, right, sp, Math.min(a1, a2), Math.max(a1, a2), len, cx, cy, r, 0.0011f, (alpha << 24) | SWEEP);
+                }
+            }
         }
 
-        float range = Math.max(1f, be.displayRange());
         float s = Math.max(0.012f, r * 0.045f);
         for (Site site : be.sites()) {
             float[] p = toScreen(site.dx(), site.dz(), f, right, range, r, cx, cy);
@@ -354,13 +368,34 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         }
     }
 
-    /** Сектор от from до to градусов (0 - вверх, по часовой). */
-    private static void wedge(VertexConsumer vc, Matrix4f m, float cx, float cy, float r, float from, float to, float z, int argb) {
-        double a = Math.toRadians(from), b = Math.toRadians(to);
-        vc.addVertex(m, cx, cy, z).setColor(argb);
-        vc.addVertex(m, cx + (float) Math.sin(a) * r, cy + (float) Math.cos(a) * r, z).setColor(argb);
-        vc.addVertex(m, cx + (float) Math.sin(b) * r, cy + (float) Math.cos(b) * r, z).setColor(argb);
-        vc.addVertex(m, cx, cy, z).setColor(argb);
+    /**
+     * Луч радара на экране: веер из точки радара p между мировыми курсами from..to (градусы, 0 - на юг, 90 - на
+     * восток) длиной len, обрезанный краем круга развёртки.
+     */
+    private static void beam(VertexConsumer vc, Matrix4f m, Direction f, Direction right, float[] p, float from, float to, float len,
+                             float cx, float cy, float r, float z, int argb) {
+        int n = Math.max(2, (int) Math.ceil((to - from) / 4));
+        float px = 0, py = 0;
+        for (int i = 0; i <= n; i++) {
+            double a = Math.toRadians(from + (to - from) * i / n);
+            double wx = Math.sin(a), wz = Math.cos(a);
+            float u = (float) (wx * right.getStepX() + wz * right.getStepZ());
+            float v = (float) -(wx * f.getStepX() + wz * f.getStepZ());
+            // до края круга: |p + t*(u,v) - c| = r
+            float qx = p[0] - cx, qy = p[1] - cy;
+            float b = qx * u + qy * v, c = qx * qx + qy * qy - r * r;
+            float t = (float) (-b + Math.sqrt(Math.max(0, b * b - c)));
+            t = Math.max(0, Math.min(len, t));
+            float x = p[0] + u * t, y = p[1] + v * t;
+            if (i > 0) {
+                vc.addVertex(m, p[0], p[1], z).setColor(argb);
+                vc.addVertex(m, px, py, z).setColor(argb);
+                vc.addVertex(m, x, y, z).setColor(argb);
+                vc.addVertex(m, p[0], p[1], z).setColor(argb);
+            }
+            px = x;
+            py = y;
+        }
     }
 
     @Override

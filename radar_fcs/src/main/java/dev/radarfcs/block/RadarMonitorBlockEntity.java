@@ -91,7 +91,16 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     }
 
     /** Радар канала на экране. */
-    public record Site(float dx, float dz, int type) {}
+    /**
+     * Радар сети на экране: смещение, его луч - мировой курс angle (градусы, 0 - на юг, 90 - на восток; NaN -
+     * неизвестен), ширина fov, скорость поворота speed (градусов за тик) на игровой тик stamp, дальность range.
+     */
+    public record Site(float dx, float dz, int type, float angle, float fov, float speed, float range, long stamp) {
+        /** Курс луча на момент time (вращающийся радар доворачивается между обновлениями монитора). */
+        public float angleAt(double time) {
+            return speed == 0 ? angle : (float) ((angle + speed * (time - stamp)) % 360.0);
+        }
+    }
 
     private record Target(UUID id, String name, double dx, double dz, double dist) {}
 
@@ -351,7 +360,9 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         for (BlockEntity r : radars) {
             Vec3 o = SableCompat.toWorld(level, Vec3.atCenterOf(RadarLink.worldPos(r)));
             reach = Math.max(reach, o.subtract(center).horizontalDistance() + RadarLink.range(r));
-            siteList.add(new Site((float) (o.x - center.x), (float) (o.z - center.z), 0));
+            float speed = RadarLink.sweepSpeed(r);
+            siteList.add(new Site((float) (o.x - center.x), (float) (o.z - center.z), 0, RadarLink.angle(r),
+                    RadarLink.fov(r, speed != 0), speed, RadarLink.range(r), speed != 0 ? now : 0));
         }
         UUID ship = SableCompat.containingId(level, worldPosition);
         Vec origin = new Vec(center.x, center.y, center.z);
@@ -368,7 +379,6 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         engaged.values().removeIf(until -> until < now);
         List<Target> tl = new ArrayList<>();
         List<Blip> bl = new ArrayList<>();
-        double farthest = 0;
         for (Track t : sensor.all()) {
             UUID id;
             try {
@@ -381,7 +391,6 @@ public class RadarMonitorBlockEntity extends BlockEntity {
             if (!des && !shows(show, t)) continue;
             double dx = t.pos.x() - center.x, dz = t.pos.z() - center.z;
             double dist = Math.hypot(dx, dz);
-            if (t.active || des) farthest = Math.max(farthest, dist);
             if (!t.friendly) tl.add(new Target(id, t.name, dx, dz, dist));
             int flags = (engaged.containsKey(id) ? FLAG_ENGAGED : 0) | (des ? FLAG_DESIGNATED : 0)
                     | (t.kind == Track.Kind.SHIP ? FLAG_SHIP : 0) | (t.friendly ? FLAG_FRIENDLY : 0)
@@ -398,10 +407,9 @@ public class RadarMonitorBlockEntity extends BlockEntity {
                 ml.add(new Mark((float) dx, (float) dz, info.name(), iff.accepts(info.code())));
             }
         }
-        // авто: чтобы поместились все цели, но не дальше, чем видят радары
+        // авто: всё, что видят радары сети; от целей не зависит (захват цели масштаб не меняет)
         double coverage = niceRange(reach);
-        displayRange = (float) (scaleIndex != 0 ? SCALES[scaleIndex]
-                : farthest > 0 ? Math.min(coverage, niceRange(Math.max(48, farthest * 1.25))) : coverage);
+        displayRange = (float) (scaleIndex != 0 ? SCALES[scaleIndex] : coverage);
         tl.removeIf(t -> t.dist() > displayRange);
         ml.removeIf(m -> Math.hypot(m.dx(), m.dz()) > displayRange);
         marks = ml.size() > MAX_BLIPS ? List.copyOf(ml.subList(0, MAX_BLIPS)) : ml;
@@ -617,6 +625,15 @@ public class RadarMonitorBlockEntity extends BlockEntity {
                 c.putFloat("x", s.dx());
                 c.putFloat("z", s.dz());
                 c.putByte("k", (byte) s.type());
+                if (Float.isFinite(s.angle())) {
+                    c.putFloat("a", s.angle());
+                    c.putFloat("w", s.fov());
+                    c.putFloat("r", s.range());
+                    if (s.speed() != 0) {
+                        c.putFloat("s", s.speed());
+                        c.putLong("t", s.stamp());
+                    }
+                }
                 sl.add(c);
             }
             t.put("Sites", sl);
@@ -656,7 +673,8 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         List<Site> sl = new ArrayList<>();
         for (Tag tag : t.getList("Sites", Tag.TAG_COMPOUND)) {
             CompoundTag c = (CompoundTag) tag;
-            sl.add(new Site(c.getFloat("x"), c.getFloat("z"), c.getByte("k")));
+            sl.add(new Site(c.getFloat("x"), c.getFloat("z"), c.getByte("k"), c.contains("a") ? c.getFloat("a") : Float.NaN,
+                    c.getFloat("w"), c.getFloat("s"), c.getFloat("r"), c.getLong("t")));
         }
         sites = sl;
         List<Mark> mk = new ArrayList<>();

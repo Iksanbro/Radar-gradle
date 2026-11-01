@@ -74,6 +74,14 @@ public final class DevScreenshots {
                 mon.setLabels(dev.radarfcs.block.RadarMonitorBlockEntity.LABELS_ALWAYS);
             }
         });
+        if (tick == 40 && radarBearing != null) server.execute(() -> {
+            var be = server.overworld().getBlockEntity(radarBearing);
+            try {
+                if (be != null) be.getClass().getMethod("assemble").invoke(be);
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                FcsMod.LOG.warn("[radar_fcs dev] radar bearing not assembled: {}", e.toString());
+            }
+        });
         if (tick == 50) shot(mc, "fcs_aiming");
         if (tick == 200) shot(mc, "fcs_overview");
         if (tick == 240) server.execute(() -> {
@@ -98,8 +106,19 @@ public final class DevScreenshots {
             look(server, pt, new Vec3(base.getX() - 7.5, base.getY() + 1.4, base.getZ() - 1.5));
         });
         if (tick == 338) shot(mc, "radar_monitor");
+        if (tick == 358) shot(mc, "radar_monitor_b");
+        if (tick == 336 || tick == 356) {
+            if (mc.level != null && mc.level.getBlockEntity(base.offset(-3, 0, -3)) instanceof dev.radarfcs.block.RadarMonitorBlockEntity mon) {
+                FcsMod.LOG.info("[radar_fcs dev] monitor sites at {}: {} range {}", tick, mon.sites(), mon.displayRange());
+            }
+            server.execute(() -> {
+                var be = radarBearing == null ? null : server.overworld().getBlockEntity(radarBearing);
+                if (be != null) FcsMod.LOG.info("[radar_fcs dev] bearing {} angle {} speed {} running {}", be.getClass().getSimpleName(),
+                        dev.radarfcs.compat.RadarLink.angle(be), dev.radarfcs.compat.RadarLink.sweepSpeed(be), dev.radarfcs.compat.RadarLink.isRunning(be));
+            });
+        }
         // контроллеры наводки у станка: общий вид и очки инженера
-        if (tick == 340) server.execute(() -> look(server, new Vec3(base.getX() + 4.5, base.getY() - 0.2, base.getZ() + 0.9),
+        if (tick == 360) server.execute(() -> look(server, new Vec3(base.getX() + 4.5, base.getY() - 0.2, base.getZ() + 0.9),
                 new Vec3(base.getX() + 7.8, base.getY() + 2.2, base.getZ() + 4.2)));
         if (tick == 380) shot(mc, "aim_controllers");
         if (tick == 390) server.execute(() -> look(server, base.offset(4, 0, 1).getCenter(),
@@ -197,6 +216,8 @@ public final class DevScreenshots {
         }
     }
 
+    private static BlockPos radarBearing;
+
     private static void shot(Minecraft mc, String name) {
         Screenshot.grab(mc.gameDirectory, name + ".png", mc.getMainRenderTarget(),
                 c -> FcsMod.LOG.info("[radar_fcs dev] screenshot {}: {}", name, c.getString()));
@@ -250,6 +271,16 @@ public final class DevScreenshots {
                 .trySetValue(BlockStateProperties.HORIZONTAL_FACING, Direction.WEST), 3);
         placeLink(level, mount, Direction.NORTH, base);
         placeLink(level, base.offset(0, 0, 3), Direction.UP, base);
+        // радарный подшипник Create Radars с антенной: вращающийся луч на мониторе (собирается позже - assembleRadarBearing)
+        BlockPos rb = base.offset(-1, 0, 7);
+        motor(level, rb.below(), Direction.UP, 16);
+        level.setBlock(rb, block("create_radar:radar_bearing").defaultBlockState()
+                .trySetValue(BlockStateProperties.FACING, Direction.UP), 3);
+        level.setBlock(rb.above(), block("create_radar:radar_receiver_block").defaultBlockState(), 3);
+        level.setBlock(rb.above().north(), block("create_radar:radar_dish_block").defaultBlockState(), 3);
+        level.setBlock(rb.above().south(), block("create_radar:radar_dish_block").defaultBlockState(), 3);
+        placeLink(level, rb, Direction.EAST, base);
+        radarBearing = rb;
         // монитор 3x2 экраном на запад: линки с радаром и вычислителем
         var mon = FcsRegistry.RADAR_MONITOR.get().defaultBlockState().setValue(dev.radarfcs.block.RadarMonitorBlock.FACING, Direction.WEST);
         for (int dz = -3; dz <= -1; dz++) for (int dy = 0; dy < 2; dy++) level.setBlock(base.offset(-3, dy, dz), mon, 3);

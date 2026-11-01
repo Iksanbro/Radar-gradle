@@ -38,6 +38,8 @@ public final class FireSafety {
 
         for (Track t : tracks) {
             if (!t.friendly || t == target) continue;
+            // свои снаряды на траектории (в том числе только что выпущенный этой же пушкой) - не помеха выстрелу
+            if (t.kind == Track.Kind.PROJECTILE) continue;
             if (t.handle instanceof SableCompat.Ship ship) {
                 if (platform.contains(ship.id())) continue;
                 AABB box = ship.box().inflate(margin);

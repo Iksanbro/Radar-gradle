@@ -115,6 +115,45 @@ public final class RadarLink {
         }
     }
 
+    /**
+     * Куда смотрит луч радара: мировой курс в градусах (0 - на юг, +Z; 90 - на восток, +X), как его отдаёт
+     * IRadar.getGlobalAngle(); NaN - неизвестно.
+     */
+    public static float angle(BlockEntity be) {
+        if (!apiAvailable() || !(be instanceof IRadar r)) return Float.NaN;
+        try {
+            return r.getGlobalAngle();
+        } catch (Throwable t) {
+            return Float.NaN;
+        }
+    }
+
+    /** Скорость поворота луча, градусов за тик (0 - неподвижный радар); есть только в Create Radars 5.x. */
+    public static float sweepSpeed(BlockEntity be) {
+        Object v = callFloat(be, "getDisplayAngularSpeedDegreesPerTick", "getSweepAngularSpeedDegreesPerTick");
+        return v instanceof Float f && Float.isFinite(f) ? f : 0;
+    }
+
+    /** Ширина луча (обзора), градусов; у 0.4.9.x метода нет - по виду радара. */
+    public static float fov(BlockEntity be, boolean rotating) {
+        Object v = callFloat(be, "getDisplayFovDegrees", "getFovDegrees");
+        if (v instanceof Float f && f > 0 && f <= 360) return f;
+        return rotating ? 30 : 45;
+    }
+
+    @Nullable
+    private static Object callFloat(BlockEntity be, String... names) {
+        if (!apiAvailable() || !(be instanceof IRadar)) return null;
+        for (String n : names) {
+            try {
+                return be.getClass().getMethod(n).invoke(be);
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+                // нет в этой версии
+            }
+        }
+        return null;
+    }
+
     /** Позиция радара, которую он сам сообщает (у радара на корабле - мировая). */
     public static BlockPos worldPos(BlockEntity be) {
         if (apiAvailable()) {

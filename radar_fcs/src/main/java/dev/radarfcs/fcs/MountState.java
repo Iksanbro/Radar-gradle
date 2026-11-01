@@ -85,8 +85,12 @@ public final class MountState implements ShotObserver.Listener {
     }
 
     /** Модель полёта: оценка по содержимому пушки + выученные поправки. */
+    /** Последняя оценка с заряженной пушкой: пока пушка пуста (перезарядка), целимся по ней, а не по скорости «по умолчанию». */
+    @Nullable private CbcBallistics.Estimate lastLoaded;
+
     public FlightModel flightModel() {
-        FlightModel base = estimate != null ? estimate.model() : FcsConfig.bigFallback();
+        CbcBallistics.Estimate src = estimate != null && estimate.loaded() ? estimate : lastLoaded != null ? lastLoaded : estimate;
+        FlightModel base = src != null ? src.model() : FcsConfig.bigFallback();
         return FcsConfig.LEARN_FROM_SHOTS.get() ? correction.apply(base) : base;
     }
 
@@ -98,6 +102,7 @@ public final class MountState implements ShotObserver.Listener {
     public void setEstimate(CbcBallistics.Estimate e, long now) {
         estimate = e;
         estimateTick = now;
+        if (e.loaded()) lastLoaded = e;
         if (e.loaded() && !e.fingerprint().equals(correctionKey)) {
             if (!correctionKey.isEmpty()) correction.reset();
             correctionKey = e.fingerprint();
