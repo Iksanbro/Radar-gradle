@@ -275,4 +275,73 @@ public class LinkGameTests {
             FcsMod.LOG.info("[radar_fcs test] link_monitor: designation went to the linked computer only (near {})", near.getUUID());
         });
     }
+
+    /**
+     * Ручное наведение с карты своего монитора: две цели, без назначения пушка бьёт ближнюю (по умолчанию - ближайшая).
+     * Клик по дальней на карте - пушка переводится на неё и попадает; по ближней после этого не стреляет.
+     */
+    @GameTest(template = ARENA, batch = "link_monitor_fire", timeoutTicks = 600)
+    public static void monitorDesignationIsEngaged(GameTestHelper h) {
+        floor(h);
+        BlockPos mount = new BlockPos(10, 1, 32), fcsPos = new BlockPos(6, 1, 28), radar = new BlockPos(8, 1, 40);
+        autocannon(h, mount, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcsBare(h, fcsPos);
+        linkMount(h, mount, fcsPos);
+        h.setBlock(radar, block("create_radar:plane_radar").defaultBlockState()
+                .trySetValue(BlockStateProperties.HORIZONTAL_FACING, Direction.WEST));
+        FcsGameTests.CREATED.add(h.absolutePos(radar));
+        link(h, radar, Direction.UP, fcsPos);
+        BlockState mon = FcsRegistry.RADAR_MONITOR.get().defaultBlockState().setValue(RadarMonitorBlock.FACING, Direction.SOUTH);
+        for (int x = 2; x <= 3; x++) for (int y = 2; y <= 3; y++) {
+            h.setBlock(new BlockPos(x, y, 44), mon);
+            FcsGameTests.CREATED.add(h.absolutePos(new BlockPos(x, y, 44)));
+        }
+        link(h, new BlockPos(3, 3, 44), Direction.UP, fcsPos);
+        Player p = h.makeMockPlayer(GameType.CREATIVE);
+        Mob near = movingTarget(h, EntityType.HUSK, new Vec3(26.5, 1, 30.5), 0.05, 4);
+        Mob far = movingTarget(h, EntityType.HUSK, new Vec3(44.5, 1, 36.5), 0.1, 6);
+        for (Mob mob : new Mob[]{near, far}) {
+            var hp = mob.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);
+            if (hp != null) hp.setBaseValue(1000);                              // живут весь тест
+            mob.setHealth(mob.getMaxHealth());
+        }
+        AtomicInteger nearHits = countHits(h, near), farHits = countHits(h, far);
+        logEvery(h, be, "link_monitor_fire", 40);
+        AtomicInteger clickTick = new AtomicInteger(-1), nearAtClick = new AtomicInteger();
+        h.onEachTick(() -> {
+            if (clickTick.get() >= 0 || nearHits.get() == 0) return;
+            // пушка уже бьёт ближнюю: клик по дальней на карте монитора
+            if (!(h.getLevel().getBlockEntity(h.absolutePos(new BlockPos(2, 2, 44))) instanceof RadarMonitorBlockEntity m)) {
+                h.fail("monitor missing");
+                return;
+            }
+            Vec3 pt = m.master().screenPointFor(far.getBoundingBox().getCenter());
+            BlockPos hitBlock = BlockPos.containing(pt.subtract(0, 0, 0.01));
+            if (!(h.getLevel().getBlockEntity(hitBlock) instanceof RadarMonitorBlockEntity clicked)) {
+                h.fail("far target is not on the map: click point " + pt);
+                return;
+            }
+            clicked.click(p, new BlockHitResult(pt, Direction.SOUTH, hitBlock, false));
+            if (!far.getUUID().equals(m.master().localDesignation(h.getLevel().getGameTime()))) h.fail("click did not designate the far target");
+            clickTick.set((int) h.getTick());
+            nearAtClick.set(nearHits.get());
+        });
+        AtomicInteger nearLate = new AtomicInteger();
+        h.onEachTick(() -> {
+            // снаряды, выпущенные до клика, ещё долетают: считаем попадания по ближней через 30 тиков после него
+            if (clickTick.get() >= 0 && h.getTick() == clickTick.get() + 30) nearLate.set(nearHits.get());
+        });
+        String farId = far.getUUID().toString();
+        h.succeedWhen(() -> {
+            if (clickTick.get() < 0) throw new GameTestAssertException("near target not engaged yet (hits " + nearHits.get() + ")");
+            MountState ms = be.mountStates().isEmpty() ? null : be.mountStates().get(0);
+            if (ms == null || !farId.equals(ms.targetId)) throw new GameTestAssertException("mount is not on the designated target");
+            if (h.getTick() < clickTick.get() + 30) throw new GameTestAssertException("waiting");
+            if (farHits.get() < 2) throw new GameTestAssertException("designated target hit " + farHits.get() + " times");
+            if (nearHits.get() > nearLate.get()) h.fail("kept firing at the near target after the designation: "
+                    + nearLate.get() + " -> " + nearHits.get());
+            FcsMod.LOG.info("[radar_fcs test] link_monitor_fire: near hit {} before the click, designated far hit {} after it, near after: {}",
+                    nearAtClick.get(), farHits.get(), nearHits.get() - nearLate.get());
+        });
+    }
 }

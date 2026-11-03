@@ -17,7 +17,9 @@ public final class MonitorIcons {
     public static final float[] SIZES = {0.7f, 1.0f, 1.5f};
 
     public static final int TRANSPONDER = TargetCategory.values().length;
-    public static final int COUNT = TRANSPONDER + 1;
+    /** Метка радара сети и его зона действия (у зоны: форма «кольцо» - только контур, иначе с заливкой; размер - яркость). */
+    public static final int RADAR = TRANSPONDER + 1, RADAR_ZONE = TRANSPONDER + 2;
+    public static final int COUNT = RADAR_ZONE + 1;
 
     private MonitorIcons() {}
 
@@ -49,7 +51,23 @@ public final class MonitorIcons {
         d[TargetCategory.PROJECTILES.ordinal()] = pack(Shape.CROSS, 0, 0);
         d[TargetCategory.OTHER.ordinal()] = pack(Shape.CIRCLE, 0, 0);
         d[TRANSPONDER] = pack(Shape.RING, 6, 1);
+        d[RADAR] = pack(Shape.DIAMOND, 5, 1);
+        d[RADAR_ZONE] = pack(Shape.CIRCLE, 0, 1);
         return d;
+    }
+
+    /** Зона радара с заливкой (иначе - только контур). */
+    public static boolean zoneFilled(int packed) {
+        return shape(packed) != Shape.RING;
+    }
+
+    /** Непрозрачность заливки зоны по «размеру»: слабая, средняя, яркая. */
+    public static int zoneAlpha(int packed) {
+        return switch (size(packed)) {
+            case 0 -> 0x18;
+            case 2 -> 0x50;
+            default -> 0x30;
+        };
     }
 
     public static int[] sanitize(int[] in) {

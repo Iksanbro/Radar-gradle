@@ -48,17 +48,32 @@ import org.jetbrains.annotations.Nullable;
  * берут вычислители сети - ручное наведение.
  */
 public class RadarMonitorBlockEntity extends BlockEntity {
-    /** Масштабы экрана, блоков; 0 - по дальности радаров. */
-    public static final int[] SCALES = {0, 32, 64, 128, 256, 512, 1024};
-    /** Доля полуширины экрана под круг развёртки. */
-    public static final double PPI_FRACTION = 0.9;
+    /** Масштабы карты: сторона карты (по короткой стороне экрана), блоков. */
+    public static final int[] SCALES = {64, 128, 256, 512, 1024, 2048};
+    public static final int DEFAULT_SCALE = 2;
+    /** Рамка экрана, доля блока. */
+    public static final float BEZEL = 1 / 16f;
+
+    /** Блоков экрана на блок мира: половина короткой стороны карты - на половину стороны масштаба. */
+    public static double mapK(int w, int h, double halfSide) {
+        return (Math.min(w, h) / 2.0 - BEZEL) / Math.max(1, halfSide);
+    }
+
+    /**
+     * Видна ли на карте точка с экранными смещениями (u вправо, v вверх, блоков мира) от центра монитора.
+     */
+    public static boolean onMap(int w, int h, double halfSide, double u, double v) {
+        double k = mapK(w, h, halfSide);
+        return Math.abs(u * k) <= w / 2.0 - BEZEL && Math.abs(v * k) <= h / 2.0 - BEZEL;
+    }
     private static final int MAX_BLIPS = 64;
 
     public static final int FLAG_ENGAGED = 1, FLAG_DESIGNATED = 2, FLAG_SHIP = 4, FLAG_FRIENDLY = 8, FLAG_INACTIVE = 16,
             FLAG_HOSTILE = 32;
 
     /** Фильтры показа (биты маски show). */
-    public enum Show { PLAYERS, HOSTILE, PASSIVE, SHIPS, CONTRAPTIONS, PROJECTILES, OTHER, FRIENDLY, INACTIVE, TRANSPONDERS;
+    public enum Show { PLAYERS, HOSTILE, PASSIVE, SHIPS, CONTRAPTIONS, PROJECTILES, OTHER, FRIENDLY, INACTIVE, TRANSPONDERS,
+        RADARS, RADAR_ZONES;
         public final int bit = 1 << ordinal();
         public static final int ALL = (1 << values().length) - 1;
     }
@@ -95,7 +110,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
      * Радар сети на экране: смещение, его луч - мировой курс angle (градусы, 0 - на юг, 90 - на восток; NaN -
      * неизвестен), ширина fov, скорость поворота speed (градусов за тик) на игровой тик stamp, дальность range.
      */
-    public record Site(float dx, float dz, int type, float angle, float fov, float speed, float range, long stamp) {
+    public record Site(float dx, float dz, int type, float angle, float fov, float speed, float range, long stamp, long pos) {
         /** Курс луча на момент time (вращающийся радар доворачивается между обновлениями монитора). */
         public float angleAt(double time) {
             return speed == 0 ? angle : (float) ((angle + speed * (time - stamp)) % 360.0);
@@ -106,7 +121,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
 
     @Nullable private UUID owner;
     private String ownerTeam = "";
-    private int scaleIndex;
+    private int scaleIndex = DEFAULT_SCALE;
     private int show = Show.ALL;
     private int labels = LABELS_HOVER;
     private int[] icons = MonitorIcons.defaults();
@@ -117,7 +132,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     private int width = 1, height = 1;
 
     // картинка (у ведущего)
-    private float displayRange = 64;
+    private float displayRange = SCALES[DEFAULT_SCALE] / 2f;
     private Vec3 center = Vec3.ZERO;
     private int radarCount;
     /** Электричество (FE): каждый блок стены принимает его, ведущий забирает потребление всей стены. */
@@ -355,14 +370,12 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         }
         if (iff == null) iff = IffRule.DEFAULT;
         radarCount = radars.size();
-        double reach = 0;
         List<Site> siteList = new ArrayList<>();
         for (BlockEntity r : radars) {
             Vec3 o = SableCompat.toWorld(level, Vec3.atCenterOf(RadarLink.worldPos(r)));
-            reach = Math.max(reach, o.subtract(center).horizontalDistance() + RadarLink.range(r));
             float speed = RadarLink.sweepSpeed(r);
             siteList.add(new Site((float) (o.x - center.x), (float) (o.z - center.z), 0, RadarLink.angle(r),
-                    RadarLink.fov(r, speed != 0), speed, RadarLink.range(r), speed != 0 ? now : 0));
+                    RadarLink.fov(r, speed != 0), speed, RadarLink.range(r), speed != 0 ? now : 0, r.getBlockPos().asLong()));
         }
         UUID ship = SableCompat.containingId(level, worldPosition);
         Vec origin = new Vec(center.x, center.y, center.z);
@@ -407,13 +420,12 @@ public class RadarMonitorBlockEntity extends BlockEntity {
                 ml.add(new Mark((float) dx, (float) dz, info.name(), iff.accepts(info.code())));
             }
         }
-        // авто: всё, что видят радары сети; от целей не зависит (захват цели масштаб не меняет)
-        double coverage = niceRange(reach);
-        displayRange = (float) (scaleIndex != 0 ? SCALES[scaleIndex] : coverage);
-        tl.removeIf(t -> t.dist() > displayRange);
-        ml.removeIf(m -> Math.hypot(m.dx(), m.dz()) > displayRange);
+        // карта: сторона - выбранный масштаб; на экран - только то, что на карте
+        displayRange = SCALES[scaleIndex] / 2f;
+        tl.removeIf(t -> !onScreen(t.dx(), t.dz()));
+        ml.removeIf(m -> !onScreen(m.dx(), m.dz()));
         marks = ml.size() > MAX_BLIPS ? List.copyOf(ml.subList(0, MAX_BLIPS)) : ml;
-        bl.removeIf(b -> Math.hypot(b.dx(), b.dz()) > displayRange);
+        bl.removeIf(b -> !onScreen(b.dx(), b.dz()));
         tl.sort(Comparator.comparingDouble(Target::dist));
         // назначенная и активные - первыми (на экран идёт не больше MAX_BLIPS)
         bl.sort(Comparator.<Blip>comparingInt(b -> (b.flags() & FLAG_DESIGNATED) != 0 ? 0
@@ -451,6 +463,14 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         };
     }
 
+    /** Видно ли на карте этого экрана мировое смещение (dx, dz) от центра монитора. */
+    public boolean onScreen(double dx, double dz) {
+        Direction f = facing(), right = f.getCounterClockWise();
+        double u = dx * right.getStepX() + dz * right.getStepZ();
+        double v = -(dx * f.getStepX() + dz * f.getStepZ());
+        return onMap(width, height, displayRange, u, v);
+    }
+
     /** Мировая точка на экране, где рисуется отметка цели в мировой точке world (для тестов и отладки). */
     public Vec3 screenPointFor(Vec3 world) {
         Direction f = facing(), right = f.getCounterClockWise();
@@ -458,16 +478,10 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         double dx = world.x - center.x, dz = world.z - center.z;
         double u = dx * right.getStepX() + dz * right.getStepZ();
         double v = -(dx * f.getStepX() + dz * f.getStepZ());
-        double k = Math.min(width, height) / 2.0 * PPI_FRACTION / Math.max(1, displayRange);
+        double k = mapK(width, height, displayRange);
         double x = (width - 1) / 2.0 + u * k, y = (height - 1) / 2.0 + v * k;
         return Vec3.atCenterOf(worldPosition).add(Vec3.atLowerCornerOf(right.getNormal()).scale(x)).add(0, y, 0)
                 .add(Vec3.atLowerCornerOf(f.getNormal()).scale(0.5));
-    }
-
-    static double niceRange(double reach) {
-        double[] steps = {32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024};
-        for (double s : steps) if (reach <= s) return s;
-        return 1024;
     }
 
     // ------------------------------------------------------------ интерфейс
@@ -561,11 +575,11 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         Vec3 rel = hit.getLocation().subtract(Vec3.atCenterOf(m.worldPosition));
         double x = rel.x * right.getStepX() + rel.z * right.getStepZ();
         double y = rel.y;
-        double radius = Math.min(m.width, m.height) / 2.0 * PPI_FRACTION;
-        double u = (x - (m.width - 1) / 2.0) / radius, v = (y - (m.height - 1) / 2.0) / radius;
+        double k = mapK(m.width, m.height, m.displayRange);
+        double u = (x - (m.width - 1) / 2.0) / k, v = (y - (m.height - 1) / 2.0) / k;
         // вверх на экране - от зрителя (против FACING), вправо - вправо от зрителя
-        double wx = (right.getStepX() * u - f.getStepX() * v) * m.displayRange;
-        double wz = (right.getStepZ() * u - f.getStepZ() * v) * m.displayRange;
+        double wx = right.getStepX() * u - f.getStepX() * v;
+        double wz = right.getStepZ() * u - f.getStepZ() * v;
         Target best = null;
         double bestD = Math.max(4.0, m.displayRange * 0.1);
         for (Target t : m.targets) {
@@ -625,6 +639,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
                 c.putFloat("x", s.dx());
                 c.putFloat("z", s.dz());
                 c.putByte("k", (byte) s.type());
+                c.putLong("p", s.pos());
                 if (Float.isFinite(s.angle())) {
                     c.putFloat("a", s.angle());
                     c.putFloat("w", s.fov());
@@ -657,7 +672,8 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         master = BlockPos.of(t.getLong("Master"));
         width = Math.max(1, t.getInt("W"));
         height = Math.max(1, t.getInt("H"));
-        displayRange = t.contains("Range") ? t.getFloat("Range") : 64;
+        displayRange = t.contains("Range") ? t.getFloat("Range") : SCALES[DEFAULT_SCALE] / 2f;
+        if (t.contains("Scale")) scaleIndex = Math.floorMod(t.getInt("Scale"), SCALES.length);
         center = new Vec3(t.getDouble("CX"), t.getDouble("CY"), t.getDouble("CZ"));
         designatedName = t.getString("Des");
         show = t.contains("Show") ? t.getInt("Show") : Show.ALL;
@@ -674,7 +690,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         for (Tag tag : t.getList("Sites", Tag.TAG_COMPOUND)) {
             CompoundTag c = (CompoundTag) tag;
             sl.add(new Site(c.getFloat("x"), c.getFloat("z"), c.getByte("k"), c.contains("a") ? c.getFloat("a") : Float.NaN,
-                    c.getFloat("w"), c.getFloat("s"), c.getFloat("r"), c.getLong("t")));
+                    c.getFloat("w"), c.getFloat("s"), c.getFloat("r"), c.getLong("t"), c.getLong("p")));
         }
         sites = sl;
         List<Mark> mk = new ArrayList<>();
@@ -690,9 +706,10 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
-        tag.putInt("Scale", scaleIndex);
+        tag.putInt("MapScale", scaleIndex);
         tag.putInt("Show", show);
         tag.putBoolean("ShowV2", true);
+        tag.putBoolean("ShowV3", true);
         tag.putInt("Labels", labels);
         tag.putIntArray("Icons", icons);
         energy.save(tag);
@@ -703,9 +720,11 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
-        scaleIndex = Math.floorMod(tag.getInt("Scale"), SCALES.length);
+        // карта (1.2): масштаб - сторона карты; у старых мониторов (круг, «авто») - по умолчанию
+        scaleIndex = tag.contains("MapScale") ? Math.floorMod(tag.getInt("MapScale"), SCALES.length) : DEFAULT_SCALE;
         show = tag.contains("Show") ? tag.getInt("Show") & Show.ALL : Show.ALL;
         if (tag.contains("Show") && !tag.getBoolean("ShowV2")) show |= Show.TRANSPONDERS.bit;   // фильтр появился в 0.11
+        if (tag.contains("Show") && !tag.getBoolean("ShowV3")) show |= Show.RADARS.bit | Show.RADAR_ZONES.bit;   // 1.2
         labels = tag.getInt("Labels") == LABELS_ALWAYS ? LABELS_ALWAYS : LABELS_HOVER;
         icons = MonitorIcons.sanitize(tag.contains("Icons") ? tag.getIntArray("Icons") : null);
         energy.load(tag);

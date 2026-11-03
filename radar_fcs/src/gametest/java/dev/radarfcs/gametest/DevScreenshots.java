@@ -106,6 +106,8 @@ public final class DevScreenshots {
             look(server, pt, new Vec3(base.getX() - 7.5, base.getY() + 1.4, base.getZ() - 1.5));
         });
         if (tick == 338) shot(mc, "radar_monitor");
+        if (tick == 339) shot(mc, "radar_monitor_t1");
+        if (tick == 340) shot(mc, "radar_monitor_t2");
         if (tick == 358) shot(mc, "radar_monitor_b");
         if (tick == 336 || tick == 356) {
             if (mc.level != null && mc.level.getBlockEntity(base.offset(-3, 0, -3)) instanceof dev.radarfcs.block.RadarMonitorBlockEntity mon) {
@@ -186,7 +188,46 @@ public final class DevScreenshots {
         if (tick == 638) shot(mc, "transponder_gui_0");
         if (tick == 640 && mc.screen instanceof dev.radarfcs.client.TransponderScreen ts) ts.showTab(1);
         if (tick == 646) shot(mc, "transponder_gui_1");
-        if (tick == 656) mc.stop();
+        // карта монитора вблизи, на 64 и на 2048 блоков, и издалека (нет мерцания слоёв)
+        if (tick == 650) {
+            if (mc.screen != null) mc.setScreen(null);
+            server.execute(() -> look(server, new Vec3(base.getX() - 3, base.getY() + 1.0, base.getZ() - 1.5),
+                    new Vec3(base.getX() - 5.6, base.getY() + 1.0, base.getZ() - 1.5)));
+        }
+        if (tick == 658) shot(mc, "map_close");
+        if (tick == 660) server.execute(() -> monitorScale(server, 0));
+        if (tick == 668) shot(mc, "map_64");
+        if (tick == 670) server.execute(() -> monitorScale(server, 5));
+        if (tick == 678) shot(mc, "map_2048");
+        if (tick == 680) server.execute(() -> {
+            monitorScale(server, 1);
+            look(server, new Vec3(base.getX() - 3, base.getY() + 1.0, base.getZ() - 1.5),
+                    new Vec3(base.getX() - 34, base.getY() + 4.0, base.getZ() - 1.5));
+        });
+        if (tick == 690) shot(mc, "map_far");
+        if (tick == 700) mc.stop();
+    }
+
+    private static long lastFrame;
+    private static float lastLogged = Float.NaN;
+
+    /** Курс луча на каждом кадре (ticks 341-346): шаги между кадрами должны быть ровными - луч крутится плавно. */
+    @SubscribeEvent
+    public static void onFrame(net.neoforged.neoforge.client.event.RenderFrameEvent.Post event) {
+        if (!Boolean.getBoolean("radar_fcs.screenshot") || tick < 341 || tick > 346) return;
+        long now = System.nanoTime();
+        float hd = dev.radarfcs.client.RadarMonitorRenderer.lastHeading;
+        float step = Float.isFinite(lastLogged) ? (float) Math.IEEEremainder(hd - lastLogged, 360) : Float.NaN;
+        FcsMod.LOG.info("[radar_fcs dev] frame tick {} dt {} ms heading {} step {} partial {}", tick,
+                lastFrame == 0 ? 0 : (now - lastFrame) / 1e6, hd, step, event.getPartialTick().getGameTimeDeltaPartialTick(false));
+        lastFrame = now;
+        lastLogged = hd;
+    }
+
+    private static void monitorScale(net.minecraft.server.MinecraftServer server, int index) {
+        if (server.overworld().getBlockEntity(base.offset(-3, 0, -3)) instanceof dev.radarfcs.block.RadarMonitorBlockEntity mon) {
+            mon.setScale(index);
+        }
     }
 
     /** Поставить игрока глазами в eye и повернуть к точке target. */
@@ -273,7 +314,7 @@ public final class DevScreenshots {
         placeLink(level, base.offset(0, 0, 3), Direction.UP, base);
         // радарный подшипник Create Radars с антенной: вращающийся луч на мониторе (собирается позже - assembleRadarBearing)
         BlockPos rb = base.offset(-1, 0, 7);
-        motor(level, rb.below(), Direction.UP, 16);
+        motor(level, rb.below(), Direction.UP, 256);              // 256 об/мин - проверка луча на мониторе
         level.setBlock(rb, block("create_radar:radar_bearing").defaultBlockState()
                 .trySetValue(BlockStateProperties.FACING, Direction.UP), 3);
         level.setBlock(rb.above(), block("create_radar:radar_receiver_block").defaultBlockState(), 3);

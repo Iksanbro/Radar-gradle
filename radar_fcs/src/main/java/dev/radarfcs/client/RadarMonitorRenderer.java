@@ -1,7 +1,6 @@
 package dev.radarfcs.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import dev.radarfcs.block.MonitorIcons;
 import dev.radarfcs.block.RadarMonitorBlockEntity;
@@ -11,11 +10,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import dev.radarfcs.compat.RadarLink;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -26,17 +27,19 @@ import java.util.List;
 import org.joml.Matrix4f;
 
 /**
- * Экран радарного монитора: круговая развёртка. Вверх на экране - направление от зрителя
- * (куда он смотрит, стоя перед монитором), вправо - вправо от зрителя. Цвета отметок: под огнём - красный,
+ * Экран радарного монитора: карта со стороной 64-2048 блоков, в центре - сам монитор. Вверх на экране - направление
+ * от зрителя (куда он смотрит, стоя перед монитором), вправо - вправо от зрителя. Радары сети - метки с зоной действия
+ * и лучом, который вращается вместе с антенной. Цвета отметок: под огнём - красный,
  * свои - зелёный, неактивные - серый, угрозы - оранжевый, мирные и прочие - голубой; назначенная - жёлтая рамка,
  * отметка под взглядом - белая рамка и сведения о цели (имя, координаты, дальность, высота, скорость).
  */
 public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlockEntity> {
     private static final int BG = 0xFF060D08;
     private static final int BEZEL = 0xFF3A3F48;
-    private static final int DISK = 0xF00B2412;
-    private static final int RING = 0xB040C060;
-    private static final int GRID = 0x6040C060;
+    /** Линии сетки: ось через монитор, каждая вторая, промежуточные (непрозрачные, смешаны с фоном). */
+    private static final int AXIS = 0xFF2E8845;
+    private static final int GRID = 0xFF1C5029;
+    private static final int GRID_MINOR = 0xFF11301A;
     private static final int SWEEP = 0x60FF60;
     private static final int SITE = 0xFF60FF80;
     private static final int HOSTILE = 0xFFFFA020;
@@ -74,24 +77,26 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         ps.translate(0.5, 0.5, 0.5);
         // локально: X - вправо от зрителя, Y - вверх, Z - к зрителю; центр ведущего блока в (0,0,0)
         ps.mulPose(Axis.YP.rotationDegrees(-f.toYRot()));
-        // Картинка - слоями квадов на долях миллиблока друг над другом. Издалека точности буфера глубины на такие
-        // зазоры не хватало: слои и лицевая сторона блока мерцали друг сквозь друга («сетка» на части экрана).
-        // Отступ от блока - 0.01, зазоры между слоями растянуты в 10 раз.
+        // экран - чуть перед лицевой стороной блока; квады карты ложатся без записи глубины строго по порядку
+        // (MapCanvas.SCREEN) и не мерцают друг сквозь друга; текст - выше, со своим сдвигом
         ps.translate(0, 0, 0.5 + 0.01);
         ps.scale(1, 1, 10);
         Matrix4f m = ps.last().pose();
-        VertexConsumer vc = buffers.getBuffer(RenderType.debugQuads());
 
-        float e = 1 / 16f;
+        float e = RadarMonitorBlockEntity.BEZEL;
+        float cx = (w - 1) / 2f, cy = (h - 1) / 2f;
+        float half = RadarMonitorBlockEntity.SCALES[be.scaleIndex()] / 2f;
+        MapCanvas c = new MapCanvas(buffers, MapCanvas.SCREEN, m, f, cx, cy, (float) RadarMonitorBlockEntity.mapK(w, h, half),
+                -0.5f + e, -0.5f + e, w - 0.5f - e, h - 0.5f - e, 1);
         // рамка и экран - сплошными квадами на всю стену: стыки блоков не видны
-        rect(vc, m, -0.5f, -0.5f, w - 0.5f, h - 0.5f, 0, BEZEL);
-        rect(vc, m, -0.5f + e, -0.5f + e, w - 0.5f - e, h - 0.5f - e, 0.0002f, BG);
+        c.rect(-0.5f, -0.5f, w - 0.5f, h - 0.5f, BEZEL);
+        c.rect(c.x0, c.y0, c.x1, c.y1, BG);
         if (!be.powered()) {
             // нет электричества: тёмный экран с надписью
             float sc = 0.0075f * (float) Math.sqrt(Math.min(w, h));
             String msg = Component.translatable("radar_fcs.monitor.no_energy_short").getString();
             ps.pushPose();
-            ps.translate((w - 1) / 2f, (h - 1) / 2f, 0.003f);
+            ps.translate(cx, cy, 0.003f);
             ps.scale(sc, -sc, sc);
             font.drawInBatch(msg, -font.width(msg) / 2f, -font.lineHeight / 2f, 0xFFFF5050, false, ps.last().pose(), buffers,
                     Font.DisplayMode.POLYGON_OFFSET, 0, LightTexture.FULL_BRIGHT);
@@ -99,44 +104,14 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
             ps.popPose();
             return;
         }
-        float cx = (w - 1) / 2f, cy = (h - 1) / 2f;
-        float r = (float) (Math.min(w, h) / 2.0 * RadarMonitorBlockEntity.PPI_FRACTION);
-        float t = Math.max(0.006f, r * 0.016f);
-        disk(vc, m, cx, cy, r, 0.0004f, DISK);
-        for (int k = 1; k <= 3; k++) ring(vc, m, cx, cy, r * k / 3f, t, 0.0008f, RING);
-        rect(vc, m, cx - r, cy - t / 3, cx + r, cy + t / 3, 0.0008f, GRID);
-        rect(vc, m, cx - t / 3, cy - r, cx + t / 3, cy + r, 0.0008f, GRID);
-
-        float range = Math.max(1f, be.displayRange());
-        // лучи радаров сети: от самого радара, по его курсу и ширине обзора; у вращающегося - след за лучом
-        double time = be.getLevel().getGameTime() + partialTick;
-        for (Site site : be.sites()) {
-            if (!Float.isFinite(site.angle())) continue;
-            float[] sp = toScreen(site.dx(), site.dz(), f, right, range, r, cx, cy);
-            if (sp == null) continue;
-            float len = site.range() > 0 ? site.range() * r / range : 2 * r;
-            float heading = site.angleAt(time), half = Math.max(1f, Math.min(180f, site.fov() / 2));
-            beam(vc, m, f, right, sp, heading - half, heading + half, len, cx, cy, r, 0.0012f, (70 << 24) | SWEEP);
-            if (site.speed() != 0) {
-                float dir = Math.signum(site.speed()), trail = 40f;
-                int seg = 10;
-                for (int i = 0; i < seg; i++) {
-                    float a1 = heading - dir * (half + trail * i / seg), a2 = heading - dir * (half + trail * (i + 1) / seg);
-                    int alpha = (int) (60 * (1 - (i + 1) / (float) (seg + 1)));
-                    beam(vc, m, f, right, sp, Math.min(a1, a2), Math.max(a1, a2), len, cx, cy, r, 0.0011f, (alpha << 24) | SWEEP);
-                }
-            }
-        }
-
+        float r = Math.min(w, h) / 2f - e;                       // полстороны квадрата карты
+        float th = Math.max(0.006f, r * 0.012f);
         float s = Math.max(0.012f, r * 0.045f);
-        for (Site site : be.sites()) {
-            float[] p = toScreen(site.dx(), site.dz(), f, right, range, r, cx, cy);
-            if (p == null) continue;
-            rect(vc, m, p[0] - s * 0.6f, p[1] - s * 0.6f, p[0] + s * 0.6f, p[1] + s * 0.6f, 0.0016f, SITE);
-        }
+        drawGrid(c, half, th);
+        drawRadars(c, be, partialTick, s, th * 0.8f);
         // центр - сам монитор
-        rect(vc, m, cx - s * 0.9f, cy - s * 0.25f, cx + s * 0.9f, cy + s * 0.25f, 0.0016f, 0xFFFFFFFF);
-        rect(vc, m, cx - s * 0.25f, cy - s * 0.9f, cx + s * 0.25f, cy + s * 0.9f, 0.0016f, 0xFFFFFFFF);
+        c.rect(cx - s * 0.9f, cy - s * 0.25f, cx + s * 0.9f, cy + s * 0.25f, 0xFFFFFFFF);
+        c.rect(cx - s * 0.25f, cy - s * 0.9f, cx + s * 0.25f, cy + s * 0.9f, 0xFFFFFFFF);
         // точка экрана под взглядом игрока (в тех же осях: X вправо, Y вверх от центра ведущего блока)
         float[] look = lookPoint(be, f, right, w, h);
         Blip hovered = null;
@@ -150,11 +125,11 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         // метки наземных транспондеров
         int tIcon = be.icon(MonitorIcons.TRANSPONDER);
         for (RadarMonitorBlockEntity.Mark mk : be.marks()) {
-            float[] p = toScreen(mk.dx(), mk.dz(), f, right, range, r, cx, cy);
+            float[] p = c.toScreen(mk.dx(), mk.dz());
             if (p == null) continue;
             float ms = s * MonitorIcons.SIZES[MonitorIcons.size(tIcon)];
             int col = MonitorIcons.color(tIcon) == 0 ? (mk.friendly() ? FRIENDLY : HOSTILE) : MonitorIcons.PALETTE[MonitorIcons.color(tIcon)];
-            shape(vc, m, MonitorIcons.shape(tIcon), p[0], p[1], ms, 0.0017f, col);
+            c.shape(MonitorIcons.shape(tIcon), p[0], p[1], ms, col);
             if (look != null) {
                 float d = (float) Math.hypot(p[0] - look[0], p[1] - look[1]);
                 if (d < hoverD) {
@@ -162,7 +137,7 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
                     hoveredMark = mk;
                 }
             }
-            if (always && !mk.name().isEmpty()) labels.add(label(p[0] + ms * 1.4f, p[1], mk.name(), col, LabelLayout.RANK_MINOR, ls));
+            if (always && !mk.name().isEmpty()) labels.add(label(c, p[0], ms * 1.4f, p[1], mk.name(), col, LabelLayout.RANK_MINOR, ls));
         }
         // неактивные и свои - снизу, активные - поверх
         for (int pass = 0; pass < 2; pass++) {
@@ -170,16 +145,16 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
                 boolean minor = (b.flags() & (RadarMonitorBlockEntity.FLAG_INACTIVE | RadarMonitorBlockEntity.FLAG_FRIENDLY)) != 0
                         && (b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) == 0;
                 if (minor != (pass == 0)) continue;
-                float[] p = toScreen(b.dx(), b.dz(), f, right, range, r, cx, cy);
+                float[] p = c.toScreen(b.dx(), b.dz());
                 if (p == null) continue;
                 if (!minor) count++;
                 int ic = be.icon(b.category());
                 float bs = s * MonitorIcons.SIZES[MonitorIcons.size(ic)] * (minor ? 0.8f : 1f);
                 int col = iconColor(b, ic);
-                shape(vc, m, MonitorIcons.shape(ic), p[0], p[1], bs, minor ? 0.0018f : 0.002f, col);
+                c.shape(MonitorIcons.shape(ic), p[0], p[1], bs, col);
                 if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) {
-                    float o = bs * 2.2f, th = bs * 0.45f;
-                    frame(vc, m, p[0] - o, p[1] - o, p[0] + o, p[1] + o, th, 0.0024f, DESIGNATED);
+                    float o = bs * 2.2f, t = bs * 0.45f;
+                    frame(c, p[0] - o, p[1] - o, p[0] + o, p[1] + o, t, DESIGNATED);
                 }
                 if (look != null) {
                     float d = (float) Math.hypot(p[0] - look[0], p[1] - look[1]);
@@ -192,51 +167,57 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
                 if (always && !b.tag().isEmpty()) {
                     int rank = minor ? LabelLayout.RANK_MINOR
                             : (b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0 ? LabelLayout.RANK_DESIGNATED : LabelLayout.RANK_ACTIVE;
-                    labels.add(label(p[0] + bs * 1.4f, p[1], b.tag(), col, rank, ls));
+                    labels.add(label(c, p[0], bs * 1.4f, p[1], b.tag(), col, rank, ls));
                 }
             }
         }
-        if (hovered != null) {
-            float[] p = toScreen(hovered.dx(), hovered.dz(), f, right, range, r, cx, cy);
-            float o = s * 1.8f, th = s * 0.3f;
-            frame(vc, m, p[0] - o, p[1] - o, p[0] + o, p[1] + o, th, 0.0026f, HOVER);
-            if (!always && !hovered.tag().isEmpty()) labels.add(label(p[0] + o * 1.2f, p[1], hovered.tag(), HOVER, LabelLayout.RANK_HOVER, ls));
-        } else if (hoveredMark != null) {
-            float[] p = toScreen(hoveredMark.dx(), hoveredMark.dz(), f, right, range, r, cx, cy);
-            float o = s * 1.8f, th = s * 0.3f;
-            frame(vc, m, p[0] - o, p[1] - o, p[0] + o, p[1] + o, th, 0.0026f, HOVER);
-            if (!always && !hoveredMark.name().isEmpty()) labels.add(label(p[0] + o * 1.2f, p[1], hoveredMark.name(), HOVER, LabelLayout.RANK_HOVER, ls));
+        float[] hp = hovered != null ? c.toScreen(hovered.dx(), hovered.dz())
+                : hoveredMark != null ? c.toScreen(hoveredMark.dx(), hoveredMark.dz()) : null;
+        if (hp != null) {
+            float o = s * 1.8f, t = s * 0.3f;
+            frame(c, hp[0] - o, hp[1] - o, hp[0] + o, hp[1] + o, t, HOVER);
+            String name = hovered != null ? hovered.tag() : hoveredMark.name();
+            if (!always && !name.isEmpty()) labels.add(label(c, hp[0], o * 1.2f, hp[1], name, HOVER, LabelLayout.RANK_HOVER, ls));
         } else if (look != null) {
             // курсор взгляда
-            float c = s * 0.8f, th = s * 0.15f;
-            rect(vc, m, look[0] - c, look[1] - th, look[0] + c, look[1] + th, 0.0026f, 0xA0FFFFFF);
-            rect(vc, m, look[0] - th, look[1] - c, look[0] + th, look[1] + c, 0.0026f, 0xA0FFFFFF);
+            float cs = s * 0.8f, t = s * 0.15f;
+            c.rect(look[0] - cs, look[1] - t, look[0] + cs, look[1] + t, 0xA0FFFFFF);
+            c.rect(look[0] - t, look[1] - cs, look[0] + t, look[1] + cs, 0xA0FFFFFF);
         }
         // подложки подписей без наложения (текст - ниже, после всех квадов)
         List<LabelLayout.Placed> placed = LabelLayout.place(labels);
         float lh = font.lineHeight * ls;
         for (LabelLayout.Placed pl : placed) {
             LabelLayout.Label lb = pl.label();
-            rect(vc, m, lb.x(), pl.y() - lh / 2 - ls, lb.x() + lb.w(), pl.y() + lh / 2, 0.0027f, 0xB0000000);
+            c.rect(lb.x(), pl.y() - lh / 2 - ls, lb.x() + lb.w(), pl.y() + lh / 2, 0xB0000000);
         }
-        // дистанции кругов: на диагонали вниз-вправо, сразу за кругом - подписи не теснятся у центра
-        String[] ringText = new String[3];
-        float[] ringX = new float[3], ringY = new float[3];
-        float diag = (float) Math.sqrt(0.5);
-        for (int ri = 1; ri <= 3; ri++) {
-            ringText[ri - 1] = ringLabel(range * ri / 3f);
-            float tw = font.width(ringText[ri - 1]) * ls;
-            float rr = r * ri / 3f;
-            ringX[ri - 1] = cx + rr * diag + 2 * ls;
-            ringY[ri - 1] = cy - rr * diag - lh - ls;
-            if (ri == 3) ringX[2] = Math.min(ringX[2], cx + r - tw);    // крайняя - не за краем круга
-            rect(vc, m, ringX[ri - 1] - ls, ringY[ri - 1] - ls, ringX[ri - 1] + tw + ls, ringY[ri - 1] + lh, 0.0025f, 0x90000000);
+        // север: буква у края карты на оси, которая на него смотрит
+        String north = Component.translatable("radar_fcs.monitor.north").getString();
+        float nw = font.width(north) * ls, pad = 3 * ls;
+        float[] nd = c.north();
+        float nx = nd[0] > 0 ? c.x1 - pad - nw : nd[0] < 0 ? c.x0 + pad : cx - nw / 2;
+        float ny = nd[1] > 0 ? c.y1 - pad - lh : nd[1] < 0 ? c.y0 + pad : cy - lh / 2;
+        c.rect(nx - 1.5f * ls, ny - 1.5f * ls, nx + nw + 1.5f * ls, ny + lh + 0.5f * ls, 0xC0000000);
+        // дистанции сетки: под осью вправо от монитора, у каждой второй линии (через четверть стороны)
+        float stepK = half / 2 * c.k;
+        float gridLimit = nd[0] > 0 ? nx - 2 * ls : c.x1 - ls;
+        List<String> gridText = new ArrayList<>();
+        List<float[]> gridPos = new ArrayList<>();
+        for (int i = 1; ; i++) {
+            String txt = ringLabel(half / 2 * i);
+            float tw = font.width(txt) * ls;
+            float gx = cx + stepK * i + 2 * ls, gy = cy - lh - 2 * ls;
+            if (gx + tw > gridLimit || gy < c.y0) break;
+            c.rect(gx - ls, gy - ls, gx + tw + ls, gy + lh, 0x90000000);
+            gridText.add(txt);
+            gridPos.add(new float[]{gx, gy});
         }
 
         // сведения о цели под взглядом (или назначенной): подложка - квадом здесь, текст - ниже. Свой фон текста шрифта
         // лежит почти в одной плоскости с буквами и на расстоянии перекрывает их (мерцание по глубине)
         float scale = 0.0075f * (float) Math.sqrt(Math.min(w, h));
-        float boxW = (w - 2 * e * 1.6f) / scale;
+        float boxW = (w - 2 * e * 1.6f) / scale, boxH = (h - 2 * e * 1.6f) / scale;
+        float ox = -0.5f + e * 1.6f, oy = h - 0.5f - e * 1.6f;
         Blip info = hovered;
         if (info == null && hoveredMark == null) {
             for (Blip b : blips) if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) info = b;
@@ -244,58 +225,49 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         List<Component> lines = info != null ? RadarMonitorScreen.describe(be, info)
                 : hoveredMark != null ? RadarMonitorScreen.describeMark(be, hoveredMark) : List.of();
         int widest = 1;
-        for (Component c : lines) widest = Math.max(widest, font.width(c));
+        for (Component cl : lines) widest = Math.max(widest, font.width(cl));
         float k = Math.min(1f, boxW / widest);
+        String mapText = Component.translatable("radar_fcs.monitor.range", RadarMonitorBlockEntity.SCALES[be.scaleIndex()]).getString();
+        String right1 = Component.translatable("radar_fcs.monitor.targets", count).getString();
+        String bottom = be.radarCount() == 0 ? Component.translatable("radar_fcs.monitor.no_radar").getString()
+                : Component.translatable("radar_fcs.monitor.radars", be.radarCount()).getString();
+        // подложки строк состояния: карта видна и под ними
+        textBg(c, ox, oy, scale, 0, 0, font.width(mapText));
+        textBg(c, ox, oy, scale, boxW - font.width(right1), 0, font.width(right1));
+        textBg(c, ox, oy, scale, 0, boxH - font.lineHeight, font.width(bottom));
         if (!lines.isEmpty()) {
-            float ox = -0.5f + e * 1.6f, oy = h - 0.5f - e * 1.6f;
             float y0 = font.lineHeight + 2 - k, y1 = font.lineHeight + 2 + k * (lines.size() * (font.lineHeight + 1));
-            rect(vc, m, ox - k * scale, oy - y1 * scale, ox + (widest + 1) * k * scale, oy - y0 * scale, 0.0028f, 0xC0000000);
+            c.rect(ox - k * scale, oy - y1 * scale, ox + (widest + 1) * k * scale, oy - y0 * scale, 0xC0000000);
         }
 
         // подписи - последними: текст берёт из буферов свой тип рендера, и буфер квадов после него недействителен
-        for (int ri = 0; ri < 3; ri++) {
-            ps.pushPose();
-            ps.translate(ringX[ri], ringY[ri] + lh, 0.003f);
-            ps.scale(ls, -ls, ls);
-            font.drawInBatch(ringText[ri], 0, 0, RING_TEXT, false, ps.last().pose(), buffers, Font.DisplayMode.POLYGON_OFFSET, 0,
-                    LightTexture.FULL_BRIGHT);
-            ps.popPose();
-        }
+        drawText(ps, buffers, north, nx, ny, ls, TEXT);
+        for (int i = 0; i < gridText.size(); i++) drawText(ps, buffers, gridText.get(i), gridPos.get(i)[0], gridPos.get(i)[1], ls, RING_TEXT);
         for (LabelLayout.Placed pl : placed) {
             LabelLayout.Label lb = pl.label();
-            ps.pushPose();
-            ps.translate(lb.x() + ls, pl.y() + lh / 2, 0.003f);
-            ps.scale(ls, -ls, ls);
-            font.drawInBatch(lb.text(), 0, 0, 0xFF000000 | lb.color(), false, ps.last().pose(), buffers, Font.DisplayMode.POLYGON_OFFSET, 0,
-                    LightTexture.FULL_BRIGHT);
-            ps.popPose();
+            drawText(ps, buffers, lb.text(), lb.x() + ls, pl.y() - lh / 2, ls, 0xFF000000 | lb.color());
         }
         ps.pushPose();
-        ps.translate(-0.5f + e * 1.6f, h - 0.5f - e * 1.6f, 0.003f);
+        ps.translate(ox, oy, 0.003f);
         ps.scale(scale, -scale, scale);
         Matrix4f tm = ps.last().pose();
-        font.drawInBatch(Component.translatable("radar_fcs.monitor.range", Math.round(range)).getString(), 0, 0, TEXT, false, tm,
-                buffers, Font.DisplayMode.POLYGON_OFFSET, 0, LightTexture.FULL_BRIGHT);
-        String right1 = Component.translatable("radar_fcs.monitor.targets", count).getString();
+        font.drawInBatch(mapText, 0, 0, TEXT, false, tm, buffers, Font.DisplayMode.POLYGON_OFFSET, 0, LightTexture.FULL_BRIGHT);
         font.drawInBatch(right1, boxW - font.width(right1), 0, TEXT, false, tm, buffers, Font.DisplayMode.POLYGON_OFFSET, 0,
                 LightTexture.FULL_BRIGHT);
-        float boxH = (h - 2 * e * 1.6f) / scale;
         if (!lines.isEmpty()) {
-            // сведения о цели под строкой дальности; на маленьком экране - мельче, чтобы влезли
+            // сведения о цели под строкой масштаба; на маленьком экране - мельче, чтобы влезли
             ps.pushPose();
             ps.translate(0, font.lineHeight + 2, 0);
             ps.scale(k, k, 1);
             Matrix4f im = ps.last().pose();
             float ty = 0;
-            for (Component c : lines) {
-                font.drawInBatch(c, 0, ty, 0xFFFFFFFF, false, im, buffers, Font.DisplayMode.POLYGON_OFFSET, 0,
+            for (Component cl : lines) {
+                font.drawInBatch(cl, 0, ty, 0xFFFFFFFF, false, im, buffers, Font.DisplayMode.POLYGON_OFFSET, 0,
                         LightTexture.FULL_BRIGHT);
                 ty += font.lineHeight + 1;
             }
             ps.popPose();
         }
-        String bottom = be.radarCount() == 0 ? Component.translatable("radar_fcs.monitor.no_radar").getString()
-                : Component.translatable("radar_fcs.monitor.radars", be.radarCount()).getString();
         font.drawInBatch(bottom, 0, boxH - font.lineHeight, be.radarCount() == 0 ? 0xFFFF5050 : TEXT, false, tm, buffers,
                 Font.DisplayMode.POLYGON_OFFSET, 0, LightTexture.FULL_BRIGHT);
         ps.popPose();
@@ -303,24 +275,131 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         ps.popPose();
     }
 
-    /** Подпись у значка (локальные координаты экрана): x - левый край текста, y - середина строки. */
-    private LabelLayout.Label label(float x, float y, String text, int color, int rank, float ls) {
-        return new LabelLayout.Label(x - ls, y, font.width(text) * ls + 2 * ls, font.lineHeight * ls + ls, text, color, rank);
+    /** Строка текста в локальных координатах экрана: (x, y) - левый нижний угол строки, высота буквы - ls за пиксель. */
+    private void drawText(PoseStack ps, MultiBufferSource buffers, String text, float x, float y, float ls, int color) {
+        ps.pushPose();
+        ps.translate(x, y + font.lineHeight * ls, 0.003f);
+        ps.scale(ls, -ls, ls);
+        font.drawInBatch(text, 0, 0, color, false, ps.last().pose(), buffers, Font.DisplayMode.POLYGON_OFFSET, 0, LightTexture.FULL_BRIGHT);
+        ps.popPose();
     }
 
-    private static final int SHAPE_ROWS = 8;
-
-    /** Значок формы shape с центром (x, y) и полуразмером size. */
-    private static final float[][][] SPANS = new float[MonitorIcons.Shape.values().length][][];
-
-    static {
-        for (MonitorIcons.Shape sh : MonitorIcons.Shape.values()) SPANS[sh.ordinal()] = MonitorIcons.spans(sh, SHAPE_ROWS);
+    /** Подложка строки состояния: (tx, ty) и ширина tw - в пикселях шрифта от угла (ox, oy), ось y - вниз. */
+    private void textBg(MapCanvas c, float ox, float oy, float scale, float tx, float ty, float tw) {
+        c.rect(ox + (tx - 1) * scale, oy - (ty + font.lineHeight) * scale, ox + (tx + tw + 1) * scale, oy - (ty - 1) * scale, 0x90000000);
     }
 
-    static void shape(VertexConsumer vc, Matrix4f m, MonitorIcons.Shape shape, float x, float y, float size, float z, int argb) {
-        for (float[] sp : SPANS[shape.ordinal()]) {
-            rect(vc, m, x + sp[2] * size, y + sp[0] * size, x + sp[3] * size, y + sp[1] * size, z, argb);
+    /**
+     * Сетка карты: линии через 1/8 стороны, через 1/4 - ярче, оси через монитор - ярче всех. Цвета непрозрачные
+     * (заранее смешаны с фоном): на пересечениях линий нет светлых точек.
+     */
+    static void drawGrid(MapCanvas c, float half, float th) {
+        float step = half / 4 * c.k;
+        for (int axis = 0; axis < 2; axis++) {
+            float lo = axis == 0 ? c.x0 : c.y0, hi = axis == 0 ? c.x1 : c.y1, o = axis == 0 ? c.cx : c.cy;
+            int n0 = (int) Math.ceil((lo - o) / step), n1 = (int) Math.floor((hi - o) / step);
+            for (int i = n0; i <= n1; i++) {
+                float p = o + i * step;
+                int col = i == 0 ? AXIS : i % 2 == 0 ? GRID : GRID_MINOR;
+                float t = i == 0 ? th : th * 0.6f;
+                if (axis == 0) c.clippedRect(p - t / 2, c.y0, p + t / 2, c.y1, col);
+                else c.clippedRect(c.x0, p - t / 2, c.x1, p + t / 2, col);
+            }
         }
+    }
+
+    /**
+     * Радары сети на карте: зона действия (круг у вращающегося, сектор обзора у неподвижного), луч с затухающим
+     * следом - по живому курсу антенны с поправкой внутри тика, и метка самого радара.
+     */
+    static void drawRadars(MapCanvas c, RadarMonitorBlockEntity be, float partialTick, float iconSize, float th) {
+        int show = be.show();
+        boolean radars = (show & RadarMonitorBlockEntity.Show.RADARS.bit) != 0, zones = (show & RadarMonitorBlockEntity.Show.RADAR_ZONES.bit) != 0;
+        if (!radars && !zones) return;
+        Level level = be.getLevel();
+        int zi = be.icon(MonitorIcons.RADAR_ZONE);
+        int zc = (MonitorIcons.color(zi) == 0 ? SWEEP : MonitorIcons.PALETTE[MonitorIcons.color(zi)]) & 0xFFFFFF;
+        int outline = mix(BG, 0xFF000000 | zc, 0.6f);
+        float far = 2 * (c.x1 - c.x0 + c.y1 - c.y0);
+        for (Site s : be.sites()) {
+            float[] p = c.project(s.dx(), s.dz());
+            float heading = level == null ? Float.NaN : liveHeading(level, s, partialTick);
+            boolean known = Float.isFinite(heading);
+            float half = Math.max(1f, Math.min(180f, s.fov() / 2));
+            boolean rotating = s.speed() != 0 || half >= 180;
+            float len = s.range() > 0 ? s.range() * c.k : far;
+            if (zones && s.range() > 0 && (rotating || known)) {
+                float from = rotating ? 0 : heading - half, to = rotating ? 360 : heading + half;
+                if (MonitorIcons.zoneFilled(zi)) c.sector(p[0], p[1], from, to, len, MonitorIcons.zoneAlpha(zi) << 24 | zc);
+                c.arc(p[0], p[1], from, to, len, th, outline);
+                if (!rotating) {
+                    float[] a = c.dir(from), b = c.dir(to);
+                    c.line(p[0], p[1], p[0] + a[0] * len, p[1] + a[1] * len, th, outline);
+                    c.line(p[0], p[1], p[0] + b[0] * len, p[1] + b[1] * len, th, outline);
+                }
+            }
+            // луч: у неподвижного радара с показанной зоной его сектор и так виден
+            if (radars && known && (rotating || !zones)) {
+                c.sector(p[0], p[1], heading - half, heading + half, len, 0x48 << 24 | zc);
+                if (s.speed() != 0) {
+                    // след за лучом: на высоких оборотах длиннее (256 об/мин - почти 77° за тик)
+                    float dir = Math.signum(s.speed()), trail = Math.max(30f, Math.min(180f, Math.abs(s.speed()) * 1.5f));
+                    int seg = Math.max(6, (int) (trail / 6));
+                    for (int i = 0; i < seg; i++) {
+                        float a1 = heading - dir * (half + trail * i / seg), a2 = heading - dir * (half + trail * (i + 1) / seg);
+                        int alpha = (int) (0x3C * (1 - (i + 0.5f) / seg));
+                        c.sector(p[0], p[1], Math.min(a1, a2), Math.max(a1, a2), len, alpha << 24 | zc);
+                    }
+                }
+            }
+        }
+        if (!radars) return;
+        int ri = be.icon(MonitorIcons.RADAR);
+        int col = MonitorIcons.color(ri) == 0 ? SITE : MonitorIcons.PALETTE[MonitorIcons.color(ri)];
+        float size = iconSize * MonitorIcons.SIZES[MonitorIcons.size(ri)];
+        for (Site s : be.sites()) {
+            float[] p = c.toScreen(s.dx(), s.dz());
+            if (p != null) c.shape(MonitorIcons.shape(ri), p[0], p[1], size, col);
+        }
+    }
+
+    /**
+     * Курс луча сейчас (градусы, 0 - на юг): у загруженного на клиенте радара - его собственный угол плюс поворот за
+     * долю тика (так же доворачивается и антенна в мире), иначе - по данным монитора.
+     */
+    public static float liveHeading(Level level, Site s, float partialTick) {
+        BlockEntity rb = level.getBlockEntity(BlockPos.of(s.pos()));
+        if (rb != null && RadarLink.isRadar(rb)) {
+            float a = RadarLink.angle(rb);
+            if (Float.isFinite(a)) {
+                float h = (a + RadarLink.sweepSpeed(rb) * partialTick) % 360f;
+                lastHeading = h;
+                return h;
+            }
+        }
+        return Float.isFinite(s.angle()) ? s.angleAt(level.getGameTime() + partialTick) : Float.NaN;
+    }
+
+    /** Последний курс луча с живого радара (проверка плавности в тестах разработки). */
+    public static volatile float lastHeading = Float.NaN;
+
+    /** Смесь цветов a и b (t - доля b), непрозрачная. */
+    static int mix(int a, int b, float t) {
+        int r = (int) (((a >> 16) & 255) * (1 - t) + ((b >> 16) & 255) * t);
+        int g = (int) (((a >> 8) & 255) * (1 - t) + ((b >> 8) & 255) * t);
+        int bl = (int) ((a & 255) * (1 - t) + (b & 255) * t);
+        return 0xFF000000 | r << 16 | g << 8 | bl;
+    }
+
+    /**
+     * Подпись у значка (локальные координаты экрана): справа от него на off, а если не влезает в карту - слева;
+     * y - середина строки.
+     */
+    private LabelLayout.Label label(MapCanvas c, float ix, float off, float y, String text, int color, int rank, float ls) {
+        float lw = font.width(text) * ls + 2 * ls;
+        float x = ix + off - ls;
+        if (x + lw > c.x1) x = ix - off - lw + ls;
+        return new LabelLayout.Label(x, y, lw, font.lineHeight * ls + ls, text, color, rank);
     }
 
     /** Цвет значка отметки: по состоянию или постоянный из настроек типа. */
@@ -351,82 +430,11 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         return new float[]{(float) (rel.x * right.getStepX() + rel.z * right.getStepZ()), (float) rel.y};
     }
 
-    /** Мировое смещение -> точка экрана; null - за пределами круга. */
-    private static float[] toScreen(float dx, float dz, Direction f, Direction right, float range, float r, float cx, float cy) {
-        float u = dx * right.getStepX() + dz * right.getStepZ();
-        float v = -(dx * f.getStepX() + dz * f.getStepZ());
-        float k = r / range;
-        float x = u * k, y = v * k;
-        if (x * x + y * y > r * r) return null;
-        return new float[]{cx + x, cy + y};
-    }
-
-    private static void rect(VertexConsumer vc, Matrix4f m, float x0, float y0, float x1, float y1, float z, int argb) {
-        vc.addVertex(m, x0, y0, z).setColor(argb);
-        vc.addVertex(m, x1, y0, z).setColor(argb);
-        vc.addVertex(m, x1, y1, z).setColor(argb);
-        vc.addVertex(m, x0, y1, z).setColor(argb);
-    }
-
-    private static void frame(VertexConsumer vc, Matrix4f m, float x0, float y0, float x1, float y1, float t, float z, int argb) {
-        rect(vc, m, x0, y0, x1, y0 + t, z, argb);
-        rect(vc, m, x0, y1 - t, x1, y1, z, argb);
-        rect(vc, m, x0, y0 + t, x0 + t, y1 - t, z, argb);
-        rect(vc, m, x1 - t, y0 + t, x1, y1 - t, z, argb);
-    }
-
-    private static void disk(VertexConsumer vc, Matrix4f m, float cx, float cy, float r, float z, int argb) {
-        int n = 48;
-        for (int i = 0; i < n; i++) {
-            double a = Math.PI * 2 * i / n, b = Math.PI * 2 * (i + 1) / n;
-            vc.addVertex(m, cx, cy, z).setColor(argb);
-            vc.addVertex(m, cx + (float) Math.cos(a) * r, cy + (float) Math.sin(a) * r, z).setColor(argb);
-            vc.addVertex(m, cx + (float) Math.cos(b) * r, cy + (float) Math.sin(b) * r, z).setColor(argb);
-            vc.addVertex(m, cx, cy, z).setColor(argb);
-        }
-    }
-
-    private static void ring(VertexConsumer vc, Matrix4f m, float cx, float cy, float r, float t, float z, int argb) {
-        int n = 64;
-        float ri = r - t / 2, ro = r + t / 2;
-        for (int i = 0; i < n; i++) {
-            double a = Math.PI * 2 * i / n, b = Math.PI * 2 * (i + 1) / n;
-            float ca = (float) Math.cos(a), sa = (float) Math.sin(a), cb = (float) Math.cos(b), sb = (float) Math.sin(b);
-            vc.addVertex(m, cx + ca * ri, cy + sa * ri, z).setColor(argb);
-            vc.addVertex(m, cx + ca * ro, cy + sa * ro, z).setColor(argb);
-            vc.addVertex(m, cx + cb * ro, cy + sb * ro, z).setColor(argb);
-            vc.addVertex(m, cx + cb * ri, cy + sb * ri, z).setColor(argb);
-        }
-    }
-
-    /**
-     * Луч радара на экране: веер из точки радара p между мировыми курсами from..to (градусы, 0 - на юг, 90 - на
-     * восток) длиной len, обрезанный краем круга развёртки.
-     */
-    private static void beam(VertexConsumer vc, Matrix4f m, Direction f, Direction right, float[] p, float from, float to, float len,
-                             float cx, float cy, float r, float z, int argb) {
-        int n = Math.max(2, (int) Math.ceil((to - from) / 4));
-        float px = 0, py = 0;
-        for (int i = 0; i <= n; i++) {
-            double a = Math.toRadians(from + (to - from) * i / n);
-            double wx = Math.sin(a), wz = Math.cos(a);
-            float u = (float) (wx * right.getStepX() + wz * right.getStepZ());
-            float v = (float) -(wx * f.getStepX() + wz * f.getStepZ());
-            // до края круга: |p + t*(u,v) - c| = r
-            float qx = p[0] - cx, qy = p[1] - cy;
-            float b = qx * u + qy * v, c = qx * qx + qy * qy - r * r;
-            float t = (float) (-b + Math.sqrt(Math.max(0, b * b - c)));
-            t = Math.max(0, Math.min(len, t));
-            float x = p[0] + u * t, y = p[1] + v * t;
-            if (i > 0) {
-                vc.addVertex(m, p[0], p[1], z).setColor(argb);
-                vc.addVertex(m, px, py, z).setColor(argb);
-                vc.addVertex(m, x, y, z).setColor(argb);
-                vc.addVertex(m, p[0], p[1], z).setColor(argb);
-            }
-            px = x;
-            py = y;
-        }
+    private static void frame(MapCanvas c, float x0, float y0, float x1, float y1, float t, int argb) {
+        c.rect(x0, y0, x1, y0 + t, argb);
+        c.rect(x0, y1 - t, x1, y1, argb);
+        c.rect(x0, y0 + t, x0 + t, y1 - t, argb);
+        c.rect(x1 - t, y0 + t, x1, y1 - t, argb);
     }
 
     @Override

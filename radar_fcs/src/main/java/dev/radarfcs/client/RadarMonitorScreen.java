@@ -32,7 +32,7 @@ import org.jetbrains.annotations.Nullable;
 public final class RadarMonitorScreen extends Screen {
     private enum Tab { SCOPE, LIST, VIEW }
 
-    private static final int W = 420, H = 240, ROW = 12, R = 92;
+    private static final int W = 420, H = 272, ROW = 12, R = 92, MAP = 2 * R;
     private static final int LIST_TOP = 42, LIST_ROWS = (H - LIST_TOP - 34) / ROW;
 
     private final BlockPos pos;
@@ -89,8 +89,7 @@ public final class RadarMonitorScreen extends Screen {
 
     private void scaleButton(@Nullable RadarMonitorBlockEntity m, int x, int y, int w) {
         int i = m == null ? 0 : m.scaleIndex();
-        Component t = i == 0 ? Component.translatable("radar_fcs.monitor_gui.scale_auto")
-                : Component.translatable("radar_fcs.monitor_gui.scale", RadarMonitorBlockEntity.SCALES[i]);
+        Component t = Component.translatable("radar_fcs.monitor_gui.scale", RadarMonitorBlockEntity.SCALES[i]);
         addRenderableWidget(Button.builder(t, b -> send(MonitorCommandPayload.SCALE, (i + 1) % RadarMonitorBlockEntity.SCALES.length, ""))
                 .bounds(x, y, w, 18).build());
     }
@@ -106,20 +105,30 @@ public final class RadarMonitorScreen extends Screen {
     private void viewTab(@Nullable RadarMonitorBlockEntity m) {
         int y = top + 42;
         for (int cat = 0; cat < MonitorIcons.COUNT; cat++) {
-            Show filter = cat < TargetCategory.values().length ? Show.values()[cat] : Show.TRANSPONDERS;
+            Show filter = cat < TargetCategory.values().length ? Show.values()[cat]
+                    : cat == MonitorIcons.RADAR ? Show.RADARS : cat == MonitorIcons.RADAR_ZONE ? Show.RADAR_ZONES : Show.TRANSPONDERS;
             showButton(m, filter, left + 8, y, 140);
             int icon = m == null ? MonitorIcons.defaults()[cat] : m.icon(cat);
             int c = cat;
+            boolean zone = cat == MonitorIcons.RADAR_ZONE;
             MonitorIcons.Shape sh = MonitorIcons.shape(icon);
             int color = MonitorIcons.color(icon), size = MonitorIcons.size(icon);
-            addRenderableWidget(Button.builder(Component.translatable("radar_fcs.monitor_gui.shape." + sh.name().toLowerCase(Locale.ROOT)),
-                    b -> setIcon(c, MonitorIcons.pack(MonitorIcons.Shape.values()[(sh.ordinal() + 1) % MonitorIcons.Shape.values().length], color, size)))
-                    .bounds(left + 170, y, 76, 15).build());
+            if (zone) {
+                // зона: заливка или только контур; «размер» - яркость заливки
+                boolean filled = MonitorIcons.zoneFilled(icon);
+                addRenderableWidget(Button.builder(Component.translatable(filled ? "radar_fcs.monitor_gui.zone.filled" : "radar_fcs.monitor_gui.zone.outline"),
+                        b -> setIcon(c, MonitorIcons.pack(filled ? MonitorIcons.Shape.RING : MonitorIcons.Shape.CIRCLE, color, size)))
+                        .bounds(left + 170, y, 76, 15).build());
+            } else {
+                addRenderableWidget(Button.builder(Component.translatable("radar_fcs.monitor_gui.shape." + sh.name().toLowerCase(Locale.ROOT)),
+                        b -> setIcon(c, MonitorIcons.pack(MonitorIcons.Shape.values()[(sh.ordinal() + 1) % MonitorIcons.Shape.values().length], color, size)))
+                        .bounds(left + 170, y, 76, 15).build());
+            }
             addRenderableWidget(Button.builder(Component.translatable("radar_fcs.monitor_gui.color." + MonitorIcons.COLOR_KEYS[color])
                                     .withColor(color == 0 ? 0xFFFFFF : MonitorIcons.PALETTE[color] & 0xFFFFFF),
                     b -> setIcon(c, MonitorIcons.pack(sh, (color + 1) % MonitorIcons.PALETTE.length, size)))
                     .bounds(left + 250, y, 86, 15).build());
-            addRenderableWidget(Button.builder(Component.translatable("radar_fcs.monitor_gui.size." + size),
+            addRenderableWidget(Button.builder(Component.translatable((zone ? "radar_fcs.monitor_gui.zone.alpha." : "radar_fcs.monitor_gui.size.") + size),
                     b -> setIcon(c, MonitorIcons.pack(sh, color, (size + 1) % MonitorIcons.SIZES.length)))
                     .bounds(left + 340, y, 72, 15).build());
             y += 16;
@@ -129,7 +138,7 @@ public final class RadarMonitorScreen extends Screen {
         showButton(m, Show.INACTIVE, left + 152, y, 140);
         y += 20;
         labelsButton(m, left + 8, y, 200);
-        scaleButton(m, left + 212, y, 110);
+        scaleButton(m, left + 212, y, 124);
     }
 
     private void showButton(@Nullable RadarMonitorBlockEntity m, Show s, int x, int y, int w) {
@@ -169,7 +178,7 @@ public final class RadarMonitorScreen extends Screen {
         RadarMonitorBlockEntity m = monitor();
         if (m == null) return;
         g.drawString(font, Component.translatable("radar_fcs.monitor_gui.targets", m.blips().size(), m.radarCount(),
-                Math.round(m.displayRange())), left + 8, top + H - 16, 0x7FD4FF, false);
+                RadarMonitorBlockEntity.SCALES[m.scaleIndex()]), left + 8, top + H - 16, 0x7FD4FF, false);
         switch (tab) {
             case SCOPE -> renderScope(g, m, mouseX, mouseY);
             case LIST -> renderList(g, m, mouseX, mouseY);
@@ -177,47 +186,26 @@ public final class RadarMonitorScreen extends Screen {
         }
     }
 
-    /** Мировое смещение -> точка развёртки окна (вверх - от зрителя у монитора, как на экране в мире). */
-    private float[] toScope(RadarMonitorBlockEntity m, float dx, float dz) {
-        Direction f = m.facing(), right = f.getCounterClockWise();
-        float u = dx * right.getStepX() + dz * right.getStepZ();
-        float v = -(dx * f.getStepX() + dz * f.getStepZ());
-        float k = R / Math.max(1f, m.displayRange());
-        float x = u * k, y = v * k;
-        if (x * x + y * y > R * R) return null;
-        return new float[]{left + 8 + R + x, top + 30 + R - y};
+    /** Карта окна: квадрат MAP x MAP, в центре - монитор, вверх - от зрителя у монитора (как на экране в мире). */
+    private MapCanvas canvas(GuiGraphics g, RadarMonitorBlockEntity m) {
+        float half = RadarMonitorBlockEntity.SCALES[m.scaleIndex()] / 2f;
+        int x0 = left + 8, y0 = top + 30;
+        return new MapCanvas(g.bufferSource(), MapCanvas.GUI, g.pose().last().pose(), m.facing(), x0 + R, y0 + R, R / half,
+                x0, y0, x0 + MAP, y0 + MAP, -1);
     }
 
     private void renderScope(GuiGraphics g, RadarMonitorBlockEntity m, int mouseX, int mouseY) {
+        MapCanvas map = canvas(g, m);
         int cx = left + 8 + R, cy = top + 30 + R;
-        for (float[] sp : MonitorIcons.spans(MonitorIcons.Shape.CIRCLE, 2 * R)) {
-            g.fill(cx + Math.round(sp[2] * R), cy - Math.round(sp[1] * R), cx + Math.round(sp[3] * R), cy - Math.round(sp[0] * R), 0xFF0B2412);
-        }
-        for (int k = 1; k <= 3; k++) circle(g, cx, cy, R * k / 3f, 0xFF40C060);
-        g.fill(cx - R, cy, cx + R, cy + 1, 0x6040C060);
-        g.fill(cx, cy - R, cx + 1, cy + R, 0x6040C060);
-        // дистанции кругов: на диагонали вниз-вправо, сразу за кругом
-        float diag = (float) Math.sqrt(0.5);
-        for (int k = 1; k <= 3; k++) {
-            String txt = RadarMonitorRenderer.ringLabel(m.displayRange() * k / 3f);
-            g.pose().pushPose();
-            float sc = 0.75f, rr = R * k / 3f;
-            float tx = cx + rr * diag + 2, ty = cy + rr * diag + 1;
-            if (k == 3) tx = Math.min(tx, cx + R - font.width(txt) * sc);
-            g.pose().translate(tx, ty, 0);
-            g.pose().scale(sc, sc, 1f);
-            g.fill(-1, -1, font.width(txt) + 1, font.lineHeight, 0x90000000);
-            g.drawString(font, txt, 0, 0, 0xFF5FC878, false);
-            g.pose().popPose();
-        }
+        float half = RadarMonitorBlockEntity.SCALES[m.scaleIndex()] / 2f;
+        map.rect(map.x0, map.y0, map.x1, map.y1, 0xFF060D08);
         if (!m.powered()) {
             g.drawCenteredString(font, Component.translatable("radar_fcs.monitor.no_energy_short"), cx, cy - 4, 0xFF5050);
             return;
         }
-        for (RadarMonitorBlockEntity.Site s : m.sites()) {
-            float[] p = toScope(m, s.dx(), s.dz());
-            if (p != null) g.fill((int) p[0] - 2, (int) p[1] - 2, (int) p[0] + 2, (int) p[1] + 2, 0xFF60FF80);
-        }
+        RadarMonitorRenderer.drawGrid(map, half, 2f);
+        float partial = minecraft == null ? 0 : minecraft.getTimer().getGameTimeDeltaPartialTick(false);
+        RadarMonitorRenderer.drawRadars(map, m, partial, 3.5f, 1.2f);
         g.fill(cx - 3, cy, cx + 4, cy + 1, 0xFFFFFFFF);
         g.fill(cx, cy - 3, cx + 1, cy + 4, 0xFFFFFFFF);
         boolean always = m.labels() == RadarMonitorBlockEntity.LABELS_ALWAYS;
@@ -227,7 +215,7 @@ public final class RadarMonitorScreen extends Screen {
         double best = 7;
         int tIcon = m.icon(MonitorIcons.TRANSPONDER);
         for (Mark mk : m.marks()) {
-            float[] p = toScope(m, mk.dx(), mk.dz());
+            float[] p = map.toScreen(mk.dx(), mk.dz());
             if (p == null) continue;
             int col = MonitorIcons.color(tIcon) == 0 ? (mk.friendly() ? 0xFF40FF60 : 0xFFFFA020) : MonitorIcons.PALETTE[MonitorIcons.color(tIcon)];
             icon(g, MonitorIcons.shape(tIcon), p[0], p[1], 3.5f * MonitorIcons.SIZES[MonitorIcons.size(tIcon)], col);
@@ -239,7 +227,7 @@ public final class RadarMonitorScreen extends Screen {
             if (always && !mk.name().isEmpty()) labels.add(label(mk.name(), p[0] + 6, p[1], col, LabelLayout.RANK_MINOR));
         }
         for (Blip b : m.blips()) {
-            float[] p = toScope(m, b.dx(), b.dz());
+            float[] p = map.toScreen(b.dx(), b.dz());
             if (p == null) continue;
             int ic = m.icon(b.category());
             float sz = 3.5f * MonitorIcons.SIZES[MonitorIcons.size(ic)];
@@ -264,18 +252,33 @@ public final class RadarMonitorScreen extends Screen {
         // наведённая отметка: рамка, подпись (в режиме «при наведении») и сведения справа
         List<Component> info = List.of();
         if (hovered != null) {
-            float[] p = toScope(m, hovered.dx(), hovered.dz());
+            float[] p = map.toScreen(hovered.dx(), hovered.dz());
             if (p != null) g.renderOutline((int) p[0] - 6, (int) p[1] - 6, 13, 13, 0xFFFFFFFF);
             if (!always && !hovered.tag().isEmpty() && p != null) labels.add(label(hovered.tag(), p[0] + 8, p[1], 0xFFFFFFFF, LabelLayout.RANK_HOVER));
             info = describe(m, hovered);
         } else if (hoveredMark != null) {
-            float[] p = toScope(m, hoveredMark.dx(), hoveredMark.dz());
+            float[] p = map.toScreen(hoveredMark.dx(), hoveredMark.dz());
             if (p != null) g.renderOutline((int) p[0] - 6, (int) p[1] - 6, 13, 13, 0xFFFFFFFF);
             if (!always && !hoveredMark.name().isEmpty() && p != null) labels.add(label(hoveredMark.name(), p[0] + 8, p[1], 0xFFFFFFFF, LabelLayout.RANK_HOVER));
             info = describeMark(m, hoveredMark);
         } else {
             for (Blip b : m.blips()) if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) info = describe(m, b);
         }
+        // дистанции сетки (под осью вправо, через четверть стороны) и север - у края карты
+        float sc = 0.75f;
+        String north = Component.translatable("radar_fcs.monitor.north").getString();
+        float[] nd = map.north();
+        float nw = font.width(north) * sc, nh = font.lineHeight * sc;
+        float nx = nd[0] > 0 ? map.x1 - 3 - nw : nd[0] < 0 ? map.x0 + 3 : cx - nw / 2;
+        float ny = nd[1] > 0 ? map.y1 - 3 - nh : nd[1] < 0 ? map.y0 + 3 : cy - nh / 2;
+        float limit = nd[0] > 0 ? nx - 3 : map.x1 - 1;
+        for (int i = 1; ; i++) {
+            String txt = RadarMonitorRenderer.ringLabel(half / 2 * i);
+            float tx = cx + R / 2f * i + 2;
+            if (tx + font.width(txt) * sc > limit) break;
+            smallText(g, txt, tx, cy + 2, sc, 0xFF5FC878, 0x90000000);
+        }
+        smallText(g, north, nx, ny, sc, 0xFF70FF90, 0xC0000000);
         // подписи - поверх всех значков и без наложения
         for (LabelLayout.Placed pl : LabelLayout.place(labels)) drawLabel(g, pl);
         int x = left + 2 * R + 20, y = top + 100, w = W - 2 * R - 28;
@@ -290,13 +293,14 @@ public final class RadarMonitorScreen extends Screen {
         }
     }
 
-    private void circle(GuiGraphics g, int cx, int cy, float r, int color) {
-        int n = Math.max(24, (int) (r * 3));
-        for (int i = 0; i < n; i++) {
-            double a = Math.PI * 2 * i / n;
-            int x = cx + (int) Math.round(Math.cos(a) * r), y = cy + (int) Math.round(Math.sin(a) * r);
-            g.fill(x, y, x + 1, y + 1, color);
-        }
+    /** Мелкая строка с подложкой: (x, y) - левый верхний угол. */
+    private void smallText(GuiGraphics g, String txt, float x, float y, float sc, int color, int bg) {
+        g.pose().pushPose();
+        g.pose().translate(x, y, 0);
+        g.pose().scale(sc, sc, 1f);
+        g.fill(-1, -1, font.width(txt) + 1, font.lineHeight, bg);
+        g.drawString(font, txt, 0, 0, color, false);
+        g.pose().popPose();
     }
 
     /** Значок фигуры shape с центром (x, y) и полуразмером size пикселей (y фигуры - вверх). */
@@ -376,8 +380,15 @@ public final class RadarMonitorScreen extends Screen {
         int y = top + 42;
         for (int cat = 0; cat < MonitorIcons.COUNT; cat++) {
             int ic = m.icon(cat);
-            int col = MonitorIcons.color(ic) == 0 ? (cat == MonitorIcons.TRANSPONDER ? 0xFF40FF60 : 0xFFFFA020) : MonitorIcons.PALETTE[MonitorIcons.color(ic)];
-            icon(g, MonitorIcons.shape(ic), left + 157, y + 7, 3.5f * MonitorIcons.SIZES[MonitorIcons.size(ic)], col);
+            int auto = cat == MonitorIcons.TRANSPONDER ? 0xFF40FF60 : cat >= MonitorIcons.RADAR ? 0xFF60FF80 : 0xFFFFA020;
+            int col = MonitorIcons.color(ic) == 0 ? auto : MonitorIcons.PALETTE[MonitorIcons.color(ic)];
+            if (cat == MonitorIcons.RADAR_ZONE) {
+                // образец зоны: заливка с выбранной яркостью и контур
+                if (MonitorIcons.zoneFilled(ic)) g.fill(left + 151, y + 2, left + 164, y + 13, MonitorIcons.zoneAlpha(ic) << 24 | col & 0xFFFFFF);
+                g.renderOutline(left + 151, y + 2, 13, 11, RadarMonitorRenderer.mix(0xFF060D08, col, 0.6f));
+            } else {
+                icon(g, MonitorIcons.shape(ic), left + 157, y + 7, 3.5f * MonitorIcons.SIZES[MonitorIcons.size(ic)], col);
+            }
             y += 16;
         }
     }
@@ -425,7 +436,9 @@ public final class RadarMonitorScreen extends Screen {
         RadarMonitorBlockEntity m = monitor();
         if (m != null && button == 0) {
             Blip target = null;
-            if (tab == Tab.SCOPE && Math.hypot(mouseX - (left + 8 + R), mouseY - (top + 30 + R)) <= R) target = hovered;
+            if (tab == Tab.SCOPE && mouseX >= left + 8 && mouseX <= left + 8 + MAP && mouseY >= top + 30 && mouseY <= top + 30 + MAP) {
+                target = hovered;
+            }
             if (tab == Tab.LIST) {
                 int lx = left + 8, ly = top + LIST_TOP;
                 if (mouseX >= lx && mouseX < lx + W - 16 && mouseY >= ly && mouseY < ly + LIST_ROWS * ROW) {
