@@ -72,6 +72,11 @@ public final class DevScreenshots {
             // подписи имён с транспондеров на экране монитора - всегда
             if (server.overworld().getBlockEntity(base.offset(-3, 0, -3)) instanceof dev.radarfcs.block.RadarMonitorBlockEntity mon) {
                 mon.setLabels(dev.radarfcs.block.RadarMonitorBlockEntity.LABELS_ALWAYS);
+                // метки игрока на карте (только для глаз)
+                while (!mon.pins().isEmpty()) mon.removePin(0);
+                mon.setPin(-1, (base.getX() + 30) + ";" + (base.getZ() + 25) + ";3;Сбор", null);
+                mon.setPin(-1, (base.getX() - 20) + ";" + (base.getZ() - 40) + ";8;Мост", null);
+                mon.setPin(-1, (base.getX() + 45) + ";" + (base.getZ() - 30) + ";4;", null);
             }
         });
         if (tick == 40 && radarBearing != null) server.execute(() -> {
@@ -185,7 +190,9 @@ public final class DevScreenshots {
         if (tick == 612 && mc.screen instanceof dev.radarfcs.client.RadarMonitorScreen ms) ms.showTab(1);
         if (tick == 618) shot(mc, "monitor_gui_1");
         if (tick == 620 && mc.screen instanceof dev.radarfcs.client.RadarMonitorScreen ms) ms.showTab(2);
-        if (tick == 626) shot(mc, "monitor_gui_2");
+        if (tick == 623) shot(mc, "monitor_gui_pins");
+        if (tick == 625 && mc.screen instanceof dev.radarfcs.client.RadarMonitorScreen ms) ms.showTab(3);
+        if (tick == 628) shot(mc, "monitor_gui_2");
         // экран транспондера: основное и наследование
         if (tick == 630) dev.radarfcs.client.FcsClientHooks.openTransponder(new dev.radarfcs.net.TransponderPayloads.Open(
                 base.offset(8, 0, -3), new dev.radarfcs.iff.TransponderSettings("2077", "Аврора", dev.radarfcs.iff.TransponderMode.SUBLEVEL_AND_DISTANCE, 16,

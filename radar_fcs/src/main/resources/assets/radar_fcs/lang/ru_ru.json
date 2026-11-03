@@ -312,5 +312,13 @@
   "radar_fcs.monitor_gui.side": "Карта, бл:",
   "radar_fcs.monitor_gui.state.excluded": "исключена из огня",
   "radar_fcs.msg.excluded": "Цель исключена из огня: %s (колесо ещё раз - вернуть)",
-  "radar_fcs.msg.exclusion_cleared": "Цель снова в огне: %s"
+  "radar_fcs.msg.exclusion_cleared": "Цель снова в огне: %s",
+  "radar_fcs.monitor_gui.tab.pins": "Метки",
+  "radar_fcs.monitor_gui.pin_add": "Добавить (где стою)",
+  "radar_fcs.monitor_gui.pin_name": "Имя",
+  "radar_fcs.monitor_gui.pin": "метка",
+  "radar_fcs.monitor_gui.pins_empty": "Меток нет. ПКМ по карте на вкладке «Экран» — поставить.",
+  "radar_fcs.monitor_gui.pins_hint": "ПКМ по карте — поставить метку, ПКМ по метке — убрать. Метки только для глаз: на огонь не влияют.",
+  "radar_fcs.monitor_gui.show.pins": "Метки",
+  "radar_fcs.msg.pins_full": "Меток уже %s — больше нельзя"
 }

@@ -17,13 +17,15 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 /** Команда с экрана радарного монитора: назначить или снять цель, исключить цель, масштаб, фильтры показа. */
 public record MonitorCommandPayload(BlockPos pos, int action, int value, String id) implements CustomPacketPayload {
     /** SCALE - сторона карты в блоках; EXCLUDE - исключить цель из огня или вернуть (колесо мыши). */
-    public static final int DESIGNATE = 0, CLEAR = 1, SCALE = 2, SHOW = 3, ICON = 4, LABELS = 5, EXCLUDE = 6;
+    /** PIN_SET - метка (value - номер, -1 - новая; id - «x;z;цвет;имя»), PIN_REMOVE - убрать метку value. */
+    public static final int DESIGNATE = 0, CLEAR = 1, SCALE = 2, SHOW = 3, ICON = 4, LABELS = 5, EXCLUDE = 6, PIN_SET = 7,
+            PIN_REMOVE = 8;
     public static final Type<MonitorCommandPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(FcsMod.MODID, "monitor_command"));
     public static final StreamCodec<ByteBuf, MonitorCommandPayload> CODEC = StreamCodec.composite(
             BlockPos.STREAM_CODEC, MonitorCommandPayload::pos,
             ByteBufCodecs.VAR_INT, MonitorCommandPayload::action,
             ByteBufCodecs.VAR_INT, MonitorCommandPayload::value,
-            ByteBufCodecs.stringUtf8(64), MonitorCommandPayload::id,
+            ByteBufCodecs.stringUtf8(96), MonitorCommandPayload::id,
             MonitorCommandPayload::new);
     /** Экран монитора может быть большим: от любого его блока не дальше этого. */
     private static final double MAX_DIST_SQR = 24 * 24;
@@ -66,6 +68,8 @@ public record MonitorCommandPayload(BlockPos pos, int action, int value, String 
                 case SHOW -> be.setShow(p.value());
                 case ICON -> be.setIcon(p.value() >>> 16, p.value() & 0xFFFF);
                 case LABELS -> be.setLabels(p.value());
+                case PIN_SET -> be.setPin(p.value(), p.id(), sp);
+                case PIN_REMOVE -> be.removePin(p.value());
                 default -> { }
             }
         });

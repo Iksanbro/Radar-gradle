@@ -312,5 +312,13 @@
   "radar_fcs.monitor_gui.side": "Map, blocks:",
   "radar_fcs.monitor_gui.state.excluded": "excluded from fire",
   "radar_fcs.msg.excluded": "Target excluded from fire: %s (middle-click again to restore)",
-  "radar_fcs.msg.exclusion_cleared": "Target back in fire: %s"
+  "radar_fcs.msg.exclusion_cleared": "Target back in fire: %s",
+  "radar_fcs.monitor_gui.tab.pins": "Markers",
+  "radar_fcs.monitor_gui.pin_add": "Add (where I stand)",
+  "radar_fcs.monitor_gui.pin_name": "Name",
+  "radar_fcs.monitor_gui.pin": "marker",
+  "radar_fcs.monitor_gui.pins_empty": "No markers. Right-click the map on the Screen tab to place one.",
+  "radar_fcs.monitor_gui.pins_hint": "Right-click the map to place a marker, right-click a marker to remove it. Markers are visual only and do not affect fire.",
+  "radar_fcs.monitor_gui.show.pins": "Markers",
+  "radar_fcs.msg.pins_full": "Already %s markers, no more allowed"
 }

@@ -40,6 +40,8 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
     private static final int AXIS = 0xFF2E8845;
     private static final int GRID = 0xFF1C5029;
     private static final int GRID_MINOR = 0xFF11301A;
+    /** Засечки шкалы дальности. */
+    private static final int SCALE_TICK = 0xFF7FE59A;
     private static final int SWEEP = 0x60FF60;
     private static final int SITE = 0xFF60FF80;
     private static final int HOSTILE = 0xFFFFA020;
@@ -118,12 +120,32 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         float[] look = lookPoint(be, f, right, w, h);
         Blip hovered = null;
         RadarMonitorBlockEntity.Mark hoveredMark = null;
+        int hoveredPin = -1;
         float hoverD = Math.max(s * 3f, 0.06f);
         int count = 0;
         List<Blip> blips = be.blips();
         boolean always = be.labels() == RadarMonitorBlockEntity.LABELS_ALWAYS;
         List<LabelLayout.Label> labels = new ArrayList<>();
         float ls = 0.0055f * (float) Math.sqrt(Math.min(w, h));
+        // метки игрока (только для глаз): кольцо с точкой и подпись всегда
+        if ((be.show() & RadarMonitorBlockEntity.Show.PINS.bit) != 0) {
+            List<RadarMonitorBlockEntity.Pin> pins = be.pins();
+            for (int i = 0; i < pins.size(); i++) {
+                RadarMonitorBlockEntity.Pin pin = pins.get(i);
+                float[] p = c.toScreen(pinDx(be, pin), pinDz(be, pin));
+                if (p == null) continue;
+                int col = MonitorIcons.PALETTE[pin.color()];
+                drawPin(c, p[0], p[1], s, col);
+                if (look != null) {
+                    float d = (float) Math.hypot(p[0] - look[0], p[1] - look[1]);
+                    if (d < hoverD) {
+                        hoverD = d;
+                        hoveredPin = i;
+                    }
+                }
+                labels.add(label(c, p[0], s * 1.4f, p[1], pin.label(i), col, LabelLayout.RANK_ACTIVE, ls));
+            }
+        }
         // метки наземных транспондеров
         int tIcon = be.icon(MonitorIcons.TRANSPONDER);
         for (RadarMonitorBlockEntity.Mark mk : be.marks()) {
@@ -137,6 +159,7 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
                 if (d < hoverD) {
                     hoverD = d;
                     hoveredMark = mk;
+                    hoveredPin = -1;
                 }
             }
             if (always && !mk.name().isEmpty()) labels.add(label(c, p[0], ms * 1.4f, p[1], mk.name(), col, LabelLayout.RANK_MINOR, ls));
@@ -165,6 +188,7 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
                         hoverD = d;
                         hovered = b;
                         hoveredMark = null;
+                        hoveredPin = -1;
                     }
                 }
                 if (always && !b.tag().isEmpty()) {
@@ -180,12 +204,14 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         } else if (be.getBlockPos().equals(hoverMonitor)) {
             hoverId = null;
         }
+        RadarMonitorBlockEntity.Pin hPin = hoveredPin >= 0 ? be.pins().get(hoveredPin) : null;
         float[] hp = hovered != null ? c.toScreen(hovered.dx(), hovered.dz())
-                : hoveredMark != null ? c.toScreen(hoveredMark.dx(), hoveredMark.dz()) : null;
+                : hoveredMark != null ? c.toScreen(hoveredMark.dx(), hoveredMark.dz())
+                : hPin != null ? c.toScreen(pinDx(be, hPin), pinDz(be, hPin)) : null;
         if (hp != null) {
             float o = s * 1.8f, t = s * 0.3f;
             frame(c, hp[0] - o, hp[1] - o, hp[0] + o, hp[1] + o, t, HOVER);
-            String name = hovered != null ? hovered.tag() : hoveredMark.name();
+            String name = hovered != null ? hovered.tag() : hoveredMark != null ? hoveredMark.name() : "";   // подпись метки и так видна
             if (!always && !name.isEmpty()) labels.add(label(c, hp[0], o * 1.2f, hp[1], name, HOVER, LabelLayout.RANK_HOVER, ls));
         } else if (look != null) {
             // курсор взгляда
@@ -207,19 +233,20 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         float nx = nd[0] > 0 ? c.x1 - pad - nw : nd[0] < 0 ? c.x0 + pad : cx - nw / 2;
         float ny = nd[1] > 0 ? c.y1 - pad - lh : nd[1] < 0 ? c.y0 + pad : cy - lh / 2;
         c.rect(nx - 1.5f * ls, ny - 1.5f * ls, nx + nw + 1.5f * ls, ny + lh + 0.5f * ls, 0xC0000000);
-        // дистанции сетки: под осью вправо от монитора, у каждой второй линии (через четверть стороны)
-        float stepK = half / 2 * c.k;
-        float gridLimit = nd[0] > 0 ? nx - 2 * ls : c.x1 - ls;
+        // шкала дальности: засечки на 1/3, 1/2, 2/3 и у края квадрата, подписи поочерёдно под и над осью
+        int sdir = nd[0] > 0 ? -1 : 1;
+        float sLo = c.x0 + ls * 2, sHi = c.x1 - ls * 2;
+        if (nd[0] > 0) sHi = Math.min(sHi, nx - 2 * ls);
+        if (nd[0] < 0) sLo = Math.max(sLo, nx + nw + 2 * ls);
+        List<ScaleLabel> scaleLabels = scale(c, half, th, sdir, txt -> font.width(txt) * ls, sLo, sHi);
         List<String> gridText = new ArrayList<>();
         List<float[]> gridPos = new ArrayList<>();
-        for (int i = 1; ; i++) {
-            String txt = ringLabel(half / 2 * i);
-            float tw = font.width(txt) * ls;
-            float gx = cx + stepK * i + 2 * ls, gy = cy - lh - 2 * ls;
-            if (gx + tw > gridLimit || gy < c.y0) break;
-            c.rect(gx - ls, gy - ls, gx + tw + ls, gy + lh, 0x90000000);
-            gridText.add(txt);
-            gridPos.add(new float[]{gx, gy});
+        for (ScaleLabel sl : scaleLabels) {
+            float gy = sl.side() > 0 ? cy + th * 3 + ls : cy - th * 3 - ls - lh;
+            float tw = font.width(sl.text()) * ls;
+            c.rect(sl.x() - ls, gy - ls, sl.x() + tw + ls, gy + lh, 0xA0000000);
+            gridText.add(sl.text());
+            gridPos.add(new float[]{sl.x(), gy});
         }
 
         // сведения о цели под взглядом (или назначенной): подложка - квадом здесь, текст - ниже. Свой фон текста шрифта
@@ -228,11 +255,12 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         float boxW = (w - 2 * e * 1.6f) / scale, boxH = (h - 2 * e * 1.6f) / scale;
         float ox = -0.5f + e * 1.6f, oy = h - 0.5f - e * 1.6f;
         Blip info = hovered;
-        if (info == null && hoveredMark == null) {
+        if (info == null && hoveredMark == null && hPin == null) {
             for (Blip b : blips) if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) info = b;
         }
         List<Component> lines = info != null ? RadarMonitorScreen.describe(be, info)
-                : hoveredMark != null ? RadarMonitorScreen.describeMark(be, hoveredMark) : List.of();
+                : hoveredMark != null ? RadarMonitorScreen.describeMark(be, hoveredMark)
+                : hPin != null ? RadarMonitorScreen.describePin(be, hPin, hoveredPin) : List.of();
         int widest = 1;
         for (Component cl : lines) widest = Math.max(widest, font.width(cl));
         float k = Math.min(1f, boxW / widest);
@@ -298,23 +326,64 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         c.rect(ox + (tx - 1) * scale, oy - (ty + font.lineHeight) * scale, ox + (tx + tw + 1) * scale, oy - (ty - 1) * scale, 0x90000000);
     }
 
+    /** Деления шкалы дальности: доли половины стороны карты (от монитора до края квадрата карты). */
+    static final float[] SCALE_F = {1f / 3, 0.5f, 2f / 3, 1f};
+
     /**
-     * Сетка карты: линии через 1/8 стороны, через 1/4 - ярче, оси через монитор - ярче всех. Цвета непрозрачные
-     * (заранее смешаны с фоном): на пересечениях линий нет светлых точек.
+     * Сетка карты - по делениям шкалы: линии на 1/3, 1/2, 2/3 и 1 половины стороны от монитора (дальше, на широкой
+     * стене, - тот же рисунок), ось через монитор - ярче всех. Цвета непрозрачные (заранее смешаны с фоном): на
+     * пересечениях линий нет светлых точек.
      */
     static void drawGrid(MapCanvas c, float half, float th) {
-        float step = half / 4 * c.k;
+        float unit = half * c.k;
         for (int axis = 0; axis < 2; axis++) {
             float lo = axis == 0 ? c.x0 : c.y0, hi = axis == 0 ? c.x1 : c.y1, o = axis == 0 ? c.cx : c.cy;
-            int n0 = (int) Math.ceil((lo - o) / step), n1 = (int) Math.floor((hi - o) / step);
-            for (int i = n0; i <= n1; i++) {
-                float p = o + i * step;
-                int col = i == 0 ? AXIS : i % 2 == 0 ? GRID : GRID_MINOR;
-                float t = i == 0 ? th : th * 0.6f;
-                if (axis == 0) c.clippedRect(p - t / 2, c.y0, p + t / 2, c.y1, col);
-                else c.clippedRect(c.x0, p - t / 2, c.x1, p + t / 2, col);
+            for (int sign = -1; sign <= 1; sign += 2) {
+                for (int n = 0; o + sign * (n + SCALE_F[0]) * unit >= lo - th && o + sign * (n + SCALE_F[0]) * unit <= hi + th; n++) {
+                    for (float f : SCALE_F) {
+                        float p = o + sign * (n + f) * unit;
+                        int col = f == 0.5f || f == 1f ? GRID : GRID_MINOR;
+                        float t = th * 0.6f;
+                        if (axis == 0) c.clippedRect(p - t / 2, c.y0, p + t / 2, c.y1, col);
+                        else c.clippedRect(c.x0, p - t / 2, c.x1, p + t / 2, col);
+                    }
+                }
             }
+            if (axis == 0) c.clippedRect(o - th / 2, c.y0, o + th / 2, c.y1, AXIS);
+            else c.clippedRect(c.x0, o - th / 2, c.x1, o + th / 2, AXIS);
         }
+    }
+
+    /** Подпись деления шкалы: текст, левый край, сторона от оси (+1 - выше на экране, -1 - ниже). */
+    record ScaleLabel(String text, float x, int side) {}
+
+    /**
+     * Шкала дальности на горизонтальной оси через монитор: засечки на 1/3, 1/2, 2/3 и у края квадрата карты
+     * (dir = +1 - вправо от монитора, -1 - влево, если справа север), подписи - поочерёдно ниже и выше оси, цифры по
+     * масштабу. Подпись, которой не хватает места (налезает на соседнюю или за [lo, hi]), не ставится.
+     */
+    static List<ScaleLabel> scale(MapCanvas c, float half, float th, int dir, java.util.function.ToDoubleFunction<String> width,
+                                  float lo, float hi) {
+        float unit = half * c.k, tick = th * 3;
+        List<ScaleLabel> out = new ArrayList<>();
+        float[] lastEdge = {Float.NaN, Float.NaN};                       // ближний к краю конец прошлой подписи по сторонам
+        for (int i = 0; i < SCALE_F.length; i++) {
+            float x = c.cx + dir * SCALE_F[i] * unit;
+            if (x < c.x0 - th || x > c.x1 + th) continue;
+            c.clippedRect(x - th * 0.6f, c.cy - tick, x + th * 0.6f, c.cy + tick, SCALE_TICK);
+            String txt = ringLabel(half * SCALE_F[i]);
+            float w = (float) width.applyAsDouble(txt);
+            // у края - внутрь от засечки, остальные - по центру засечки
+            float left = i == SCALE_F.length - 1 ? (dir > 0 ? x - w : x) : x - w / 2;
+            left = Math.max(lo, Math.min(hi - w, left));
+            int sideIdx = i % 2;
+            float near = dir > 0 ? left : left + w, far = dir > 0 ? left + w : left;
+            if (!Float.isNaN(lastEdge[sideIdx]) && (dir > 0 ? near < lastEdge[sideIdx] : near > lastEdge[sideIdx])) continue;
+            if (left < lo - 0.001f || left + w > hi + 0.001f) continue;
+            lastEdge[sideIdx] = far + dir * w * 0.15f;
+            out.add(new ScaleLabel(txt, left, i % 2 == 0 ? -1 : 1));
+        }
+        return out;
     }
 
     /**
@@ -414,6 +483,21 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
     /** Монитор (ведущий блок) и отметка под взглядом на нём в последнем кадре - для нажатия колеса мыши. */
     public static net.minecraft.core.BlockPos hoverMonitor;
     @org.jetbrains.annotations.Nullable public static String hoverId;
+
+    /** Смещение метки игрока от центра экрана (центр блока). */
+    static float pinDx(RadarMonitorBlockEntity be, RadarMonitorBlockEntity.Pin pin) {
+        return (float) (pin.x() + 0.5 - be.center().x);
+    }
+
+    static float pinDz(RadarMonitorBlockEntity be, RadarMonitorBlockEntity.Pin pin) {
+        return (float) (pin.z() + 0.5 - be.center().z);
+    }
+
+    /** Метка игрока: кольцо с точкой. */
+    static void drawPin(MapCanvas c, float x, float y, float size, int col) {
+        c.shape(MonitorIcons.Shape.RING, x, y, size * 1.1f, col);
+        c.shape(MonitorIcons.Shape.CIRCLE, x, y, size * 0.35f, col);
+    }
 
     /** Исключённая цель: значок перечёркнут крестом. */
     static void crossOut(MapCanvas c, float x, float y, float size) {

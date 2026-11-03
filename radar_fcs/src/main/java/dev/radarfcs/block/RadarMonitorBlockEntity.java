@@ -49,9 +49,10 @@ import org.jetbrains.annotations.Nullable;
  */
 public class RadarMonitorBlockEntity extends BlockEntity {
     /** Сторона карты (по короткой стороне экрана), блоков: вводится числом в этих пределах. */
-    public static final int MIN_SIDE = 16, MAX_SIDE = 4096, DEFAULT_SIDE = 256;
+    public static final int MIN_SIDE = 16, MAX_SIDE = 1_000_000, DEFAULT_SIDE = 256;
     /** Шаги колеса мыши по стороне карты. */
-    public static final int[] SIDE_STEPS = {16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096};
+    public static final int[] SIDE_STEPS = {16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096,
+            6144, 8192, 12_000, 16_000, 25_000, 32_000, 50_000, 64_000, 100_000, 128_000, 200_000, 256_000, 500_000, 1_000_000};
     /** Старые масштабы (1.2.0, NBT `MapScale` - индекс). */
     private static final int[] OLD_SCALES = {64, 128, 256, 512, 1024, 2048};
 
@@ -90,7 +91,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
 
     /** Фильтры показа (биты маски show). */
     public enum Show { PLAYERS, HOSTILE, PASSIVE, SHIPS, CONTRAPTIONS, PROJECTILES, OTHER, FRIENDLY, INACTIVE, TRANSPONDERS,
-        RADARS, RADAR_ZONES;
+        RADARS, RADAR_ZONES, PINS;
         public final int bit = 1 << ordinal();
         public static final int ALL = (1 << values().length) - 1;
     }
@@ -107,6 +108,48 @@ public class RadarMonitorBlockEntity extends BlockEntity {
 
     /** Наземный транспондер на экране: смещение, имя, свой ли (по правилу вычислителя сети). */
     public record Mark(float dx, float dz, String name, boolean friendly) {}
+
+    /**
+     * Метка на карте - только для глаз (на огонь не влияет): мировые координаты блока, имя (может быть пустым -
+     * подпись «#номер»), цвет - индекс палитры MonitorIcons.PALETTE (1..).
+     */
+    public record Pin(int x, int z, String name, int color) {
+        public static final int NAME_MAX = 24;
+
+        /** Подпись метки на карте. */
+        public String label(int index) {
+            return name.isEmpty() ? "#" + (index + 1) : name;
+        }
+
+        /** Строка для команды: «x;z;цвет;имя». */
+        public String spec() {
+            return x + ";" + z + ";" + color + ";" + name;
+        }
+
+        /** Метка из строки команды (значения чистятся) или null. */
+        @Nullable
+        public static Pin parse(String spec) {
+            String[] p = spec.split(";", 4);
+            if (p.length < 3) return null;
+            try {
+                int x = Math.max(-30_000_000, Math.min(30_000_000, Integer.parseInt(p[0].trim())));
+                int z = Math.max(-30_000_000, Math.min(30_000_000, Integer.parseInt(p[1].trim())));
+                int c = Math.floorMod(Integer.parseInt(p[2].trim()) - 1, MonitorIcons.PALETTE.length - 1) + 1;
+                return new Pin(x, z, cleanName(p.length > 3 ? p[3] : ""), c);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+
+        public static String cleanName(String n) {
+            String s = ChatFormatting.stripFormatting(n == null ? "" : n);
+            s = s == null ? "" : s.replace(";", " ").strip();
+            return s.length() > NAME_MAX ? s.substring(0, NAME_MAX) : s;
+        }
+    }
+
+    /** Меток на одном экране не больше. */
+    public static final int MAX_PINS = 32;
 
     /** Подписи (имена с транспондеров): 0 - при наведении курсора, 1 - всегда. */
     public static final int LABELS_HOVER = 0, LABELS_ALWAYS = 1;
@@ -172,6 +215,8 @@ public class RadarMonitorBlockEntity extends BlockEntity {
      * снимается повторным нажатием или само, когда цель пропадает с радаров (вышла из зоны - при возвращении огонь снова).
      */
     private final Set<UUID> excluded = new java.util.HashSet<>();
+    /** Метки на карте (у ведущего блока, сохраняются). */
+    private List<Pin> pins = List.of();
     /** Назначенная цель для клиента (подпись на экране). */
     private String designatedName = "";
 
@@ -337,6 +382,69 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     public UUID localDesignation(long now) {
         RadarMonitorBlockEntity m = master();
         return m.powered && m.localTarget != null && m.localUntil >= now ? m.localTarget : null;
+    }
+
+    /** Метки на карте этого экрана (на клиенте - у ведущего блока, присланные сервером). */
+    public List<Pin> pins() { return master().pins; }
+
+    /**
+     * Поставить метку (index &lt; 0 - новая) или изменить её: spec - «x;z;цвет;имя». Меток не больше MAX_PINS.
+     */
+    public void setPin(int index, String spec, @Nullable Player p) {
+        RadarMonitorBlockEntity m = masterBe();
+        if (m == null || !(level instanceof ServerLevel sl)) return;
+        Pin pin = Pin.parse(spec);
+        if (pin == null) return;
+        List<Pin> list = new ArrayList<>(m.pins);
+        if (index < 0) {
+            if (list.size() >= MAX_PINS) {
+                if (p != null) p.displayClientMessage(Component.translatable("radar_fcs.msg.pins_full", MAX_PINS).withStyle(ChatFormatting.RED), true);
+                return;
+            }
+            list.add(pin);
+        } else if (index < list.size()) {
+            list.set(index, pin);
+        } else {
+            return;
+        }
+        m.pins = List.copyOf(list);
+        m.setChanged();
+        m.pushToClients(sl);
+    }
+
+    /** Убрать метку. */
+    public void removePin(int index) {
+        RadarMonitorBlockEntity m = masterBe();
+        if (m == null || !(level instanceof ServerLevel sl) || index < 0 || index >= m.pins.size()) return;
+        List<Pin> list = new ArrayList<>(m.pins);
+        list.remove(index);
+        m.pins = List.copyOf(list);
+        m.setChanged();
+        m.pushToClients(sl);
+    }
+
+    private static ListTag writePins(List<Pin> pins) {
+        ListTag l = new ListTag();
+        for (Pin pin : pins) {
+            CompoundTag c = new CompoundTag();
+            c.putInt("x", pin.x());
+            c.putInt("z", pin.z());
+            c.putString("n", pin.name());
+            c.putByte("c", (byte) pin.color());
+            l.add(c);
+        }
+        return l;
+    }
+
+    private static List<Pin> readPins(ListTag l) {
+        List<Pin> out = new ArrayList<>();
+        for (Tag tag : l) {
+            if (out.size() >= MAX_PINS) break;
+            CompoundTag c = (CompoundTag) tag;
+            out.add(new Pin(c.getInt("x"), c.getInt("z"), Pin.cleanName(c.getString("n")),
+                    Math.floorMod(c.getByte("c") - 1, MonitorIcons.PALETTE.length - 1) + 1));
+        }
+        return List.copyOf(out);
     }
 
     /** Цели, исключённые на этом экране (пусто, если экран без питания). */
@@ -722,6 +830,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
             t.put("Marks", mk);
             t.putInt("Labels", labels);
             t.putIntArray("Icons", icons);
+            t.put("Pins", writePins(pins));
         }
         return t;
     }
@@ -759,6 +868,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         marks = mk;
         if (t.contains("Labels")) labels = t.getInt("Labels");
         if (t.contains("Icons")) icons = MonitorIcons.sanitize(t.getIntArray("Icons"));
+        if (t.contains("Pins")) pins = readPins(t.getList("Pins", Tag.TAG_COMPOUND));
     }
 
     @Override
@@ -768,6 +878,8 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         tag.putInt("Show", show);
         tag.putBoolean("ShowV2", true);
         tag.putBoolean("ShowV3", true);
+        tag.putBoolean("ShowV4", true);
+        tag.put("MapPins", writePins(pins));
         tag.putInt("Labels", labels);
         tag.putIntArray("Icons", icons);
         energy.save(tag);
@@ -784,6 +896,8 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         show = tag.contains("Show") ? tag.getInt("Show") & Show.ALL : Show.ALL;
         if (tag.contains("Show") && !tag.getBoolean("ShowV2")) show |= Show.TRANSPONDERS.bit;   // фильтр появился в 0.11
         if (tag.contains("Show") && !tag.getBoolean("ShowV3")) show |= Show.RADARS.bit | Show.RADAR_ZONES.bit;   // 1.2
+        if (tag.contains("Show") && !tag.getBoolean("ShowV4")) show |= Show.PINS.bit;                            // 1.4
+        pins = readPins(tag.getList("MapPins", Tag.TAG_COMPOUND));
         labels = tag.getInt("Labels") == LABELS_ALWAYS ? LABELS_ALWAYS : LABELS_HOVER;
         icons = MonitorIcons.sanitize(tag.contains("Icons") ? tag.getIntArray("Icons") : null);
         energy.load(tag);

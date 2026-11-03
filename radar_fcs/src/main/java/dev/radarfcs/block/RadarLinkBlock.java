@@ -112,6 +112,16 @@ public class RadarLinkBlock extends BaseEntityBlock {
         return InteractionResult.sidedSuccess(level.isClientSide);
     }
 
+    /**
+     * Линк ни к чему не прилипает. Отражатели и приёмник Create Radars «липкие» (как слизь): при сборке антенны
+     * радарного подшипника всё, что к ним прилегает, уезжало вместе с ней - и линк на подшипнике тоже. Приклеенный
+     * суперклеем линк по-прежнему едет со структурой.
+     */
+    @Override
+    public boolean canStickTo(BlockState state, BlockState other) {
+        return false;
+    }
+
     @Override
     protected MapCodec<? extends BaseEntityBlock> codec() {
         return CODEC;

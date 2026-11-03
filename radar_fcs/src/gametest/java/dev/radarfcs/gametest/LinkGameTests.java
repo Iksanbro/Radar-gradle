@@ -65,6 +65,8 @@ public class LinkGameTests {
     @AfterBatch(batch = "link_monitor_fire") public static void a4(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "link_monitor_exclude") public static void b5(ServerLevel l) { FcsGameTests.beforeRadar(l); }
     @AfterBatch(batch = "link_monitor_exclude") public static void a5(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @AfterBatch(batch = "monitor_pins") public static void a6(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @AfterBatch(batch = "link_sticky") public static void a7(ServerLevel l) { FcsGameTests.cleanup(l); }
 
     /** ПКМ предметом в руке игрока по грани блока (как в игре). */
     static InteractionResult use(GameTestHelper h, Player p, BlockPos rel, Direction face) {
@@ -447,6 +449,107 @@ public class LinkGameTests {
         h.succeedWhen(() -> {
             if (phase.get() < 5) throw new GameTestAssertException("phase " + phase.get() + ": " + log);
             FcsMod.LOG.info("[radar_fcs test] link_monitor_exclude: {}", log);
+        });
+    }
+
+    /**
+     * Метки на карте и сторона карты: метки ставятся, правятся (имя чистится), убираются, не больше MAX_PINS,
+     * сохраняются в мир вместе со стороной карты; сторона - до 1 000 000 блоков.
+     */
+    @GameTest(template = ARENA, batch = "monitor_pins", timeoutTicks = 100)
+    public static void monitorPinsAndSide(GameTestHelper h) {
+        floor(h);
+        BlockPos pos = new BlockPos(4, 2, 10);
+        h.setBlock(pos, FcsRegistry.RADAR_MONITOR.get().defaultBlockState().setValue(RadarMonitorBlock.FACING, Direction.SOUTH));
+        FcsGameTests.CREATED.add(h.absolutePos(pos));
+        Player p = h.makeMockPlayer(GameType.CREATIVE);
+        h.runAtTickTime(25, () -> {
+            if (!(h.getLevel().getBlockEntity(h.absolutePos(pos)) instanceof RadarMonitorBlockEntity m)) {
+                h.fail("monitor missing");
+                return;
+            }
+            m.setSide(1_000_000);
+            if (m.mapSide() != 1_000_000) h.fail("side 1000000 not accepted: " + m.mapSide());
+            m.setSide(5_000_000);
+            if (m.mapSide() != RadarMonitorBlockEntity.MAX_SIDE) h.fail("side not clamped: " + m.mapSide());
+            m.setSide(3);
+            if (m.mapSide() != RadarMonitorBlockEntity.MIN_SIDE) h.fail("side not clamped low: " + m.mapSide());
+            m.setSide(750_000);
+            m.setPin(-1, "100;-200;3;База", p);
+            m.setPin(-1, "-5;7;0;§cКрасная;точка", p);                 // цвет 0 -> палитра, формат и «;» убираются
+            if (m.pins().size() != 2) h.fail("pins not added: " + m.pins());
+            var second = m.pins().get(1);
+            if (second.color() < 1 || second.name().contains("§") || second.name().contains(";")) h.fail("pin not cleaned: " + second);
+            m.setPin(0, "101;-201;4;Порт", p);
+            if (!m.pins().get(0).equals(new RadarMonitorBlockEntity.Pin(101, -201, "Порт", 4))) h.fail("pin not edited: " + m.pins().get(0));
+            m.removePin(1);
+            if (m.pins().size() != 1) h.fail("pin not removed: " + m.pins());
+            for (int k = 0; k < 40; k++) m.setPin(-1, k + ";" + k + ";1;", p);
+            if (m.pins().size() != RadarMonitorBlockEntity.MAX_PINS) h.fail("pin limit not kept: " + m.pins().size());
+            // сохранение в мир и загрузка
+            var reg = h.getLevel().registryAccess();
+            var tag = m.saveWithoutMetadata(reg);
+            RadarMonitorBlockEntity copy = new RadarMonitorBlockEntity(m.getBlockPos(), m.getBlockState());
+            copy.loadWithComponents(tag, reg);
+            if (!copy.pins().equals(m.pins())) h.fail("pins not saved: " + copy.pins().size());
+            if (copy.mapSide() != 750_000) h.fail("side not saved: " + copy.mapSide());
+            if ((copy.show() & RadarMonitorBlockEntity.Show.PINS.bit) == 0) h.fail("pins filter off by default");
+            FcsMod.LOG.info("[radar_fcs test] monitor_pins: side {}, pins {}, first {}", copy.mapSide(), copy.pins().size(), copy.pins().get(0));
+            h.succeed();
+        });
+    }
+
+    /**
+     * Радарный линк не уезжает с антенной: отражатель Create Radars «липкий» и при сборке забирает соседние блоки
+     * (контроль - наблюдатель под отражателем на втором подшипнике уезжает), а линк под отражателем остаётся на месте.
+     */
+    @GameTest(template = ARENA, batch = "link_sticky", timeoutTicks = 100)
+    public static void radarLinkDoesNotStickToDish(GameTestHelper h) {
+        floor(h);
+        BlockPos linkBearing = new BlockPos(5, 2, 5), ctrlBearing = new BlockPos(5, 2, 12);
+        for (BlockPos b : new BlockPos[]{linkBearing, ctrlBearing}) {
+            h.setBlock(b.below(), block("create:creative_motor").defaultBlockState().trySetValue(BlockStateProperties.FACING, Direction.UP));
+            if (h.getLevel().getBlockEntity(h.absolutePos(b.below())) instanceof com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity mo) {
+                mo.generatedSpeed.setValue(8);
+            }
+            h.setBlock(b, block("create:mechanical_bearing").defaultBlockState().trySetValue(BlockStateProperties.FACING, Direction.UP));
+            h.setBlock(b.above(), block("create_radar:radar_dish_block").defaultBlockState());
+            h.setBlock(b.above().east(), block("create_radar:radar_dish_block").defaultBlockState());
+        }
+        // линк на боковой грани подшипника - прямо под отражателем; у контроля там наблюдатель
+        h.setBlock(linkBearing.east(), FcsRegistry.RADAR_LINK.get().defaultBlockState()
+                .setValue(dev.radarfcs.block.RadarLinkBlock.FACING, Direction.EAST));
+        FcsGameTests.CREATED.add(h.absolutePos(linkBearing.east()));
+        h.setBlock(ctrlBearing.east(), net.minecraft.world.level.block.Blocks.OBSERVER.defaultBlockState());
+        h.runAtTickTime(5, () -> {
+            for (BlockPos b : new BlockPos[]{linkBearing, ctrlBearing}) {
+                var be = h.getLevel().getBlockEntity(h.absolutePos(b));
+                try {
+                    if (be != null) be.getClass().getMethod("assemble").invoke(be);
+                } catch (ReflectiveOperationException e) {
+                    h.fail("bearing assemble: " + e);
+                }
+            }
+        });
+        h.runAtTickTime(15, () -> {
+            if (!h.getBlockState(linkBearing.above().east()).isAir() || !h.getBlockState(ctrlBearing.above().east()).isAir()) {
+                var be = h.getLevel().getBlockEntity(h.absolutePos(linkBearing));
+                Object err = null;
+                try {
+                    var f = com.simibubi.create.content.contraptions.bearing.MechanicalBearingBlockEntity.class.getDeclaredField("lastException");
+                    f.setAccessible(true);
+                    err = f.get(be);
+                } catch (ReflectiveOperationException | RuntimeException e) {
+                    err = e;
+                }
+                h.fail("dishes were not assembled onto the bearings: " + err);
+            }
+            if (!h.getBlockState(ctrlBearing.east()).isAir()) h.fail("control: the observer did not stick to the dish (no sticky dish?)");
+            if (!(h.getBlockState(linkBearing.east()).getBlock() instanceof dev.radarfcs.block.RadarLinkBlock)) {
+                h.fail("radar link was carried away with the dish: " + h.getBlockState(linkBearing.east()));
+            }
+            FcsMod.LOG.info("[radar_fcs test] link_sticky: dish assembled, observer carried away, radar link stayed");
+            h.succeed();
         });
     }
 }
