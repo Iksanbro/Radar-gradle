@@ -35,6 +35,9 @@ public class RadarLinkBlockEntity extends BlockEntity implements IHaveGoggleInfo
     /** Для очков инженера: аппаратура сети по видам (LinkKind); отключён ли сигналом. */
     private int[] counts = new int[LinkKind.values().length];
     private boolean disabled;
+    /** Линков аппаратуры в сети / сколько может работать; этот линк лишний (сеть переполнена). */
+    private int[] usage = {0, LinkRegistry.BASE_LINKS};
+    private boolean overflow;
 
     public RadarLinkBlockEntity(BlockPos pos, BlockState state) {
         super(FcsRegistry.RADAR_LINK_BE.get(), pos, state);
@@ -95,9 +98,13 @@ public class RadarLinkBlockEntity extends BlockEntity implements IHaveGoggleInfo
                 if (k != null) c[k.ordinal()]++;
             }
         }
-        if (off != disabled || !java.util.Arrays.equals(c, counts)) {
+        int[] u = net != null && !off ? LinkRegistry.usage(level, net) : new int[]{0, LinkRegistry.BASE_LINKS};
+        boolean over = net != null && !off && !LinkRegistry.isActive(level, worldPosition);
+        if (off != disabled || !java.util.Arrays.equals(c, counts) || !java.util.Arrays.equals(u, usage) || over != overflow) {
             disabled = off;
             counts = c;
+            usage = u;
+            overflow = over;
             level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
     }
@@ -147,6 +154,7 @@ public class RadarLinkBlockEntity extends BlockEntity implements IHaveGoggleInfo
         UUID net = network();
         if (net == null) return Component.translatable("radar_fcs.link.not_linked").withStyle(ChatFormatting.RED);
         if (disabled) return Component.translatable("radar_fcs.link.disabled", shortName(net)).withStyle(ChatFormatting.GOLD);
+        if (overflow) return Component.translatable("radar_fcs.link.overflow", shortName(net), usage[0], usage[1]).withStyle(ChatFormatting.RED);
         return Component.translatable("radar_fcs.link.network_info", shortName(net), counts[0], counts[1], counts[2], counts[3] + counts[4],
                         counts[5])
                 .withStyle(ChatFormatting.AQUA);
@@ -156,6 +164,10 @@ public class RadarLinkBlockEntity extends BlockEntity implements IHaveGoggleInfo
     public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
         tooltip.add(Component.literal("    ").append(Component.translatable("block.radar_fcs.radar_link").withStyle(ChatFormatting.GRAY)));
         tooltip.add(Component.literal("    ").append(describe()));
+        if (network() != null && !disabled) {
+            tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.link.usage", usage[0], usage[1])
+                    .withStyle(usage[0] > usage[1] ? ChatFormatting.RED : ChatFormatting.GRAY)));
+        }
         return true;
     }
 
@@ -168,6 +180,8 @@ public class RadarLinkBlockEntity extends BlockEntity implements IHaveGoggleInfo
         if (!legacyOffset.equals(BlockPos.ZERO)) tag.putLong("Target", legacyOffset.asLong());
         tag.putIntArray("Counts", counts);
         tag.putBoolean("Disabled", disabled);
+        tag.putIntArray("Usage", usage);
+        tag.putBoolean("Overflow", overflow);
     }
 
     @Override
@@ -178,6 +192,9 @@ public class RadarLinkBlockEntity extends BlockEntity implements IHaveGoggleInfo
         int[] c = tag.getIntArray("Counts");
         counts = c.length == LinkKind.values().length ? c : new int[LinkKind.values().length];
         disabled = tag.getBoolean("Disabled");
+        int[] u = tag.getIntArray("Usage");
+        usage = u.length == 2 ? u : new int[]{0, LinkRegistry.BASE_LINKS};
+        overflow = tag.getBoolean("Overflow");
     }
 
     @Override

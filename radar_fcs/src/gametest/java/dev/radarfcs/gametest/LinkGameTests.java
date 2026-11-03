@@ -67,6 +67,7 @@ public class LinkGameTests {
     @AfterBatch(batch = "link_monitor_exclude") public static void a5(ServerLevel l) { FcsGameTests.cleanup(l); }
     @AfterBatch(batch = "monitor_pins") public static void a6(ServerLevel l) { FcsGameTests.cleanup(l); }
     @AfterBatch(batch = "link_sticky") public static void a7(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @AfterBatch(batch = "link_limit") public static void a8(ServerLevel l) { FcsGameTests.cleanup(l); }
 
     /** ПКМ предметом в руке игрока по грани блока (как в игре). */
     static InteractionResult use(GameTestHelper h, Player p, BlockPos rel, Direction face) {
@@ -549,6 +550,56 @@ public class LinkGameTests {
                 h.fail("radar link was carried away with the dish: " + h.getBlockState(linkBearing.east()));
             }
             FcsMod.LOG.info("[radar_fcs test] link_sticky: dish assembled, observer carried away, radar link stayed");
+            h.succeed();
+        });
+    }
+
+    /**
+     * Лимит сети: 16 линков любой аппаратуры + 16 за каждый блок памяти с питанием. 18 мониторов в одной сети -
+     * работают 16 линков (два последних - «сеть переполнена»), блок памяти в сети - работают все.
+     */
+    @GameTest(template = ARENA, batch = "link_limit", timeoutTicks = 200)
+    public static void networkLinkLimit(GameTestHelper h) {
+        floor(h);
+        BlockPos fcsPos = new BlockPos(4, 1, 4);
+        fcsBare(h, fcsPos);
+        BlockState mon = FcsRegistry.RADAR_MONITOR.get().defaultBlockState().setValue(RadarMonitorBlock.FACING, Direction.SOUTH);
+        java.util.List<BlockPos> monitors = new java.util.ArrayList<>();
+        for (int i = 0; i < 17; i++) {
+            BlockPos p = new BlockPos(4 + (i % 9) * 3, 2, 12 + (i / 9) * 4);
+            h.setBlock(p, mon);
+            FcsGameTests.CREATED.add(h.absolutePos(p));
+            monitors.add(p);
+        }
+        // по одному линку за тик - порядок подключения задан
+        for (int i = 0; i < monitors.size(); i++) {
+            BlockPos p = monitors.get(i);
+            h.runAtTickTime(2 + i, () -> link(h, p, Direction.UP, fcsPos));
+        }
+        BlockPos memPos = new BlockPos(30, 1, 4);
+        h.runAtTickTime(60, () -> {
+            var level = h.getLevel();
+            java.util.UUID net = level.getBlockEntity(h.absolutePos(monitors.get(0).above())) instanceof RadarLinkBlockEntity l ? l.network() : null;
+            if (net == null) {
+                h.fail("no network on the computer link");
+                return;
+            }
+            int[] u = LinkRegistry.usage(level, net);
+            if (u[0] != 18 || u[1] != 16) h.fail("usage " + u[0] + "/" + u[1] + ", expected 18/16");
+            int inactive = 0;
+            for (BlockPos p : monitors) if (!LinkRegistry.isActive(level, h.absolutePos(p.above()))) inactive++;
+            if (inactive != 2) h.fail("inactive monitor links " + inactive + ", expected 2 (the last two connected)");
+            if (LinkRegistry.isActive(level, h.absolutePos(monitors.get(16).above()))) h.fail("the last connected link must be the inactive one");
+            if (LinkRegistry.members(level, net).size() != 16) h.fail("members " + LinkRegistry.members(level, net).size() + ", expected 16");
+            // блок памяти: +16
+            h.setBlock(memPos, FcsRegistry.MEMORY.get().defaultBlockState());
+            FcsGameTests.CREATED.add(h.absolutePos(memPos));
+            link(h, memPos, Direction.UP, fcsPos);
+        });
+        h.runAtTickTime(80, () -> {
+            var level = h.getLevel();
+            for (BlockPos p : monitors) if (!LinkRegistry.isActive(level, h.absolutePos(p.above()))) h.fail("monitor link still inactive with a memory block: " + p);
+            FcsMod.LOG.info("[radar_fcs test] link_limit: 18 links -> 16 active, with a memory block -> all active");
             h.succeed();
         });
     }
