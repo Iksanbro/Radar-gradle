@@ -82,6 +82,11 @@ final class MapCanvas {
         return new float[]{cx + u * k, cy + ys * v * k};
     }
 
+    /** Куда на экране «вверх» в координатах холста: +1 (мир) или -1 (окно). */
+    float up() {
+        return ys;
+    }
+
     boolean inside(float x, float y) {
         return x >= x0 && x <= x1 && y >= y0 && y <= y1;
     }

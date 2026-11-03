@@ -233,22 +233,6 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         float nx = nd[0] > 0 ? c.x1 - pad - nw : nd[0] < 0 ? c.x0 + pad : cx - nw / 2;
         float ny = nd[1] > 0 ? c.y1 - pad - lh : nd[1] < 0 ? c.y0 + pad : cy - lh / 2;
         c.rect(nx - 1.5f * ls, ny - 1.5f * ls, nx + nw + 1.5f * ls, ny + lh + 0.5f * ls, 0xC0000000);
-        // шкала дальности: засечки на 1/3, 1/2, 2/3 и у края квадрата, подписи поочерёдно под и над осью
-        int sdir = nd[0] > 0 ? -1 : 1;
-        float sLo = c.x0 + ls * 2, sHi = c.x1 - ls * 2;
-        if (nd[0] > 0) sHi = Math.min(sHi, nx - 2 * ls);
-        if (nd[0] < 0) sLo = Math.max(sLo, nx + nw + 2 * ls);
-        List<ScaleLabel> scaleLabels = scale(c, half, th, sdir, txt -> font.width(txt) * ls, sLo, sHi);
-        List<String> gridText = new ArrayList<>();
-        List<float[]> gridPos = new ArrayList<>();
-        for (ScaleLabel sl : scaleLabels) {
-            float gy = sl.side() > 0 ? cy + th * 3 + ls : cy - th * 3 - ls - lh;
-            float tw = font.width(sl.text()) * ls;
-            c.rect(sl.x() - ls, gy - ls, sl.x() + tw + ls, gy + lh, 0xA0000000);
-            gridText.add(sl.text());
-            gridPos.add(new float[]{sl.x(), gy});
-        }
-
         // сведения о цели под взглядом (или назначенной): подложка - квадом здесь, текст - ниже. Свой фон текста шрифта
         // лежит почти в одной плоскости с буквами и на расстоянии перекрывает их (мерцание по глубине)
         float scale = 0.0075f * (float) Math.sqrt(Math.min(w, h));
@@ -272,14 +256,29 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         textBg(c, ox, oy, scale, 0, 0, font.width(mapText));
         textBg(c, ox, oy, scale, boxW - font.width(right1), 0, font.width(right1));
         textBg(c, ox, oy, scale, 0, boxH - font.lineHeight, font.width(bottom));
+        List<float[]> blocked = new ArrayList<>();
+        blocked.add(textRect(ox, oy, scale, 0, 0, font.width(mapText)));
+        blocked.add(textRect(ox, oy, scale, boxW - font.width(right1), 0, font.width(right1)));
+        blocked.add(textRect(ox, oy, scale, 0, boxH - font.lineHeight, font.width(bottom)));
         if (!lines.isEmpty()) {
             float y0 = font.lineHeight + 2 - k, y1 = font.lineHeight + 2 + k * (lines.size() * (font.lineHeight + 1));
             c.rect(ox - k * scale, oy - y1 * scale, ox + (widest + 1) * k * scale, oy - y0 * scale, 0xC0000000);
+            blocked.add(new float[]{ox - k * scale, oy - y1 * scale, ox + (widest + 1) * k * scale, oy - y0 * scale});
+        }
+        // шкала дальности на обеих осях: не налезает на север, строки состояния, сведения и подписи целей
+        blocked.add(new float[]{nx - 1.5f * ls, ny - 1.5f * ls, nx + nw + 1.5f * ls, ny + lh + 0.5f * ls});
+        for (LabelLayout.Placed pl : placed) {
+            LabelLayout.Label lb = pl.label();
+            blocked.add(new float[]{lb.x(), pl.y() - lh / 2 - ls, lb.x() + lb.w(), pl.y() + lh / 2});
+        }
+        List<ScaleLabel> scaleLabels = scale(c, half, th, txt -> font.width(txt) * ls, lh, th * 3 + ls, ls, blocked);
+        for (ScaleLabel sl : scaleLabels) {
+            c.rect(sl.x() - sl.w() / 2 - ls, sl.y() - lh / 2 - ls, sl.x() + sl.w() / 2 + ls, sl.y() + lh / 2 + ls * 0.5f, 0xA0000000);
         }
 
         // подписи - последними: текст берёт из буферов свой тип рендера, и буфер квадов после него недействителен
         drawText(ps, buffers, north, nx, ny, ls, TEXT);
-        for (int i = 0; i < gridText.size(); i++) drawText(ps, buffers, gridText.get(i), gridPos.get(i)[0], gridPos.get(i)[1], ls, RING_TEXT);
+        for (ScaleLabel sl : scaleLabels) drawText(ps, buffers, sl.text(), sl.x() - sl.w() / 2, sl.y() - lh / 2, ls, RING_TEXT);
         for (LabelLayout.Placed pl : placed) {
             LabelLayout.Label lb = pl.label();
             drawText(ps, buffers, lb.text(), lb.x() + ls, pl.y() - lh / 2, ls, 0xFF000000 | lb.color());
@@ -323,7 +322,13 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
 
     /** Подложка строки состояния: (tx, ty) и ширина tw - в пикселях шрифта от угла (ox, oy), ось y - вниз. */
     private void textBg(MapCanvas c, float ox, float oy, float scale, float tx, float ty, float tw) {
-        c.rect(ox + (tx - 1) * scale, oy - (ty + font.lineHeight) * scale, ox + (tx + tw + 1) * scale, oy - (ty - 1) * scale, 0x90000000);
+        float[] r = textRect(ox, oy, scale, tx, ty, tw);
+        c.rect(r[0], r[1], r[2], r[3], 0x90000000);
+    }
+
+    /** Прямоугольник строки состояния в координатах экрана: {x0, y0, x1, y1}. */
+    private float[] textRect(float ox, float oy, float scale, float tx, float ty, float tw) {
+        return new float[]{ox + (tx - 1) * scale, oy - (ty + font.lineHeight) * scale, ox + (tx + tw + 1) * scale, oy - (ty - 1) * scale};
     }
 
     /** Деления шкалы дальности: доли половины стороны карты (от монитора до края квадрата карты). */
@@ -354,34 +359,58 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         }
     }
 
-    /** Подпись деления шкалы: текст, левый край, сторона от оси (+1 - выше на экране, -1 - ниже). */
-    record ScaleLabel(String text, float x, int side) {}
+    /** Подпись деления шкалы: текст, центр (x, y) и ширина - в координатах холста. */
+    record ScaleLabel(String text, float x, float y, float w) {}
 
     /**
-     * Шкала дальности на горизонтальной оси через монитор: засечки на 1/3, 1/2, 2/3 и у края квадрата карты
-     * (dir = +1 - вправо от монитора, -1 - влево, если справа север), подписи - поочерёдно ниже и выше оси, цифры по
-     * масштабу. Подпись, которой не хватает места (налезает на соседнюю или за [lo, hi]), не ставится.
+     * Шкала дальности на обеих осях через монитор, как на координатной плоскости: засечки на 1/3, 1/2, 2/3 и у края
+     * квадрата карты; вправо и вверх - положительные расстояния, влево и вниз - со знаком минус. Подписи на
+     * горизонтальной оси - поочерёдно под и над ней, на вертикальной - поочерёдно слева и справа; подпись, которая
+     * налезает на уже поставленную или на занятое место (blocked: север, строки состояния, подписи целей), не ставится.
+     * Сначала - край и половина, потом трети.
      */
-    static List<ScaleLabel> scale(MapCanvas c, float half, float th, int dir, java.util.function.ToDoubleFunction<String> width,
-                                  float lo, float hi) {
-        float unit = half * c.k, tick = th * 3;
+    static List<ScaleLabel> scale(MapCanvas c, float half, float th, java.util.function.ToDoubleFunction<String> width,
+                                  float lh, float gap, float pad, List<float[]> blocked) {
+        float unit = half * c.k, tick = th * 3, up = c.up();
+        List<float[]> taken = new ArrayList<>(blocked);
         List<ScaleLabel> out = new ArrayList<>();
-        float[] lastEdge = {Float.NaN, Float.NaN};                       // ближний к краю конец прошлой подписи по сторонам
-        for (int i = 0; i < SCALE_F.length; i++) {
-            float x = c.cx + dir * SCALE_F[i] * unit;
-            if (x < c.x0 - th || x > c.x1 + th) continue;
-            c.clippedRect(x - th * 0.6f, c.cy - tick, x + th * 0.6f, c.cy + tick, SCALE_TICK);
-            String txt = ringLabel(half * SCALE_F[i]);
-            float w = (float) width.applyAsDouble(txt);
-            // у края - внутрь от засечки, остальные - по центру засечки
-            float left = i == SCALE_F.length - 1 ? (dir > 0 ? x - w : x) : x - w / 2;
-            left = Math.max(lo, Math.min(hi - w, left));
-            int sideIdx = i % 2;
-            float near = dir > 0 ? left : left + w, far = dir > 0 ? left + w : left;
-            if (!Float.isNaN(lastEdge[sideIdx]) && (dir > 0 ? near < lastEdge[sideIdx] : near > lastEdge[sideIdx])) continue;
-            if (left < lo - 0.001f || left + w > hi + 0.001f) continue;
-            lastEdge[sideIdx] = far + dir * w * 0.15f;
-            out.add(new ScaleLabel(txt, left, i % 2 == 0 ? -1 : 1));
+        int[] order = {3, 1, 0, 2};
+        for (int axis = 0; axis < 2; axis++) {
+            for (int dir = 1; dir >= -1; dir -= 2) {
+                for (int oi : order) {
+                    float f = SCALE_F[oi];
+                    float tx = axis == 0 ? c.cx + dir * f * unit : c.cx;
+                    float ty = axis == 0 ? c.cy : c.cy + dir * up * f * unit;
+                    if (tx < c.x0 - th || tx > c.x1 + th || ty < c.y0 - th || ty > c.y1 + th) continue;
+                    if (axis == 0) c.clippedRect(tx - th * 0.6f, ty - tick, tx + th * 0.6f, ty + tick, SCALE_TICK);
+                    else c.clippedRect(tx - tick, ty - th * 0.6f, tx + tick, ty + th * 0.6f, SCALE_TICK);
+                    String txt = (dir < 0 ? "-" : "") + ringLabel(half * f);
+                    float w = (float) width.applyAsDouble(txt);
+                    int side = oi % 2 == 0 ? -1 : 1;
+                    boolean edge = oi == SCALE_F.length - 1;
+                    float lx, ly;
+                    if (axis == 0) {
+                        lx = tx - (edge ? dir * w / 2 : 0);              // у края - внутрь от засечки
+                        ly = ty + side * (gap + lh / 2);
+                    } else {
+                        ly = ty - (edge ? dir * up * lh / 2 : 0);
+                        lx = tx + side * (gap + w / 2);
+                    }
+                    lx = Math.max(c.x0 + pad + w / 2, Math.min(c.x1 - pad - w / 2, lx));
+                    ly = Math.max(c.y0 + pad + lh / 2, Math.min(c.y1 - pad - lh / 2, ly));
+                    float[] r = {lx - w / 2 - pad, ly - lh / 2 - pad, lx + w / 2 + pad, ly + lh / 2 + pad};
+                    boolean free = true;
+                    for (float[] o : taken) {
+                        if (r[0] < o[2] && o[0] < r[2] && r[1] < o[3] && o[1] < r[3]) {
+                            free = false;
+                            break;
+                        }
+                    }
+                    if (!free) continue;
+                    taken.add(r);
+                    out.add(new ScaleLabel(txt, lx, ly, w));
+                }
+            }
         }
         return out;
     }

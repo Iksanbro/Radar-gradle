@@ -455,14 +455,12 @@ public final class RadarMonitorScreen extends Screen {
         float nw = font.width(north) * sc, nh = font.lineHeight * sc;
         float nx = nd[0] > 0 ? map.x1 - 3 - nw : nd[0] < 0 ? map.x0 + 3 : cx - nw / 2;
         float ny = nd[1] > 0 ? map.y1 - 3 - nh : nd[1] < 0 ? map.y0 + 3 : cy - nh / 2;
-        // шкала дальности: засечки на 1/3, 1/2, 2/3 и у края, подписи поочерёдно под и над осью
-        int sdir = nd[0] > 0 ? -1 : 1;
-        float sLo = map.x0 + 2, sHi = map.x1 - 2;
-        if (nd[0] > 0) sHi = Math.min(sHi, nx - 3);
-        if (nd[0] < 0) sLo = Math.max(sLo, nx + nw + 3);
-        for (RadarMonitorRenderer.ScaleLabel sl : RadarMonitorRenderer.scale(map, half, 1.2f, sdir, txt -> font.width(txt) * sc, sLo, sHi)) {
-            float ty = sl.side() > 0 ? cy - 5 - nh : cy + 5;
-            smallText(g, sl.text(), sl.x(), ty, sc, 0xFF5FC878, 0xA0000000);
+        // шкала дальности на обеих осях (вправо и вверх - плюс, влево и вниз - минус), не налезает на север
+        List<float[]> blocked = new ArrayList<>();
+        blocked.add(new float[]{nx - 1, ny - 1, nx + nw + 1, ny + nh});
+        for (RadarMonitorRenderer.ScaleLabel sl : RadarMonitorRenderer.scale(map, half, 1.2f, txt -> font.width(txt) * sc, nh, 4, 1,
+                blocked)) {
+            smallText(g, sl.text(), sl.x() - sl.w() / 2, sl.y() - nh / 2, sc, 0xFF5FC878, 0xA0000000);
         }
         smallText(g, north, nx, ny, sc, 0xFF70FF90, 0xC0000000);
         // подписи - поверх всех значков и без наложения
