@@ -64,6 +64,37 @@ public final class DevAutostop {
         }
     }
 
+    /**
+     * RPL (библиотека снарядов CBC) грузит чанки по пути снаряда и через несколько тиков снимает с них принудительную
+     * загрузку - даже если чанк за это время принудительно загрузил кто-то ещё (общий тикет без счётчика). Снаряд
+     * прошлого теста пролетает над местом следующей площадки, сервер тестов загружает её чанки, RPL их «отпускает»:
+     * чанк числится загруженным, но сущности в нём стоят - снаряды зависают у ствола, по цели ни одного попадания.
+     * Сторож возвращает тикет таким чанкам (только на сервере игровых тестов).
+     */
+    private static void keepForcedTickets(MinecraftServer server) {
+        if (!(server instanceof net.minecraft.gametest.framework.GameTestServer)) return;
+        for (var level : server.getAllLevels()) {
+            for (long packed : level.getForcedChunks()) {
+                var cp = new net.minecraft.world.level.ChunkPos(packed);
+                if (level.isPositionEntityTicking(cp.getWorldPosition())) {
+                    TICKING.add(packed);
+                } else if (TICKING.remove(packed)) {
+                    // уже тикал и перестал, хотя числится принудительно загруженным - тикет сняли со стороны
+                    FcsMod.LOG.info("[radar_fcs test] forced chunk {} lost its ticket (RPL), restoring", cp);
+                    level.getChunkSource().updateChunkForced(cp, true);
+                }
+            }
+        }
+    }
+
+    /** Принудительно загруженные чанки, которые уже тикали для сущностей (только что загружаемые не трогаем). */
+    private static final java.util.Set<Long> TICKING = new java.util.HashSet<>();
+
+    @SubscribeEvent
+    public static void onTick(ServerTickEvent.Pre event) {
+        keepForcedTickets(event.getServer());
+    }
+
     @SubscribeEvent
     public static void onTick(ServerTickEvent.Post event) {
         if (event.getServer().getTickCount() % 100 == 0) watchTests(event.getServer());

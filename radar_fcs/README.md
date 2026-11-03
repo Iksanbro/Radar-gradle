@@ -406,7 +406,7 @@
 ```bash
 ./gradlew build              # jar в build/libs/
 ./gradlew coreTest           # офлайн-тест баллистики и треков
-./gradlew runGameTestServer  # 82 игровых теста (моды скачиваются в run/mods)
+./gradlew runGameTestServer  # 83 игровых теста (моды скачиваются в run/mods)
 ./gradlew runGameTestServer -PfcsMinimal   # то же только с обязательными Create, CBC и Create Radars
 ./gradlew runGameTestServer -PfcsNoCbcAt   # без CBC Advanced Technologies
 ./gradlew runGameTestServer -PfcsProbe     # с подробным разбором каждого выстрела в логе
