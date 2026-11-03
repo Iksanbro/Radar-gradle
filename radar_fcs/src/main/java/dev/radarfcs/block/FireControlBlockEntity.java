@@ -11,6 +11,7 @@ import dev.radarfcs.core.Track;
 import dev.radarfcs.core.Vec;
 import dev.radarfcs.energy.EnergyBuffer;
 import dev.radarfcs.fcs.FcsControl;
+import dev.radarfcs.fcs.ManualAim;
 import dev.radarfcs.fcs.MountState;
 import dev.radarfcs.fcs.SettingsNbt;
 import dev.radarfcs.fcs.Status;
@@ -84,6 +85,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     /** Мониторы сети: с них назначение цели, на них - отметки целей под огнём; мониторы Create Radars - выбор цели. */
     private final List<BlockPos> linkedMonitors = new ArrayList<>();
     private final List<BlockPos> crMonitors = new ArrayList<>();
+    /** Камеры сети: пока игрок смотрит через одну из них, пушки наводятся по её взгляду. */
+    private final List<BlockPos> cameras = new ArrayList<>();
 
     // сводка для клиента (очки инженера) и Display Link
     private CompoundTag summary = new CompoundTag();
@@ -130,7 +133,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         runningRadars = live.size();
         // ручное наведение: цель, выбранная на мониторе сети (своём или Create Radars)
         String des = designation(level, now);
-        if (runningRadars == 0 && !FcsDev.radarless && des == null) {
+        ManualAim manual = manualAim(level, now);
+        if (runningRadars == 0 && !FcsDev.radarless && des == null && manual == null) {
             sensor.clear();
             for (MountState m : mounts.values()) FcsControl.cease(level, m, Status.NO_RADAR);
         } else {
@@ -144,7 +148,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                 }
             }
             for (MountState m : mounts.values()) {
-                FcsControl.control(level, this, m, sensor, now, hold, effectiveSettings().iffRule(), platformShips, des);
+                FcsControl.control(level, this, m, sensor, now, hold, effectiveSettings().iffRule(), platformShips, des, manual);
                 if (m.targetId != null && (m.status == Status.FIRE || m.status == Status.AIMING)) {
                     UUID tid = uuidOrNull(m.targetId);
                     if (tid != null) {
@@ -231,6 +235,28 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         return out;
     }
 
+    /** Ручное наведение с камеры сети, которой сейчас управляет игрок (последней по времени), или null. */
+    @Nullable
+    private ManualAim manualAim(ServerLevel level, long now) {
+        ManualAim best = null;
+        long bestTick = Long.MIN_VALUE;
+        for (BlockPos p : cameras) {
+            if (!level.isLoaded(p) || !(level.getBlockEntity(p) instanceof CameraBlockEntity cam)) continue;
+            ManualAim a = cam.manualAim(now);
+            if (a != null && cam.lastControl() > bestTick) {
+                best = a;
+                bestTick = cam.lastControl();
+            }
+        }
+        return best;
+    }
+
+    /** Ручное наведение сейчас (для тестов и сводки). */
+    @Nullable
+    public ManualAim currentManualAim() {
+        return level instanceof ServerLevel sl ? manualAim(sl, sl.getGameTime()) : null;
+    }
+
     /** Назначенная сейчас цель (для экрана и тестов). */
     @Nullable
     public String currentDesignation() {
@@ -249,6 +275,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         linkedMonitors.clear();
         crMonitors.clear();
         memories.clear();
+        cameras.clear();
         for (BlockPos p : LinkRegistry.linkedTo(level, worldPosition)) {
             if (!level.isLoaded(p)) continue;
             BlockEntity be = level.getBlockEntity(p);
@@ -267,6 +294,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                 }
                 case CR_MONITOR -> crMonitors.add(p.immutable());
                 case MEMORY -> memories.add(p.immutable());
+                case CAMERA -> cameras.add(p.immutable());
                 default -> { }
             }
         }

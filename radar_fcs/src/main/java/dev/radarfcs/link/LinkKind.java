@@ -24,7 +24,11 @@ public enum LinkKind {
     /** Монитор Create Radars: выбранная на нём цель - ручное наведение для вычислителей сети. */
     CR_MONITOR,
     /** Блок памяти: расширяет списки вычислителей сети. */
-    MEMORY;
+    MEMORY,
+    /** Камера: игрок смотрит через неё с монитора камер, пушки сети наводятся по её взгляду. */
+    CAMERA,
+    /** Монитор камер: выбор камеры сети и вид от её лица. */
+    CAMERA_MONITOR;
 
     /** Вид аппаратуры в точке или null (не аппаратура, чанк не загружен). */
     @Nullable
@@ -39,6 +43,8 @@ public enum LinkKind {
         if (be instanceof FireControlBlockEntity) return FCS;
         if (be instanceof RadarMonitorBlockEntity) return MONITOR;
         if (be instanceof dev.radarfcs.block.MemoryBlockEntity) return MEMORY;
+        if (be instanceof dev.radarfcs.block.CameraBlockEntity) return CAMERA;
+        if (be instanceof dev.radarfcs.block.CameraMonitorBlockEntity) return CAMERA_MONITOR;
         if (CbcMount.of(be) != null) return MOUNT;
         try {
             if (RadarLink.isRadar(be)) return RADAR;

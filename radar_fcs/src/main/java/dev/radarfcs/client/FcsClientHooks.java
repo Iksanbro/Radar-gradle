@@ -30,4 +30,12 @@ public final class FcsClientHooks {
             mc.setScreen(new RadarMonitorScreen(be.master().getBlockPos()));
         }
     }
+
+    /** Открыть список камер монитора (скриншоты для документации): запрос идёт через сервер, как ПКМ по монитору. */
+    public static void openCameraList(BlockPos monitor) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.getSingleplayerServer() == null || mc.player == null) return;
+        var sp = mc.getSingleplayerServer().getPlayerList().getPlayer(mc.player.getUUID());
+        if (sp != null) mc.getSingleplayerServer().execute(() -> dev.radarfcs.net.CameraPayloads.openList(sp, monitor));
+    }
 }

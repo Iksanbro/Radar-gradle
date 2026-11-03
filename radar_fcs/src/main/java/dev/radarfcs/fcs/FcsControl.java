@@ -49,9 +49,12 @@ public final class FcsControl {
 
     /**
      * @param designated id цели, назначенной с радарного монитора канала (или null)
+     * @param manual     ручное наведение с камеры сети (или null): автоприцеливание приостановлено, пушка наводится
+     *                   на точку взгляда камеры и стреляет, только пока игрок держит огонь
      */
     public static void control(ServerLevel level, FireControlBlockEntity fcs, MountState m, TargetSensor sensor, long now,
-                               boolean hold, IffRule iff, Set<UUID> platform, @Nullable String designated) {
+                               boolean hold, IffRule iff, Set<UUID> platform, @Nullable String designated,
+                               @Nullable ManualAim manual) {
         CbcMount d = m.mount;
         if (d == null || !d.isValid()) {
             m.status = Status.LOST;
@@ -134,7 +137,7 @@ public final class FcsControl {
             return;
         }
         List<Track> active = sensor.active();
-        if (active.isEmpty()) {
+        if (active.isEmpty() && manual == null) {
             idle(m, Status.IDLE);
             syncIfNeeded(d, m, now);
             return;
@@ -149,13 +152,19 @@ public final class FcsControl {
 
         // Выбор цели по настройкам вычислителя: уровень приоритета типа, режим приоритета, удержание текущей,
         // переключение по приоритету и по правилу; назначенная с монитора - вне очереди.
-        List<Track> pool = new ArrayList<>(active);
-        pool.removeIf(t -> fcs.isDropped(t.id));
-        // свои цели пушки: разрешённые типы и уровни (назначенная вручную и белый список - в обход типов)
-        EngageSettings ms = fcs.effectiveSettings().forMount(m.pos.asLong());
-        pool.removeIf(t -> !t.id.equals(designated) && !TargetLists.matches(ms.whitelist, t)
-                && !ms.enabled(EngageSettings.Category.of(t)));
-        List<Track> cands = TargetPicker.order(pool, pivot, ms, m.pick, now, FcsConfig.TARGET_SWITCH_RATIO.get(), designated);
+        List<Track> cands;
+        if (manual != null) {
+            // ручное наведение с камеры: одна цель - точка взгляда камеры
+            cands = List.of(Track.point(MANUAL_ID, manual.camera(), manual.point(), now));
+        } else {
+            List<Track> pool = new ArrayList<>(active);
+            pool.removeIf(t -> fcs.isDropped(t.id));
+            // свои цели пушки: разрешённые типы и уровни (назначенная вручную и белый список - в обход типов)
+            EngageSettings ms = fcs.effectiveSettings().forMount(m.pos.asLong());
+            pool.removeIf(t -> !t.id.equals(designated) && !TargetLists.matches(ms.whitelist, t)
+                    && !ms.enabled(EngageSettings.Category.of(t)));
+            cands = TargetPicker.order(pool, pivot, ms, m.pick, now, FcsConfig.TARGET_SWITCH_RATIO.get(), designated);
+        }
         // Команда станку исполнится к следующему тику: решаем для снаряда, вылетающего через тик.
         BallisticSolver.Solution sol = null;
         Track target = null;
@@ -323,7 +332,7 @@ public final class FcsControl {
             }
             verdict = m.safety;
         }
-        boolean fire = aligned && loaded && verdict == FireSafety.Verdict.CLEAR && !hold;
+        boolean fire = aligned && loaded && verdict == FireSafety.Verdict.CLEAR && (manual != null ? manual.fire() : !hold);
         boolean wasOn = m.triggerOn;
         long lastFireBefore = m.lastFire;
         fireControl(level, d, m, kind, fire, pivotW, shotW, muzzleDist, now, settings);
@@ -346,7 +355,13 @@ public final class FcsControl {
         else if (hold) m.status = Status.HOLD;
         else if (now < m.pauseUntil) m.status = Status.PAUSE;
         else m.status = Status.FIRE;
+        if (manual != null && (m.status == Status.FIRE || m.status == Status.AIMING || m.status == Status.HOLD || m.status == Status.PAUSE)) {
+            m.status = Status.CAMERA;
+        }
     }
+
+    /** id цели ручного наведения с камеры. */
+    public static final String MANUAL_ID = "camera";
 
     /**
      * Спуск по режиму огня: автоматический - пока выстрел попадёт; одиночный и очередь - выстрел (очередь из

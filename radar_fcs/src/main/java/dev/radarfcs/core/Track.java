@@ -72,6 +72,19 @@ public final class Track {
         this.firstTick = tick;
     }
 
+    /**
+     * Неподвижная точка прицеливания (ручное наведение с камеры): цель без движения, «сопровождается давно»,
+     * попадание - в пределах hitRadius.
+     */
+    public static Track point(String id, String name, Vec pos, long tick) {
+        Track t = new Track(id, Kind.EXTERNAL, name, pos, tick);
+        t.firstTick = tick - 10_000;
+        t.samples = 100;
+        t.hitRadius = 0.6;
+        t.active = true;
+        return t;
+    }
+
     public double speedPerTick() {
         return grounded ? vel.horizontalLength() : vel.length();
     }

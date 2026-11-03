@@ -29,7 +29,9 @@ public enum Status {
     /** Пушка разобрана кнопкой «Разобрать»: вычислитель её не собирает, пока не нажата «Собрать». */
     DISASSEMBLED(ChatFormatting.DARK_GRAY),
     /** У вычислителя нет электричества (FE). */
-    NO_ENERGY(ChatFormatting.DARK_RED);
+    NO_ENERGY(ChatFormatting.DARK_RED),
+    /** Ручное наведение с камеры сети: автоприцеливание приостановлено, огонь - по команде игрока. */
+    CAMERA(ChatFormatting.AQUA);
 
     public final ChatFormatting color;
 

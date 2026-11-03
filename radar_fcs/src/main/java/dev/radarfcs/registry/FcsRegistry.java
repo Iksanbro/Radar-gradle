@@ -67,7 +67,14 @@ public final class FcsRegistry {
     public static final DeferredBlock<MemoryBlock> MEMORY = BLOCKS.register("memory_block",
             () -> new MemoryBlock(metal(MapColor.TERRACOTTA_BROWN, 2.5f).lightLevel(s -> s.getValue(MemoryBlock.POWERED) ? 5 : 0)));
 
+    public static final DeferredBlock<dev.radarfcs.block.CameraBlock> CAMERA = BLOCKS.register("camera",
+            () -> new dev.radarfcs.block.CameraBlock(metal(MapColor.COLOR_GRAY, 1.5f).noOcclusion()));
+    public static final DeferredBlock<dev.radarfcs.block.CameraMonitorBlock> CAMERA_MONITOR = BLOCKS.register("camera_monitor",
+            () -> new dev.radarfcs.block.CameraMonitorBlock(metal(MapColor.COLOR_BLACK, 2.5f).lightLevel(s -> 6)));
+
     public static final DeferredItem<BlockItem> FIRE_CONTROL_ITEM = ITEMS.registerSimpleBlockItem(FIRE_CONTROL);
+    public static final DeferredItem<BlockItem> CAMERA_ITEM = ITEMS.registerSimpleBlockItem(CAMERA);
+    public static final DeferredItem<BlockItem> CAMERA_MONITOR_ITEM = ITEMS.registerSimpleBlockItem(CAMERA_MONITOR);
     public static final DeferredItem<BlockItem> MEMORY_ITEM = ITEMS.registerSimpleBlockItem(MEMORY);
     public static final DeferredItem<BlockItem> YAW_CONTROLLER_ITEM = ITEMS.registerSimpleBlockItem(YAW_CONTROLLER);
     public static final DeferredItem<BlockItem> PITCH_CONTROLLER_ITEM = ITEMS.registerSimpleBlockItem(PITCH_CONTROLLER);
@@ -99,6 +106,13 @@ public final class FcsRegistry {
             BLOCK_ENTITIES.register("memory_block",
                     () -> BlockEntityType.Builder.of(MemoryBlockEntity::new, MEMORY.get()).build(null));
 
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<dev.radarfcs.block.CameraBlockEntity>> CAMERA_BE =
+            BLOCK_ENTITIES.register("camera",
+                    () -> BlockEntityType.Builder.of(dev.radarfcs.block.CameraBlockEntity::new, CAMERA.get()).build(null));
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<dev.radarfcs.block.CameraMonitorBlockEntity>> CAMERA_MONITOR_BE =
+            BLOCK_ENTITIES.register("camera_monitor",
+                    () -> BlockEntityType.Builder.of(dev.radarfcs.block.CameraMonitorBlockEntity::new, CAMERA_MONITOR.get()).build(null));
+
     public static final DeferredHolder<DisplaySource, FcsDisplaySource> FCS_DISPLAY_SOURCE =
             DISPLAY_SOURCES.register("fire_control", FcsDisplaySource::new);
 
@@ -114,6 +128,8 @@ public final class FcsRegistry {
                         out.accept(PITCH_CONTROLLER_ITEM.get());
                         out.accept(IFF_TRANSPONDER_ITEM.get());
                         out.accept(RADAR_MONITOR_ITEM.get());
+                        out.accept(CAMERA_ITEM.get());
+                        out.accept(CAMERA_MONITOR_ITEM.get());
                     })
                     .build());
 

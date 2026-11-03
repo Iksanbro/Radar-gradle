@@ -156,7 +156,7 @@ public class RadarLinkBlockEntity extends BlockEntity implements IHaveGoggleInfo
         if (disabled) return Component.translatable("radar_fcs.link.disabled", shortName(net)).withStyle(ChatFormatting.GOLD);
         if (overflow) return Component.translatable("radar_fcs.link.overflow", shortName(net), usage[0], usage[1]).withStyle(ChatFormatting.RED);
         return Component.translatable("radar_fcs.link.network_info", shortName(net), counts[0], counts[1], counts[2], counts[3] + counts[4],
-                        counts[5])
+                        counts[5], counts[LinkKind.CAMERA.ordinal()], counts[LinkKind.CAMERA_MONITOR.ordinal()])
                 .withStyle(ChatFormatting.AQUA);
     }
 

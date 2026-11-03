@@ -218,7 +218,17 @@ public final class DevScreenshots {
                     new Vec3(base.getX() - 34, base.getY() + 4.0, base.getZ() - 1.5));
         });
         if (tick == 690) shot(mc, "map_far");
-        if (tick == 700) mc.stop();
+        // камера: вид от её лица с монитора камер
+        if (tick == 692) server.execute(() -> look(server, base.offset(-1, 0, 6).getCenter(),
+                new Vec3(base.getX() - 1.5, base.getY() + 1.62, base.getZ() + 8.5)));
+        if (tick == 696) net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+                new dev.radarfcs.net.CameraPayloads.View(base.offset(-1, 0, 6), base.offset(2, 3, -1)));
+        if (tick == 706) shot(mc, "camera_view");
+        if (tick == 708) dev.radarfcs.client.CameraClient.stop(true);
+        if (tick == 709) dev.radarfcs.client.FcsClientHooks.openCameraList(base.offset(-1, 0, 6));
+        if (tick == 714) shot(mc, "camera_monitor_gui");
+        if (tick == 716 && mc.screen != null) mc.setScreen(null);
+        if (tick == 720) mc.stop();
     }
 
     private static long lastFrame;
@@ -339,6 +349,15 @@ public final class DevScreenshots {
         var mon = FcsRegistry.RADAR_MONITOR.get().defaultBlockState().setValue(dev.radarfcs.block.RadarMonitorBlock.FACING, Direction.WEST);
         for (int dz = -3; dz <= -1; dz++) for (int dy = 0; dy < 2; dy++) level.setBlock(base.offset(-3, dy, dz), mon, 3);
         placeLink(level, base.offset(-3, 1, -2), Direction.UP, base);
+        // камера над вычислителем (смотрит на восток, к цели) и монитор камер; оба в сети сцены
+        BlockPos cam = base.offset(2, 3, -1);
+        level.setBlock(cam, FcsRegistry.CAMERA.get().defaultBlockState().setValue(dev.radarfcs.block.CameraBlock.FACING, Direction.EAST), 3);
+        if (level.getBlockEntity(cam) instanceof dev.radarfcs.block.CameraBlockEntity c) c.setName("Батарея-1");
+        placeLink(level, cam, Direction.WEST, base);
+        BlockPos camMon = base.offset(-1, 0, 6);
+        level.setBlock(camMon, FcsRegistry.CAMERA_MONITOR.get().defaultBlockState()
+                .setValue(dev.radarfcs.block.CameraMonitorBlock.FACING, Direction.SOUTH), 3);
+        placeLink(level, camMon, Direction.UP, base);
         placeLink(level, base, Direction.NORTH, base);
         DyeColor[] colors = {DyeColor.WHITE, DyeColor.RED, DyeColor.LIME, DyeColor.BLUE};
         String[] names = {"База", "Склад", "Ангар", "Порт"};
