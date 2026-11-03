@@ -29,6 +29,9 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @GameTestHolder(FcsMod.MODID)
 @PrefixGameTestTemplate(false)
 public class InfraGameTests {
+    @net.minecraft.gametest.framework.BeforeBatch(batch = "infra_rpl") public static void b1(ServerLevel l) { FcsGameTests.direct(l); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "infra_rpl") public static void a1(ServerLevel l) { FcsGameTests.cleanup(l); }
+
     @GameTest(template = "arena", batch = "infra_rpl", timeoutTicks = 400)
     public static void forcedChunkSurvivesRpl(GameTestHelper h) {
         floor(h);

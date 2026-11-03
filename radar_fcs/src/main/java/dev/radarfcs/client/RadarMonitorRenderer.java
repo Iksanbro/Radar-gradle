@@ -49,6 +49,8 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
     private static final int HOVER = 0xFFFFFFFF;
     private static final int ENGAGED = 0xFFFF3030;
     private static final int DESIGNATED = 0xFFFFFF40;
+    /** Крест исключённой цели. */
+    static final int EXCLUDED = 0xE0FF5A5A;
     private static final int TEXT = 0xFF70FF90;
     private static final int RING_TEXT = 0xFF5FC878;
 
@@ -85,7 +87,7 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
 
         float e = RadarMonitorBlockEntity.BEZEL;
         float cx = (w - 1) / 2f, cy = (h - 1) / 2f;
-        float half = RadarMonitorBlockEntity.SCALES[be.scaleIndex()] / 2f;
+        float half = be.mapSide() / 2f;
         MapCanvas c = new MapCanvas(buffers, MapCanvas.SCREEN, m, f, cx, cy, (float) RadarMonitorBlockEntity.mapK(w, h, half),
                 -0.5f + e, -0.5f + e, w - 0.5f - e, h - 0.5f - e, 1);
         // рамка и экран - сплошными квадами на всю стену: стыки блоков не видны
@@ -142,8 +144,8 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         // неактивные и свои - снизу, активные - поверх
         for (int pass = 0; pass < 2; pass++) {
             for (Blip b : blips) {
-                boolean minor = (b.flags() & (RadarMonitorBlockEntity.FLAG_INACTIVE | RadarMonitorBlockEntity.FLAG_FRIENDLY)) != 0
-                        && (b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) == 0;
+                boolean minor = (b.flags() & (RadarMonitorBlockEntity.FLAG_INACTIVE | RadarMonitorBlockEntity.FLAG_FRIENDLY
+                        | RadarMonitorBlockEntity.FLAG_EXCLUDED)) != 0 && (b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) == 0;
                 if (minor != (pass == 0)) continue;
                 float[] p = c.toScreen(b.dx(), b.dz());
                 if (p == null) continue;
@@ -152,6 +154,7 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
                 float bs = s * MonitorIcons.SIZES[MonitorIcons.size(ic)] * (minor ? 0.8f : 1f);
                 int col = iconColor(b, ic);
                 c.shape(MonitorIcons.shape(ic), p[0], p[1], bs, col);
+                if ((b.flags() & RadarMonitorBlockEntity.FLAG_EXCLUDED) != 0) crossOut(c, p[0], p[1], bs);
                 if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) {
                     float o = bs * 2.2f, t = bs * 0.45f;
                     frame(c, p[0] - o, p[1] - o, p[0] + o, p[1] + o, t, DESIGNATED);
@@ -170,6 +173,12 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
                     labels.add(label(c, p[0], bs * 1.4f, p[1], b.tag(), col, rank, ls));
                 }
             }
+        }
+        if (look != null) {
+            hoverMonitor = be.getBlockPos();
+            hoverId = hovered != null ? hovered.id() : null;
+        } else if (be.getBlockPos().equals(hoverMonitor)) {
+            hoverId = null;
         }
         float[] hp = hovered != null ? c.toScreen(hovered.dx(), hovered.dz())
                 : hoveredMark != null ? c.toScreen(hoveredMark.dx(), hoveredMark.dz()) : null;
@@ -227,7 +236,7 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         int widest = 1;
         for (Component cl : lines) widest = Math.max(widest, font.width(cl));
         float k = Math.min(1f, boxW / widest);
-        String mapText = Component.translatable("radar_fcs.monitor.range", RadarMonitorBlockEntity.SCALES[be.scaleIndex()]).getString();
+        String mapText = Component.translatable("radar_fcs.monitor.range", be.mapSide()).getString();
         String right1 = Component.translatable("radar_fcs.monitor.targets", count).getString();
         String bottom = be.radarCount() == 0 ? Component.translatable("radar_fcs.monitor.no_radar").getString()
                 : Component.translatable("radar_fcs.monitor.radars", be.radarCount()).getString();
@@ -402,9 +411,21 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         return new LabelLayout.Label(x, y, lw, font.lineHeight * ls + ls, text, color, rank);
     }
 
+    /** Монитор (ведущий блок) и отметка под взглядом на нём в последнем кадре - для нажатия колеса мыши. */
+    public static net.minecraft.core.BlockPos hoverMonitor;
+    @org.jetbrains.annotations.Nullable public static String hoverId;
+
+    /** Исключённая цель: значок перечёркнут крестом. */
+    static void crossOut(MapCanvas c, float x, float y, float size) {
+        float o = size * 1.5f, th = Math.max(size * 0.3f, 0.004f);
+        c.line(x - o, y - o, x + o, y + o, th, EXCLUDED);
+        c.line(x - o, y + o, x + o, y - o, th, EXCLUDED);
+    }
+
     /** Цвет значка отметки: по состоянию или постоянный из настроек типа. */
     public static int iconColor(Blip b, int icon) {
         if ((b.flags() & RadarMonitorBlockEntity.FLAG_ENGAGED) != 0) return ENGAGED;   // под огнём - всегда красный
+        if ((b.flags() & RadarMonitorBlockEntity.FLAG_EXCLUDED) != 0) return INACTIVE;  // исключённая - серая
         int c = MonitorIcons.color(icon);
         return c == 0 ? blipColor(b) : MonitorIcons.PALETTE[c];
     }
@@ -414,6 +435,7 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         int fl = b.flags();
         if ((fl & RadarMonitorBlockEntity.FLAG_ENGAGED) != 0) return ENGAGED;
         if ((fl & RadarMonitorBlockEntity.FLAG_FRIENDLY) != 0) return FRIENDLY;
+        if ((fl & RadarMonitorBlockEntity.FLAG_EXCLUDED) != 0) return INACTIVE;
         if ((fl & RadarMonitorBlockEntity.FLAG_INACTIVE) != 0) return INACTIVE;
         return (fl & RadarMonitorBlockEntity.FLAG_HOSTILE) != 0 ? HOSTILE : NEUTRAL;
     }

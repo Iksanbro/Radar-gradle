@@ -41,6 +41,33 @@ public final class FcsClient {
      * Взгляд на экран монитора: рамку выделения блока не рисовать - у монитора свой курсор, а рамка одного блока
      * выдаёт стыки стены экрана. С боков и сзади рамка обычная.
      */
+    /**
+     * Нажатие колеса мыши (клавиша «выбрать блок») по отметке на экране монитора: исключить цель из огня
+     * вычислителей сети или вернуть её. Мимо отметок - обычный выбор блока.
+     */
+    @SubscribeEvent
+    public static void pick(net.neoforged.neoforge.client.event.InputEvent.InteractionKeyMappingTriggered event) {
+        if (!event.isPickBlock()) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || !(mc.hitResult instanceof BlockHitResult hit) || hit.getType() != net.minecraft.world.phys.HitResult.Type.BLOCK) return;
+        BlockState st = mc.level.getBlockState(hit.getBlockPos());
+        if (!(st.getBlock() instanceof RadarMonitorBlock) || hit.getDirection() != st.getValue(RadarMonitorBlock.FACING)) return;
+        if (!(mc.level.getBlockEntity(hit.getBlockPos()) instanceof dev.radarfcs.block.RadarMonitorBlockEntity m)) return;
+        var master = m.master();
+        String id = RadarMonitorRenderer.hoverId;
+        if (id == null || !master.getBlockPos().equals(RadarMonitorRenderer.hoverMonitor)) return;
+        for (var b : master.blips()) {
+            if (!b.id().equals(id)) continue;
+            if ((b.flags() & dev.radarfcs.block.RadarMonitorBlockEntity.FLAG_FRIENDLY) == 0) {
+                net.neoforged.neoforge.network.PacketDistributor.sendToServer(new dev.radarfcs.net.MonitorCommandPayload(
+                        master.getBlockPos(), dev.radarfcs.net.MonitorCommandPayload.EXCLUDE, 0, id));
+            }
+            event.setCanceled(true);
+            event.setSwingHand(false);
+            return;
+        }
+    }
+
     @SubscribeEvent
     public static void highlight(RenderHighlightEvent.Block event) {
         Minecraft mc = Minecraft.getInstance();

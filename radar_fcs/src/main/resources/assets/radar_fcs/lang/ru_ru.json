@@ -154,7 +154,6 @@
   "radar_fcs.status.disassembled": "разобрана",
   "radar_fcs.monitor_gui.title": "Радарный монитор",
   "radar_fcs.monitor_gui.clear": "Снять назначение",
-  "radar_fcs.monitor_gui.scale": "Карта: %s бл.",
   "radar_fcs.monitor_gui.targets": "Отметок: %s   радаров: %s   карта %s бл.",
   "radar_fcs.monitor_gui.no_radar": "Нет радара Create Radars в сети монитора",
   "radar_fcs.monitor_gui.empty": "Целей нет",
@@ -241,8 +240,8 @@
   "radar_fcs.monitor_gui.show.transponders": "Транспондеры",
   "radar_fcs.monitor_gui.labels_always": "Имена: всегда",
   "radar_fcs.monitor_gui.labels_hover": "Имена: при наведении",
-  "radar_fcs.monitor_gui.scope_hint": "Наведите курсор на отметку — сведения о цели; клик — назначить её вычислителям сети (ручное наведение), повторный клик — снять.",
-  "radar_fcs.monitor_gui.list_hint": "Клик — назначить цель или снять назначение; колесо — прокрутка",
+  "radar_fcs.monitor_gui.scope_hint": "Наведите курсор на отметку — сведения о цели; клик — назначить её вычислителям сети (ручное наведение), повторный клик — снять; нажатие колеса — исключить цель из огня, ещё раз — вернуть (исключение снимается и само, если цель ушла с радаров).",
+  "radar_fcs.monitor_gui.list_hint": "Клик — назначить/снять; нажатие колеса — исключить из огня/вернуть",
   "radar_fcs.monitor_gui.shape.square": "квадрат",
   "radar_fcs.monitor_gui.shape.circle": "круг",
   "radar_fcs.monitor_gui.shape.triangle": "треугольник",
@@ -309,5 +308,9 @@
   "radar_fcs.monitor_gui.zone.outline": "контур",
   "radar_fcs.monitor_gui.zone.alpha.0": "слабая",
   "radar_fcs.monitor_gui.zone.alpha.1": "средняя",
-  "radar_fcs.monitor_gui.zone.alpha.2": "яркая"
+  "radar_fcs.monitor_gui.zone.alpha.2": "яркая",
+  "radar_fcs.monitor_gui.side": "Карта, бл:",
+  "radar_fcs.monitor_gui.state.excluded": "исключена из огня",
+  "radar_fcs.msg.excluded": "Цель исключена из огня: %s (колесо ещё раз - вернуть)",
+  "radar_fcs.msg.exclusion_cleared": "Цель снова в огне: %s"
 }

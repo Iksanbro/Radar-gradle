@@ -135,7 +135,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             for (MountState m : mounts.values()) FcsControl.cease(level, m, Status.NO_RADAR);
         } else {
             if (now % FcsConfig.SCAN_INTERVAL.get() == 0) {
-                sensor.sense(level, live, context(level), now, sensorSettings(), t -> dropped.contains(t.id), des);
+                Set<String> excl = exclusions(level);
+                sensor.sense(level, live, context(level), now, sensorSettings(), t -> dropped.contains(t.id) || excl.contains(t.id), des);
                 // цели, которых больше нет, - из учёта выстрелов и сброса
                 if (now % 100 == 0) {
                     shotsAt.keySet().removeIf(id -> sensor.get(id) == null);
@@ -217,6 +218,17 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             if (sel != null) return sel;
         }
         return null;
+    }
+
+    /** Цели, исключённые на своих мониторах сети (колесо мыши): по ним огня нет. */
+    private Set<String> exclusions(ServerLevel level) {
+        Set<String> out = new HashSet<>();
+        for (BlockPos p : linkedMonitors) {
+            if (level.isLoaded(p) && level.getBlockEntity(p) instanceof RadarMonitorBlockEntity m) {
+                for (UUID id : m.exclusions()) out.add(id.toString());
+            }
+        }
+        return out;
     }
 
     /** Назначенная сейчас цель (для экрана и тестов). */

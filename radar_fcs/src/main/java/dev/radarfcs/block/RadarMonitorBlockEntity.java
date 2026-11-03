@@ -48,9 +48,26 @@ import org.jetbrains.annotations.Nullable;
  * берут вычислители сети - ручное наведение.
  */
 public class RadarMonitorBlockEntity extends BlockEntity {
-    /** Масштабы карты: сторона карты (по короткой стороне экрана), блоков. */
-    public static final int[] SCALES = {64, 128, 256, 512, 1024, 2048};
-    public static final int DEFAULT_SCALE = 2;
+    /** Сторона карты (по короткой стороне экрана), блоков: вводится числом в этих пределах. */
+    public static final int MIN_SIDE = 16, MAX_SIDE = 4096, DEFAULT_SIDE = 256;
+    /** Шаги колеса мыши по стороне карты. */
+    public static final int[] SIDE_STEPS = {16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096};
+    /** Старые масштабы (1.2.0, NBT `MapScale` - индекс). */
+    private static final int[] OLD_SCALES = {64, 128, 256, 512, 1024, 2048};
+
+    public static int clampSide(int side) {
+        return Math.max(MIN_SIDE, Math.min(MAX_SIDE, side));
+    }
+
+    /** Следующий шаг колеса от side вверх (dir > 0) или вниз. */
+    public static int stepSide(int side, int dir) {
+        if (dir > 0) {
+            for (int v : SIDE_STEPS) if (v > side) return v;
+            return MAX_SIDE;
+        }
+        for (int i = SIDE_STEPS.length - 1; i >= 0; i--) if (SIDE_STEPS[i] < side) return SIDE_STEPS[i];
+        return MIN_SIDE;
+    }
     /** Рамка экрана, доля блока. */
     public static final float BEZEL = 1 / 16f;
 
@@ -69,7 +86,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     private static final int MAX_BLIPS = 64;
 
     public static final int FLAG_ENGAGED = 1, FLAG_DESIGNATED = 2, FLAG_SHIP = 4, FLAG_FRIENDLY = 8, FLAG_INACTIVE = 16,
-            FLAG_HOSTILE = 32;
+            FLAG_HOSTILE = 32, FLAG_EXCLUDED = 64;
 
     /** Фильтры показа (биты маски show). */
     public enum Show { PLAYERS, HOSTILE, PASSIVE, SHIPS, CONTRAPTIONS, PROJECTILES, OTHER, FRIENDLY, INACTIVE, TRANSPONDERS,
@@ -121,7 +138,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
 
     @Nullable private UUID owner;
     private String ownerTeam = "";
-    private int scaleIndex = DEFAULT_SCALE;
+    private int mapSide = DEFAULT_SIDE;
     private int show = Show.ALL;
     private int labels = LABELS_HOVER;
     private int[] icons = MonitorIcons.defaults();
@@ -132,7 +149,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     private int width = 1, height = 1;
 
     // картинка (у ведущего)
-    private float displayRange = SCALES[DEFAULT_SCALE] / 2f;
+    private float displayRange = DEFAULT_SIDE / 2f;
     private Vec3 center = Vec3.ZERO;
     private int radarCount;
     /** Электричество (FE): каждый блок стены принимает его, ведущий забирает потребление всей стены. */
@@ -150,6 +167,11 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     /** Цель, назначенная на этом экране (для вычислителей на линках). */
     @Nullable private UUID localTarget;
     private long localUntil, localSince;
+    /**
+     * Цели, исключённые с этого экрана (нажатие колеса мыши): вычислители сети по ним не стреляют. Исключение
+     * снимается повторным нажатием или само, когда цель пропадает с радаров (вышла из зоны - при возвращении огонь снова).
+     */
+    private final Set<UUID> excluded = new java.util.HashSet<>();
     /** Назначенная цель для клиента (подпись на экране). */
     private String designatedName = "";
 
@@ -245,7 +267,8 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     }
 
 
-    public int scaleIndex() { return scaleIndex; }
+    /** Сторона карты, блоков. */
+    public int mapSide() { return mapSide; }
 
     public int show() { return show; }
 
@@ -314,6 +337,12 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     public UUID localDesignation(long now) {
         RadarMonitorBlockEntity m = master();
         return m.powered && m.localTarget != null && m.localUntil >= now ? m.localTarget : null;
+    }
+
+    /** Цели, исключённые на этом экране (пусто, если экран без питания). */
+    public Set<UUID> exclusions() {
+        RadarMonitorBlockEntity m = master();
+        return m.powered ? Set.copyOf(m.excluded) : Set.of();
     }
 
     /** Вычислитель на линке ведёт огонь по цели (отметка на экране). */
@@ -388,6 +417,8 @@ public class RadarMonitorBlockEntity extends BlockEntity {
             localTarget = null;
             designated = null;
         }
+        // исключение снимается, когда цель пропала с радаров (вышла из зоны, уничтожена)
+        excluded.removeIf(id -> sensor.get(id.toString()) == null);
         designatedName = "";
         engaged.values().removeIf(until -> until < now);
         List<Target> tl = new ArrayList<>();
@@ -407,7 +438,8 @@ public class RadarMonitorBlockEntity extends BlockEntity {
             if (!t.friendly) tl.add(new Target(id, t.name, dx, dz, dist));
             int flags = (engaged.containsKey(id) ? FLAG_ENGAGED : 0) | (des ? FLAG_DESIGNATED : 0)
                     | (t.kind == Track.Kind.SHIP ? FLAG_SHIP : 0) | (t.friendly ? FLAG_FRIENDLY : 0)
-                    | (!t.active && !t.friendly ? FLAG_INACTIVE : 0) | (isThreat(t) ? FLAG_HOSTILE : 0);
+                    | (!t.active && !t.friendly ? FLAG_INACTIVE : 0) | (isThreat(t) ? FLAG_HOSTILE : 0)
+                    | (excluded.contains(id) ? FLAG_EXCLUDED : 0);
             bl.add(new Blip((float) dx, (float) dz, (float) (t.pos.y() - center.y), t.kind.ordinal(), flags, t.id,
                     t.name == null ? "?" : t.name, (float) (t.speedPerTick() * 20), t.tagName == null ? "" : t.tagName));
         }
@@ -421,7 +453,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
             }
         }
         // карта: сторона - выбранный масштаб; на экран - только то, что на карте
-        displayRange = SCALES[scaleIndex] / 2f;
+        displayRange = mapSide / 2f;
         tl.removeIf(t -> !onScreen(t.dx(), t.dz()));
         ml.removeIf(m -> !onScreen(m.dx(), m.dz()));
         marks = ml.size() > MAX_BLIPS ? List.copyOf(ml.subList(0, MAX_BLIPS)) : ml;
@@ -500,7 +532,10 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         if (m == null || !(level instanceof ServerLevel sl)) return;
         long now = sl.getGameTime();
         Target t = id == null ? null : m.targets.stream().filter(x -> x.id().equals(id)).findFirst().orElse(null);
-        if (t != null) m.setDesignation(t, now, p);
+        if (t != null) {
+            m.excluded.remove(t.id());                                     // назначенная цель снова не исключена
+            m.setDesignation(t, now, p);
+        }
         else {
             m.localTarget = null;
             if (p != null) p.displayClientMessage(Component.translatable("radar_fcs.msg.designation_cleared").withStyle(ChatFormatting.GRAY), true);
@@ -518,11 +553,33 @@ public class RadarMonitorBlockEntity extends BlockEntity {
                 String.format(Locale.ROOT, "%.0f", t.dist())).withStyle(ChatFormatting.YELLOW), true);
     }
 
-    /** Масштаб с экрана монитора. */
-    public void setScale(int index) {
+    /**
+     * Исключить цель из огня вычислителей сети или вернуть её (повторное нажатие колеса мыши). Исключённая цель
+     * перестаёт быть назначенной.
+     */
+    public void toggleExclusion(UUID id, @Nullable Player p) {
+        RadarMonitorBlockEntity m = masterBe();
+        if (m == null || !(level instanceof ServerLevel sl) || !m.powered) return;
+        long now = sl.getGameTime();
+        Target t = m.targets.stream().filter(x -> x.id().equals(id)).findFirst().orElse(null);
+        if (m.excluded.remove(id)) {
+            if (p != null) p.displayClientMessage(Component.translatable("radar_fcs.msg.exclusion_cleared",
+                    t == null ? "?" : t.name()).withStyle(ChatFormatting.GREEN), true);
+        } else if (t != null) {
+            m.excluded.add(id);
+            if (id.equals(m.localTarget)) m.localTarget = null;
+            if (p != null) p.displayClientMessage(Component.translatable("radar_fcs.msg.excluded", t.name())
+                    .withStyle(ChatFormatting.GOLD), true);
+        }
+        m.refresh(sl, now);
+        m.pushToClients(sl);
+    }
+
+    /** Сторона карты с экрана монитора (блоков). */
+    public void setSide(int side) {
         RadarMonitorBlockEntity m = masterBe();
         if (m == null || !(level instanceof ServerLevel sl)) return;
-        m.scaleIndex = Math.floorMod(index, SCALES.length);
+        m.mapSide = clampSide(side);
         m.setChanged();
         m.refresh(sl, sl.getGameTime());
         m.pushToClients(sl);
@@ -591,7 +648,8 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         }
         long now = sl.getGameTime();
         if (best != null) {
-            // назначение - вычислителям сети этого экрана
+            // назначение - вычислителям сети этого экрана (исключение с цели снимается)
+            m.excluded.remove(best.id());
             m.setDesignation(best, now, p);
         } else {
             m.localTarget = null;
@@ -608,7 +666,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         t.putLong("Master", master.asLong());
         t.putInt("W", width);
         t.putInt("H", height);
-        t.putInt("Scale", scaleIndex);
+        t.putInt("Side", mapSide);
         t.putInt("Show", show);
         t.putBoolean("Power", powered);
         if (isMaster()) {
@@ -672,8 +730,8 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         master = BlockPos.of(t.getLong("Master"));
         width = Math.max(1, t.getInt("W"));
         height = Math.max(1, t.getInt("H"));
-        displayRange = t.contains("Range") ? t.getFloat("Range") : SCALES[DEFAULT_SCALE] / 2f;
-        if (t.contains("Scale")) scaleIndex = Math.floorMod(t.getInt("Scale"), SCALES.length);
+        if (t.contains("Side")) mapSide = clampSide(t.getInt("Side"));
+        displayRange = t.contains("Range") ? t.getFloat("Range") : mapSide / 2f;
         center = new Vec3(t.getDouble("CX"), t.getDouble("CY"), t.getDouble("CZ"));
         designatedName = t.getString("Des");
         show = t.contains("Show") ? t.getInt("Show") : Show.ALL;
@@ -706,7 +764,7 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
-        tag.putInt("MapScale", scaleIndex);
+        tag.putInt("MapSide", mapSide);
         tag.putInt("Show", show);
         tag.putBoolean("ShowV2", true);
         tag.putBoolean("ShowV3", true);
@@ -720,8 +778,9 @@ public class RadarMonitorBlockEntity extends BlockEntity {
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
-        // карта (1.2): масштаб - сторона карты; у старых мониторов (круг, «авто») - по умолчанию
-        scaleIndex = tag.contains("MapScale") ? Math.floorMod(tag.getInt("MapScale"), SCALES.length) : DEFAULT_SCALE;
+        // карта: сторона в блоках (1.3); в 1.2.0 - индекс масштаба; у старых мониторов (круг, «авто») - по умолчанию
+        mapSide = tag.contains("MapSide") ? clampSide(tag.getInt("MapSide"))
+                : tag.contains("MapScale") ? OLD_SCALES[Math.floorMod(tag.getInt("MapScale"), OLD_SCALES.length)] : DEFAULT_SIDE;
         show = tag.contains("Show") ? tag.getInt("Show") & Show.ALL : Show.ALL;
         if (tag.contains("Show") && !tag.getBoolean("ShowV2")) show |= Show.TRANSPONDERS.bit;   // фильтр появился в 0.11
         if (tag.contains("Show") && !tag.getBoolean("ShowV3")) show |= Show.RADARS.bit | Show.RADAR_ZONES.bit;   // 1.2

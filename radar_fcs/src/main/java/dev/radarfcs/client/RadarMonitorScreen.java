@@ -15,6 +15,7 @@ import java.util.Locale;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -41,6 +42,8 @@ public final class RadarMonitorScreen extends Screen {
     private String state = "";
     @Nullable private Blip hovered;
     @Nullable private Mark hoveredMark;
+    /** Где подписать поле стороны карты (x, y) или null. */
+    @Nullable private int[] sideLabel;
 
     public RadarMonitorScreen(BlockPos masterPos) {
         super(Component.translatable("radar_fcs.monitor_gui.title"));
@@ -58,11 +61,12 @@ public final class RadarMonitorScreen extends Screen {
         if (m == null) return "";
         int[] ic = new int[MonitorIcons.COUNT];
         for (int i = 0; i < ic.length; i++) ic[i] = m.icon(i);
-        return m.show() + "/" + m.scaleIndex() + "/" + m.labels() + "/" + Arrays.toString(ic) + "/" + m.designatedName().isEmpty();
+        return m.show() + "/" + m.mapSide() + "/" + m.labels() + "/" + Arrays.toString(ic) + "/" + m.designatedName().isEmpty();
     }
 
     @Override
     protected void init() {
+        sideLabel = null;
         left = (width - W) / 2;
         top = (height - H) / 2;
         RadarMonitorBlockEntity m = monitor();
@@ -78,7 +82,7 @@ public final class RadarMonitorScreen extends Screen {
             Button clear = addRenderableWidget(Button.builder(Component.translatable("radar_fcs.monitor_gui.clear"),
                     b -> send(MonitorCommandPayload.CLEAR, 0, "")).bounds(x, top + 30, w, 18).build());
             clear.active = m != null && !m.designatedName().isEmpty();
-            scaleButton(m, x, top + 52, w);
+            sideField(m, x, top + 52, w);
             labelsButton(m, x, top + 74, w);
         } else if (tab == Tab.VIEW) {
             viewTab(m);
@@ -87,11 +91,70 @@ public final class RadarMonitorScreen extends Screen {
                 .bounds(left + W - 84, top + H - 24, 80, 20).build());
     }
 
-    private void scaleButton(@Nullable RadarMonitorBlockEntity m, int x, int y, int w) {
-        int i = m == null ? 0 : m.scaleIndex();
-        Component t = Component.translatable("radar_fcs.monitor_gui.scale", RadarMonitorBlockEntity.SCALES[i]);
-        addRenderableWidget(Button.builder(t, b -> send(MonitorCommandPayload.SCALE, (i + 1) % RadarMonitorBlockEntity.SCALES.length, ""))
-                .bounds(x, y, w, 18).build());
+    /** Подпись и поле стороны карты: число вводится (Enter или уход с поля), колесо мыши - шаги, Shift - через шаг. */
+    private void sideField(@Nullable RadarMonitorBlockEntity m, int x, int y, int w) {
+        Component label = Component.translatable("radar_fcs.monitor_gui.side");
+        int lw = font.width(label) + 4;
+        sideLabel = new int[]{x, y + 5};
+        SideField f = new SideField(x + lw, y, w - lw, 18, m == null ? RadarMonitorBlockEntity.DEFAULT_SIDE : m.mapSide());
+        addRenderableWidget(f);
+    }
+
+    /** Поле стороны карты, блоков. */
+    private final class SideField extends EditBox {
+        SideField(int x, int y, int w, int h, int value) {
+            super(RadarMonitorScreen.this.font, x, y, w, h, Component.translatable("radar_fcs.monitor_gui.side"));
+            setMaxLength(4);
+            setFilter(v -> v.matches("\\d{0,4}"));
+            setValue(Integer.toString(value));
+        }
+
+        private void apply() {
+            int v;
+            try {
+                v = Integer.parseInt(getValue());
+            } catch (NumberFormatException e) {
+                RadarMonitorBlockEntity m = monitor();
+                setValue(Integer.toString(m == null ? RadarMonitorBlockEntity.DEFAULT_SIDE : m.mapSide()));
+                return;
+            }
+            v = RadarMonitorBlockEntity.clampSide(v);
+            setValue(Integer.toString(v));
+            RadarMonitorBlockEntity m = monitor();
+            if (m == null || m.mapSide() != v) send(MonitorCommandPayload.SCALE, v, "");
+        }
+
+        @Override
+        public boolean keyPressed(int key, int scan, int mods) {
+            if (key == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER || key == org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER) {
+                apply();
+                return true;
+            }
+            return super.keyPressed(key, scan, mods);
+        }
+
+        @Override
+        public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+            if (!isMouseOver(mouseX, mouseY) || scrollY == 0) return false;
+            int v;
+            try {
+                v = Integer.parseInt(getValue());
+            } catch (NumberFormatException e) {
+                v = RadarMonitorBlockEntity.DEFAULT_SIDE;
+            }
+            int dir = scrollY > 0 ? 1 : -1;
+            v = RadarMonitorBlockEntity.stepSide(v, dir);
+            if (Screen.hasShiftDown()) v = RadarMonitorBlockEntity.stepSide(v, dir);
+            setValue(Integer.toString(v));
+            apply();
+            return true;
+        }
+
+        @Override
+        public void setFocused(boolean focused) {
+            if (isFocused() && !focused) apply();
+            super.setFocused(focused);
+        }
     }
 
     private void labelsButton(@Nullable RadarMonitorBlockEntity m, int x, int y, int w) {
@@ -138,7 +201,7 @@ public final class RadarMonitorScreen extends Screen {
         showButton(m, Show.INACTIVE, left + 152, y, 140);
         y += 20;
         labelsButton(m, left + 8, y, 200);
-        scaleButton(m, left + 212, y, 124);
+        sideField(m, left + 212, y, 124);
     }
 
     private void showButton(@Nullable RadarMonitorBlockEntity m, Show s, int x, int y, int w) {
@@ -178,7 +241,8 @@ public final class RadarMonitorScreen extends Screen {
         RadarMonitorBlockEntity m = monitor();
         if (m == null) return;
         g.drawString(font, Component.translatable("radar_fcs.monitor_gui.targets", m.blips().size(), m.radarCount(),
-                RadarMonitorBlockEntity.SCALES[m.scaleIndex()]), left + 8, top + H - 16, 0x7FD4FF, false);
+                m.mapSide()), left + 8, top + H - 16, 0x7FD4FF, false);
+        if (sideLabel != null) g.drawString(font, Component.translatable("radar_fcs.monitor_gui.side"), sideLabel[0], sideLabel[1], 0xC0C0C0, false);
         switch (tab) {
             case SCOPE -> renderScope(g, m, mouseX, mouseY);
             case LIST -> renderList(g, m, mouseX, mouseY);
@@ -188,7 +252,7 @@ public final class RadarMonitorScreen extends Screen {
 
     /** Карта окна: квадрат MAP x MAP, в центре - монитор, вверх - от зрителя у монитора (как на экране в мире). */
     private MapCanvas canvas(GuiGraphics g, RadarMonitorBlockEntity m) {
-        float half = RadarMonitorBlockEntity.SCALES[m.scaleIndex()] / 2f;
+        float half = m.mapSide() / 2f;
         int x0 = left + 8, y0 = top + 30;
         return new MapCanvas(g.bufferSource(), MapCanvas.GUI, g.pose().last().pose(), m.facing(), x0 + R, y0 + R, R / half,
                 x0, y0, x0 + MAP, y0 + MAP, -1);
@@ -197,7 +261,7 @@ public final class RadarMonitorScreen extends Screen {
     private void renderScope(GuiGraphics g, RadarMonitorBlockEntity m, int mouseX, int mouseY) {
         MapCanvas map = canvas(g, m);
         int cx = left + 8 + R, cy = top + 30 + R;
-        float half = RadarMonitorBlockEntity.SCALES[m.scaleIndex()] / 2f;
+        float half = m.mapSide() / 2f;
         map.rect(map.x0, map.y0, map.x1, map.y1, 0xFF060D08);
         if (!m.powered()) {
             g.drawCenteredString(font, Component.translatable("radar_fcs.monitor.no_energy_short"), cx, cy - 4, 0xFF5050);
@@ -233,6 +297,7 @@ public final class RadarMonitorScreen extends Screen {
             float sz = 3.5f * MonitorIcons.SIZES[MonitorIcons.size(ic)];
             int col = RadarMonitorRenderer.iconColor(b, ic);
             icon(g, MonitorIcons.shape(ic), p[0], p[1], sz, col);
+            if ((b.flags() & RadarMonitorBlockEntity.FLAG_EXCLUDED) != 0) RadarMonitorRenderer.crossOut(map, p[0], p[1], sz);
             if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) {
                 g.renderOutline((int) (p[0] - sz - 3), (int) (p[1] - sz - 3), (int) (2 * sz + 7), (int) (2 * sz + 7), 0xFFFFFF40);
             }
@@ -348,7 +413,9 @@ public final class RadarMonitorScreen extends Screen {
             if (on) over = b;
             int ic = m.icon(b.category());
             icon(g, MonitorIcons.shape(ic), lx + 6, y + 6, 3.5f, RadarMonitorRenderer.iconColor(b, ic));
-            g.drawString(font, font.plainSubstrByWidth(b.name(), 150), lx + 14, y + 2, 0xFFFFFF, false);
+            boolean excl = (b.flags() & RadarMonitorBlockEntity.FLAG_EXCLUDED) != 0;
+            g.drawString(font, font.plainSubstrByWidth(b.name(), 150), lx + 14, y + 2, excl ? 0x909090 : 0xFFFFFF, false);
+            if (excl) g.fill(lx + 14, y + 6, lx + 14 + Math.min(150, font.width(b.name())), y + 7, 0xFFFF5A5A);
             Track.Kind[] kinds = Track.Kind.values();
             String kind = b.kind() >= 0 && b.kind() < kinds.length ? kinds[b.kind()].name().toLowerCase(Locale.ROOT) : "external";
             g.drawString(font, Component.translatable("radar_fcs.monitor_gui.kind." + kind), lx + 170, y + 2, 0xA0A0A0, false);
@@ -396,7 +463,8 @@ public final class RadarMonitorScreen extends Screen {
     /** Две строки о цели: имя, состояние, тип; координаты, дальность, высота, скорость. */
     static List<Component> describe(RadarMonitorBlockEntity m, Blip b) {
         Vec3 c = m.center();
-        String state = (b.flags() & RadarMonitorBlockEntity.FLAG_ENGAGED) != 0 ? "engaged"
+        String state = (b.flags() & RadarMonitorBlockEntity.FLAG_EXCLUDED) != 0 ? "excluded"
+                : (b.flags() & RadarMonitorBlockEntity.FLAG_ENGAGED) != 0 ? "engaged"
                 : (b.flags() & RadarMonitorBlockEntity.FLAG_FRIENDLY) != 0 ? "friendly"
                 : (b.flags() & RadarMonitorBlockEntity.FLAG_INACTIVE) != 0 ? "inactive"
                 : (b.flags() & RadarMonitorBlockEntity.FLAG_HOSTILE) != 0 ? "hostile" : "neutral";
@@ -434,7 +502,7 @@ public final class RadarMonitorScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         RadarMonitorBlockEntity m = monitor();
-        if (m != null && button == 0) {
+        if (m != null && (button == 0 || button == 2)) {
             Blip target = null;
             if (tab == Tab.SCOPE && mouseX >= left + 8 && mouseX <= left + 8 + MAP && mouseY >= top + 30 && mouseY <= top + 30 + MAP) {
                 target = hovered;
@@ -445,6 +513,12 @@ public final class RadarMonitorScreen extends Screen {
                     int i = scroll + (int) ((mouseY - ly) / ROW);
                     if (i < m.blips().size()) target = m.blips().get(i);
                 }
+            }
+            if (target != null && button == 2) {
+                // нажатие колеса: исключить цель из огня или вернуть
+                if ((target.flags() & RadarMonitorBlockEntity.FLAG_FRIENDLY) == 0) send(MonitorCommandPayload.EXCLUDE, 0, target.id());
+                playClick();
+                return true;
             }
             if (target != null) {
                 if ((target.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) send(MonitorCommandPayload.CLEAR, 0, "");

@@ -61,6 +61,10 @@ public class LinkGameTests {
     @AfterBatch(batch = "link_crmonitor") public static void a2(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "link_monitor") public static void b3(ServerLevel l) { FcsGameTests.beforeRadar(l); }
     @AfterBatch(batch = "link_monitor") public static void a3(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "link_monitor_fire") public static void b4(ServerLevel l) { FcsGameTests.beforeRadar(l); }
+    @AfterBatch(batch = "link_monitor_fire") public static void a4(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "link_monitor_exclude") public static void b5(ServerLevel l) { FcsGameTests.beforeRadar(l); }
+    @AfterBatch(batch = "link_monitor_exclude") public static void a5(ServerLevel l) { FcsGameTests.cleanup(l); }
 
     /** ПКМ предметом в руке игрока по грани блока (как в игре). */
     static InteractionResult use(GameTestHelper h, Player p, BlockPos rel, Direction face) {
@@ -342,6 +346,107 @@ public class LinkGameTests {
                     + nearLate.get() + " -> " + nearHits.get());
             FcsMod.LOG.info("[radar_fcs test] link_monitor_fire: near hit {} before the click, designated far hit {} after it, near after: {}",
                     nearAtClick.get(), farHits.get(), nearHits.get() - nearLate.get());
+        });
+    }
+
+    /**
+     * Исключение цели с монитора (нажатие колеса): пушка перестаёт по ней стрелять; повторное нажатие - огонь снова.
+     * Исключённая цель ушла из зоны радара и вернулась - исключение снято само, огонь снова.
+     */
+    @GameTest(template = ARENA, batch = "link_monitor_exclude", timeoutTicks = 1000)
+    public static void monitorExclusionStopsFire(GameTestHelper h) {
+        floor(h);
+        BlockPos mount = new BlockPos(10, 1, 32), fcsPos = new BlockPos(6, 1, 28), radar = new BlockPos(8, 1, 40);
+        autocannon(h, mount, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcsBare(h, fcsPos);
+        SettingsGameTests.configure(be, st -> st.dropStatic = false);
+        linkMount(h, mount, fcsPos);
+        h.setBlock(radar, block("create_radar:plane_radar").defaultBlockState()
+                .trySetValue(BlockStateProperties.HORIZONTAL_FACING, Direction.WEST));
+        FcsGameTests.CREATED.add(h.absolutePos(radar));
+        link(h, radar, Direction.UP, fcsPos);
+        BlockState mon = FcsRegistry.RADAR_MONITOR.get().defaultBlockState().setValue(RadarMonitorBlock.FACING, Direction.SOUTH);
+        for (int x = 2; x <= 3; x++) for (int y = 2; y <= 3; y++) {
+            h.setBlock(new BlockPos(x, y, 44), mon);
+            FcsGameTests.CREATED.add(h.absolutePos(new BlockPos(x, y, 44)));
+        }
+        link(h, new BlockPos(3, 3, 44), Direction.UP, fcsPos);
+        Player p = h.makeMockPlayer(GameType.CREATIVE);
+        Mob husk = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(38.5, 1, 36.5), 0, 0));
+        AtomicInteger hits = countHits(h, husk);
+        logEvery(h, be, "link_monitor_exclude", 40);
+        String id = husk.getUUID().toString();
+        AtomicInteger phase = new AtomicInteger(), mark = new AtomicInteger(), since = new AtomicInteger();
+        java.util.List<String> log = new java.util.ArrayList<>();
+        h.onEachTick(() -> {
+            if (!(h.getLevel().getBlockEntity(h.absolutePos(new BlockPos(2, 2, 44))) instanceof RadarMonitorBlockEntity m0)) return;
+            RadarMonitorBlockEntity m = m0.master();
+            int t = (int) h.getTick();
+            MountState ms = be.mountStates().isEmpty() ? null : be.mountStates().get(0);
+            switch (phase.get()) {
+                case 0 -> {                                                  // огонь по цели, затем исключить
+                    if (hits.get() >= 2) {
+                        m.toggleExclusion(husk.getUUID(), p);
+                        if (!m.exclusions().contains(husk.getUUID())) h.fail("target not excluded");
+                        log.add("excluded after " + hits.get() + " hits at t=" + t);
+                        since.set(t);
+                        phase.set(1);
+                    }
+                }
+                case 1 -> {                                                  // огня нет 100 тиков
+                    if (t == since.get() + 25) mark.set(hits.get());          // летящие снаряды долетели
+                    if (t > since.get() + 25) {
+                        if (hits.get() > mark.get()) h.fail("hit while excluded: " + mark.get() + " -> " + hits.get());
+                        if (ms != null && id.equals(ms.targetId)) h.fail("mount still on the excluded target");
+                    }
+                    if (t == since.get() + 30 && m.blips().stream().noneMatch(b -> b.id().equals(id)
+                            && (b.flags() & RadarMonitorBlockEntity.FLAG_EXCLUDED) != 0)) h.fail("blip not marked as excluded");
+                    if (t == since.get() + 125) {
+                        m.toggleExclusion(husk.getUUID(), p);                 // повторное нажатие - вернуть
+                        if (!m.exclusions().isEmpty()) h.fail("exclusion not cleared by the second press");
+                        log.add("restored at t=" + t + ", hits " + hits.get());
+                        mark.set(hits.get());
+                        phase.set(2);
+                    }
+                }
+                case 2 -> {                                                  // огонь снова - исключить и увести из зоны
+                    if (hits.get() > mark.get()) {
+                        log.add("fire resumed, hits " + hits.get() + " at t=" + t);
+                        m.toggleExclusion(husk.getUUID(), p);
+                        husk.teleportTo(h.absoluteVec(new Vec3(30.5, 1, 4.5)).x, husk.getY(), h.absoluteVec(new Vec3(30.5, 1, 4.5)).z);
+                        since.set(t);
+                        phase.set(3);
+                    }
+                }
+                case 3 -> {                                                  // вне зоны радара: исключение снимается само
+                    if ((t - since.get()) % 40 == 0) {
+                        var rbe = h.getLevel().getBlockEntity(h.absolutePos(radar));
+                        var cs = rbe == null ? null : dev.radarfcs.compat.RadarLink.contacts(rbe);
+                        FcsMod.LOG.info("[radar_fcs test] link_monitor_exclude out t+{}: husk at {}, radar contacts {}, blip {}",
+                                t - since.get(), husk.position(), cs == null ? null : cs.stream().map(c -> c.id().equals(id) ? "HUSK" : c.id()).toList(),
+                                m.blips().stream().anyMatch(b -> b.id().equals(id)));
+                    }
+                    if (m.exclusions().isEmpty()) {
+                        log.add("exclusion dropped " + (t - since.get()) + " ticks after leaving the radar");
+                        Vec3 back = h.absoluteVec(new Vec3(38.5, 1, 36.5));
+                        husk.teleportTo(back.x, back.y, back.z);
+                        mark.set(hits.get());
+                        since.set(t);
+                        phase.set(4);
+                    } else if (t > since.get() + 300) h.fail("exclusion kept after the target left the radar");
+                }
+                case 4 -> {
+                    if (hits.get() > mark.get()) {
+                        log.add("back in coverage: hit after " + (t - since.get()) + " ticks");
+                        phase.set(5);
+                    }
+                }
+                default -> { }
+            }
+        });
+        h.succeedWhen(() -> {
+            if (phase.get() < 5) throw new GameTestAssertException("phase " + phase.get() + ": " + log);
+            FcsMod.LOG.info("[radar_fcs test] link_monitor_exclude: {}", log);
         });
     }
 }

@@ -14,9 +14,10 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-/** Команда с экрана радарного монитора: назначить или снять цель, масштаб, фильтры показа. */
+/** Команда с экрана радарного монитора: назначить или снять цель, исключить цель, масштаб, фильтры показа. */
 public record MonitorCommandPayload(BlockPos pos, int action, int value, String id) implements CustomPacketPayload {
-    public static final int DESIGNATE = 0, CLEAR = 1, SCALE = 2, SHOW = 3, ICON = 4, LABELS = 5;
+    /** SCALE - сторона карты в блоках; EXCLUDE - исключить цель из огня или вернуть (колесо мыши). */
+    public static final int DESIGNATE = 0, CLEAR = 1, SCALE = 2, SHOW = 3, ICON = 4, LABELS = 5, EXCLUDE = 6;
     public static final Type<MonitorCommandPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(FcsMod.MODID, "monitor_command"));
     public static final StreamCodec<ByteBuf, MonitorCommandPayload> CODEC = StreamCodec.composite(
             BlockPos.STREAM_CODEC, MonitorCommandPayload::pos,
@@ -51,8 +52,17 @@ public record MonitorCommandPayload(BlockPos pos, int action, int value, String 
                     }
                     be.designate(id, sp);
                 }
+                case EXCLUDE -> {
+                    UUID id;
+                    try {
+                        id = UUID.fromString(p.id());
+                    } catch (IllegalArgumentException e) {
+                        return;
+                    }
+                    be.toggleExclusion(id, sp);
+                }
                 case CLEAR -> be.designate(null, sp);
-                case SCALE -> be.setScale(p.value());
+                case SCALE -> be.setSide(p.value());
                 case SHOW -> be.setShow(p.value());
                 case ICON -> be.setIcon(p.value() >>> 16, p.value() & 0xFFFF);
                 case LABELS -> be.setLabels(p.value());

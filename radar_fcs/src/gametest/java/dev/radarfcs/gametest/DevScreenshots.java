@@ -108,6 +108,12 @@ public final class DevScreenshots {
         if (tick == 338) shot(mc, "radar_monitor");
         if (tick == 339) shot(mc, "radar_monitor_t1");
         if (tick == 340) shot(mc, "radar_monitor_t2");
+        // исключить цель из огня (как нажатием колеса): на экране - перечёркнута
+        if (tick == 345) server.execute(() -> {
+            if (husk != null && server.overworld().getBlockEntity(base.offset(-3, 0, -3)) instanceof dev.radarfcs.block.RadarMonitorBlockEntity mon) {
+                mon.toggleExclusion(husk.getUUID(), null);
+            }
+        });
         if (tick == 358) shot(mc, "radar_monitor_b");
         if (tick == 336 || tick == 356) {
             if (mc.level != null && mc.level.getBlockEntity(base.offset(-3, 0, -3)) instanceof dev.radarfcs.block.RadarMonitorBlockEntity mon) {
@@ -195,12 +201,12 @@ public final class DevScreenshots {
                     new Vec3(base.getX() - 5.6, base.getY() + 1.0, base.getZ() - 1.5)));
         }
         if (tick == 658) shot(mc, "map_close");
-        if (tick == 660) server.execute(() -> monitorScale(server, 0));
+        if (tick == 660) server.execute(() -> monitorScale(server, 64));
         if (tick == 668) shot(mc, "map_64");
-        if (tick == 670) server.execute(() -> monitorScale(server, 5));
+        if (tick == 670) server.execute(() -> monitorScale(server, 2048));
         if (tick == 678) shot(mc, "map_2048");
         if (tick == 680) server.execute(() -> {
-            monitorScale(server, 1);
+            monitorScale(server, 128);
             look(server, new Vec3(base.getX() - 3, base.getY() + 1.0, base.getZ() - 1.5),
                     new Vec3(base.getX() - 34, base.getY() + 4.0, base.getZ() - 1.5));
         });
@@ -224,9 +230,9 @@ public final class DevScreenshots {
         lastLogged = hd;
     }
 
-    private static void monitorScale(net.minecraft.server.MinecraftServer server, int index) {
+    private static void monitorScale(net.minecraft.server.MinecraftServer server, int side) {
         if (server.overworld().getBlockEntity(base.offset(-3, 0, -3)) instanceof dev.radarfcs.block.RadarMonitorBlockEntity mon) {
-            mon.setScale(index);
+            mon.setSide(side);
         }
     }
 

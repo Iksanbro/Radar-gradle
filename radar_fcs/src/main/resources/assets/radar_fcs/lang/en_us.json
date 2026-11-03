@@ -154,7 +154,6 @@
   "radar_fcs.status.disassembled": "disassembled",
   "radar_fcs.monitor_gui.title": "Radar Monitor",
   "radar_fcs.monitor_gui.clear": "Clear designation",
-  "radar_fcs.monitor_gui.scale": "Map: %s blocks",
   "radar_fcs.monitor_gui.targets": "Blips: %s   radars: %s   map %s b",
   "radar_fcs.monitor_gui.no_radar": "No Create Radars radar in the monitor's network",
   "radar_fcs.monitor_gui.empty": "No targets",
@@ -241,8 +240,8 @@
   "radar_fcs.monitor_gui.show.transponders": "Transponders",
   "radar_fcs.monitor_gui.labels_always": "Names: always",
   "radar_fcs.monitor_gui.labels_hover": "Names: on hover",
-  "radar_fcs.monitor_gui.scope_hint": "Hover a blip for target details; click to designate it to the network's fire controls (manual aiming), click again to clear.",
-  "radar_fcs.monitor_gui.list_hint": "Click to designate or clear; mouse wheel scrolls",
+  "radar_fcs.monitor_gui.scope_hint": "Hover a blip for target details; click to designate it to the network's fire controls (manual aiming), click again to clear; middle-click excludes the target from fire, again restores it (also restored when it leaves radar coverage).",
+  "radar_fcs.monitor_gui.list_hint": "Click: designate/clear; middle-click: exclude from fire/restore",
   "radar_fcs.monitor_gui.shape.square": "square",
   "radar_fcs.monitor_gui.shape.circle": "circle",
   "radar_fcs.monitor_gui.shape.triangle": "triangle",
@@ -309,5 +308,9 @@
   "radar_fcs.monitor_gui.zone.outline": "outline",
   "radar_fcs.monitor_gui.zone.alpha.0": "faint",
   "radar_fcs.monitor_gui.zone.alpha.1": "medium",
-  "radar_fcs.monitor_gui.zone.alpha.2": "bright"
+  "radar_fcs.monitor_gui.zone.alpha.2": "bright",
+  "radar_fcs.monitor_gui.side": "Map, blocks:",
+  "radar_fcs.monitor_gui.state.excluded": "excluded from fire",
+  "radar_fcs.msg.excluded": "Target excluded from fire: %s (middle-click again to restore)",
+  "radar_fcs.msg.exclusion_cleared": "Target back in fire: %s"
 }
