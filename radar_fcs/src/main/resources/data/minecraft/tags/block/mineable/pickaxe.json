@@ -9,6 +9,7 @@
     "radar_fcs:pitch_controller",
     "radar_fcs:memory_block",
     "radar_fcs:camera",
-    "radar_fcs:camera_monitor"
+    "radar_fcs:camera_monitor",
+    "radar_fcs:gun_rotator"
   ]
 }

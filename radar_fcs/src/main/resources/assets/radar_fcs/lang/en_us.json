@@ -342,5 +342,13 @@
   "radar_fcs.camera_gui.hint": "Camera name - Enter saves. While you look through a camera, the network cannons' auto-aiming is paused.",
   "radar_fcs.status.camera": "manual aiming from a camera",
   "radar_fcs.link.kind.camera": "camera",
-  "radar_fcs.link.kind.camera_monitor": "camera monitor"
+  "radar_fcs.link.kind.camera_monitor": "camera monitor",
+  "block.radar_fcs.gun_rotator": "Gun Rotator",
+  "radar_fcs.tooltip.gun_rotator": "Requires Sable (Create Aeronautics). Power with a shaft at the back. Right-click with an empty hand to assemble the structure in front (glue rules like a bearing) into a hinged rotating part. The fire control computer sets its angle through a gun link and a sight.",
+  "radar_fcs.rotator.no_sable": "The gun rotator needs Sable (Create Aeronautics)",
+  "radar_fcs.rotator.nothing": "Nothing to assemble in front of the rotator",
+  "radar_fcs.rotator.assembled": "Rotating part assembled",
+  "radar_fcs.rotator.assembled_info": "Assembled: angle %s°",
+  "radar_fcs.rotator.not_assembled": "Not assembled: right-click with an empty hand",
+  "radar_fcs.rotator.angle": "Angle %s° (set %s°)"
 }

@@ -55,6 +55,8 @@ dependencies {
     modCompile "maven.modrinth:create-big-cannons:${cbc_version}"
     // Create Radars - необязательная интеграция (компиляция против минимального API)
     modCompile "maven.modrinth:create-radars:${radars_compile_version}"
+    // Sable: вращатели орудий (под-уровни, шарниры); код с API Sable загружается только при установленном Sable
+    modCompile "maven.modrinth:sable:${sable_version}"
     embeddedSources "maven.modrinth:sable:${sable_version}"
     embeddedSources "maven.modrinth:create:${create_version}"
 

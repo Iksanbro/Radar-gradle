@@ -35,6 +35,7 @@ public final class FcsClient {
     public static void renderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerBlockEntityRenderer(FcsRegistry.RADAR_MONITOR_BE.get(), RadarMonitorRenderer::new);
         event.registerBlockEntityRenderer(FcsRegistry.AIM_CONTROLLER_BE.get(), AimControllerRenderer::new);
+        event.registerBlockEntityRenderer(FcsRegistry.GUN_ROTATOR_BE.get(), GunRotatorRenderer::new);
     }
 
     /**

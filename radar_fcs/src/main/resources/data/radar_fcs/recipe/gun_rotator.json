@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "pattern": [
+    " B ",
+    "SMS",
+    " G "
+  ],
+  "key": {
+    "B": {"item": "create:mechanical_bearing"},
+    "S": {"item": "create:iron_sheet"},
+    "M": {"item": "create:precision_mechanism"},
+    "G": {"item": "create:gearbox"}
+  },
+  "result": {"id": "radar_fcs:gun_rotator", "count": 1}
+}

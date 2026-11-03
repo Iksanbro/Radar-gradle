@@ -72,7 +72,11 @@ public final class FcsRegistry {
     public static final DeferredBlock<dev.radarfcs.block.CameraMonitorBlock> CAMERA_MONITOR = BLOCKS.register("camera_monitor",
             () -> new dev.radarfcs.block.CameraMonitorBlock(metal(MapColor.COLOR_BLACK, 2.5f).lightLevel(s -> 6)));
 
+    public static final DeferredBlock<dev.radarfcs.block.GunRotatorBlock> GUN_ROTATOR = BLOCKS.register("gun_rotator",
+            () -> new dev.radarfcs.block.GunRotatorBlock(metal(MapColor.STONE, 3.0f).noOcclusion()));
+
     public static final DeferredItem<BlockItem> FIRE_CONTROL_ITEM = ITEMS.registerSimpleBlockItem(FIRE_CONTROL);
+    public static final DeferredItem<BlockItem> GUN_ROTATOR_ITEM = ITEMS.registerSimpleBlockItem(GUN_ROTATOR);
     public static final DeferredItem<BlockItem> CAMERA_ITEM = ITEMS.registerSimpleBlockItem(CAMERA);
     public static final DeferredItem<BlockItem> CAMERA_MONITOR_ITEM = ITEMS.registerSimpleBlockItem(CAMERA_MONITOR);
     public static final DeferredItem<BlockItem> MEMORY_ITEM = ITEMS.registerSimpleBlockItem(MEMORY);
@@ -113,6 +117,11 @@ public final class FcsRegistry {
             BLOCK_ENTITIES.register("camera_monitor",
                     () -> BlockEntityType.Builder.of(dev.radarfcs.block.CameraMonitorBlockEntity::new, CAMERA_MONITOR.get()).build(null));
 
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<dev.radarfcs.block.GunRotatorBlockEntity>> GUN_ROTATOR_BE =
+            BLOCK_ENTITIES.register("gun_rotator", () -> BlockEntityType.Builder.of(
+                    (pos, state) -> new dev.radarfcs.block.GunRotatorBlockEntity(FcsRegistry.GUN_ROTATOR_BE.get(), pos, state),
+                    GUN_ROTATOR.get()).build(null));
+
     public static final DeferredHolder<DisplaySource, FcsDisplaySource> FCS_DISPLAY_SOURCE =
             DISPLAY_SOURCES.register("fire_control", FcsDisplaySource::new);
 
@@ -130,6 +139,7 @@ public final class FcsRegistry {
                         out.accept(RADAR_MONITOR_ITEM.get());
                         out.accept(CAMERA_ITEM.get());
                         out.accept(CAMERA_MONITOR_ITEM.get());
+                        out.accept(GUN_ROTATOR_ITEM.get());
                     })
                     .build());
 
@@ -159,6 +169,7 @@ public final class FcsRegistry {
         DisplaySource.BY_BLOCK.add(FIRE_CONTROL.get(), FCS_DISPLAY_SOURCE.get());
         BlockStressValues.IMPACTS.register(YAW_CONTROLLER.get(), () -> FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
         BlockStressValues.IMPACTS.register(PITCH_CONTROLLER.get(), () -> FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
+        BlockStressValues.IMPACTS.register(GUN_ROTATOR.get(), () -> 2 * FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
     }
 
     private FcsRegistry() {}

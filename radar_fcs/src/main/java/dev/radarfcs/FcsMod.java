@@ -29,6 +29,7 @@ public final class FcsMod {
         modBus.addListener(dev.radarfcs.net.FcsOpenPayload::register);
         modBus.addListener(dev.radarfcs.net.TransponderPayloads::register);
         modBus.addListener(dev.radarfcs.net.CameraPayloads::register);
+        if (dev.radarfcs.compat.Mods.SABLE) dev.radarfcs.compat.sable.SableRotor.init(dev.radarfcs.block.GunRotatorBlockEntity::physicsStepAll);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onEntityJoin);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onLevelTick);
         // после ShotObserver: снаряд своей пушки уже помечен вычислителем, здесь - только точка запуска чужих

@@ -342,5 +342,13 @@
   "radar_fcs.camera_gui.hint": "Имя камеры - Enter сохраняет. Пока вы смотрите через камеру, автоприцеливание пушек сети на паузе.",
   "radar_fcs.status.camera": "ручное наведение с камеры",
   "radar_fcs.link.kind.camera": "камера",
-  "radar_fcs.link.kind.camera_monitor": "монитор камер"
+  "radar_fcs.link.kind.camera_monitor": "монитор камер",
+  "block.radar_fcs.gun_rotator": "Вращатель орудия",
+  "radar_fcs.tooltip.gun_rotator": "Нужен Sable (Create Aeronautics). Вращение - валом сзади. ПКМ пустой рукой - собрать постройку перед ним (клей, как у подшипника) в поворотную часть на шарнире. Угол задаёт вычислитель через орудийный линк и прицел.",
+  "radar_fcs.rotator.no_sable": "Вращателю орудия нужен Sable (Create Aeronautics)",
+  "radar_fcs.rotator.nothing": "Перед вращателем нечего собирать",
+  "radar_fcs.rotator.assembled": "Поворотная часть собрана",
+  "radar_fcs.rotator.assembled_info": "Собран: угол %s°",
+  "radar_fcs.rotator.not_assembled": "Не собран: ПКМ пустой рукой - собрать",
+  "radar_fcs.rotator.angle": "Угол %s° (задан %s°)"
 }

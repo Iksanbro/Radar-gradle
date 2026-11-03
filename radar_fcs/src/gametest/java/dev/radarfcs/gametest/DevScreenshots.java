@@ -228,7 +228,22 @@ public final class DevScreenshots {
         if (tick == 709) dev.radarfcs.client.FcsClientHooks.openCameraList(base.offset(-1, 0, 6));
         if (tick == 714) shot(mc, "camera_monitor_gui");
         if (tick == 716 && mc.screen != null) mc.setScreen(null);
-        if (tick == 720) mc.stop();
+        // вращатели орудия на Sable: вертикальный на горизонтальном, ствол из досок
+        if (tick == 722) server.execute(() -> rotatorScene(server, mc));
+        if (tick == 726) server.execute(() -> look(server, base.offset(-8, 2, 10).getCenter(),
+                new Vec3(base.getX() - 8.5, base.getY() + 4.5, base.getZ() + 18.5)));
+        if (tick == 730) shot(mc, "rotator_before");
+        if (tick == 732) server.execute(() -> {
+            assembleRotator(server, base.offset(-8, 2, 10));        // вертикальный (ось север-юг) - сначала
+            assembleRotator(server, base.offset(-9, 0, 10));         // горизонтальный (ось вверх)
+        });
+        if (tick == 740) server.execute(() -> {
+            setRotator(server, base.offset(-9, 0, 10), 90);
+            setRotator(server, base.offset(-8, 2, 10), 30);
+        });
+        if (tick >= 740 && tick <= 800 && tick % 10 == 0) server.execute(() -> logRotators(server));
+        if (tick == 800) shot(mc, "rotator_after");
+        if (tick == 820) mc.stop();
     }
 
     private static long lastFrame;
@@ -250,6 +265,73 @@ public final class DevScreenshots {
     private static void monitorScale(net.minecraft.server.MinecraftServer server, int side) {
         if (server.overworld().getBlockEntity(base.offset(-3, 0, -3)) instanceof dev.radarfcs.block.RadarMonitorBlockEntity mon) {
             mon.setSide(side);
+        }
+    }
+
+    private static void rotatorScene(net.minecraft.server.MinecraftServer server, Minecraft mc) {
+        ServerLevel level = server.overworld();
+        BlockPos y = base.offset(-9, 0, 10);                         // горизонтальный вращатель, выход вверх
+        motor(level, y.below(), Direction.UP, 16);
+        level.setBlock(y, FcsRegistry.GUN_ROTATOR.get().defaultBlockState()
+                .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.UP), 3);
+        BlockPos plat = y.above();
+        level.setBlock(plat, block("create:andesite_casing").defaultBlockState(), 3);
+        level.setBlock(plat.east(), block("create:andesite_casing").defaultBlockState(), 3);
+        BlockPos p = plat.east().above();                            // вертикальный вращатель: выход на север
+        level.setBlock(p, FcsRegistry.GUN_ROTATOR.get().defaultBlockState()
+                .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.NORTH), 3);
+        motor(level, p.south(), Direction.NORTH, 16);
+        for (int i = 0; i < 4; i++) level.setBlock(p.north().east(i), block("minecraft:oak_planks").defaultBlockState(), 3);
+        // клей: площадка + вертикальный вращатель с мотором; ствол - отдельно (его соберёт вертикальный вращатель)
+        level.addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(level,
+                new net.minecraft.world.phys.AABB(plat.getX(), plat.getY(), p.getZ(), plat.getX() + 2, p.getY() + 1, p.south().getZ() + 1)));
+        level.addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(level,
+                new net.minecraft.world.phys.AABB(p.north().getX(), p.getY(), p.north().getZ(), p.north().getX() + 4, p.getY() + 1, p.north().getZ() + 1)));
+    }
+
+    private static void assembleRotator(net.minecraft.server.MinecraftServer server, BlockPos pos) {
+        ServerPlayer pl = server.getPlayerList().getPlayers().get(0);
+        if (server.overworld().getBlockEntity(pos) instanceof dev.radarfcs.block.GunRotatorBlockEntity r) {
+            r.toggleAssembly(pl);
+            FcsMod.LOG.info("[radar_fcs dev] rotator {} assembled {} sub {}", pos, r.assembled(), r.subLevel());
+        } else {
+            FcsMod.LOG.warn("[radar_fcs dev] no rotator at {}", pos);
+        }
+    }
+
+    private static final java.util.List<BlockPos> ROTATORS = new java.util.ArrayList<>();
+
+    private static void setRotator(net.minecraft.server.MinecraftServer server, BlockPos pos, double deg) {
+        // после сборки горизонтального вертикальный вращатель - внутри его под-уровня: ищем по типу блока
+        for (var be : findRotators(server)) {
+            if (be.getBlockPos().equals(pos) || (pos.equals(base.offset(-8, 2, 10)) && !be.getBlockPos().equals(base.offset(-9, 0, 10)))) {
+                be.setWant(deg);
+                FcsMod.LOG.info("[radar_fcs dev] rotator {} want {}", be.getBlockPos(), deg);
+            }
+        }
+    }
+
+    private static java.util.List<dev.radarfcs.block.GunRotatorBlockEntity> findRotators(net.minecraft.server.MinecraftServer server) {
+        java.util.List<dev.radarfcs.block.GunRotatorBlockEntity> out = new java.util.ArrayList<>();
+        ServerLevel level = server.overworld();
+        BlockPos y = base.offset(-9, 0, 10);
+        if (level.getBlockEntity(y) instanceof dev.radarfcs.block.GunRotatorBlockEntity r) out.add(r);
+        // вертикальный - в под-уровне горизонтального: по позиции плота
+        var c = dev.ryanhcode.sable.api.sublevel.SubLevelContainer.getContainer(level);
+        for (var sub : c.getAllSubLevels()) {
+            var plot = sub.getPlot();
+            BlockPos center = plot.getCenterBlock();
+            for (int dx = -4; dx <= 4; dx++) for (int dy = -4; dy <= 4; dy++) for (int dz = -4; dz <= 4; dz++) {
+                if (level.getBlockEntity(center.offset(dx, dy, dz)) instanceof dev.radarfcs.block.GunRotatorBlockEntity r) out.add(r);
+            }
+        }
+        return out;
+    }
+
+    private static void logRotators(net.minecraft.server.MinecraftServer server) {
+        for (var r : findRotators(server)) {
+            FcsMod.LOG.info("[radar_fcs dev] rotator {} assembled {} want {} target {} angle {} axis {} rpm {}", r.getBlockPos(), r.assembled(),
+                    r.want(), String.format("%.2f", r.target()), String.format("%.2f", r.angle()), r.worldAxis(), r.getSpeed());
         }
     }
 
