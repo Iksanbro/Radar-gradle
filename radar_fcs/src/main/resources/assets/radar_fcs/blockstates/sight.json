@@ -1,0 +1,50 @@
+{
+  "variants": {
+    "facing=north,firing=false": {
+      "model": "radar_fcs:block/sight"
+    },
+    "facing=north,firing=true": {
+      "model": "radar_fcs:block/sight_firing"
+    },
+    "facing=east,firing=false": {
+      "model": "radar_fcs:block/sight",
+      "y": 90
+    },
+    "facing=east,firing=true": {
+      "model": "radar_fcs:block/sight_firing",
+      "y": 90
+    },
+    "facing=south,firing=false": {
+      "model": "radar_fcs:block/sight",
+      "y": 180
+    },
+    "facing=south,firing=true": {
+      "model": "radar_fcs:block/sight_firing",
+      "y": 180
+    },
+    "facing=west,firing=false": {
+      "model": "radar_fcs:block/sight",
+      "y": 270
+    },
+    "facing=west,firing=true": {
+      "model": "radar_fcs:block/sight_firing",
+      "y": 270
+    },
+    "facing=up,firing=false": {
+      "model": "radar_fcs:block/sight",
+      "x": 270
+    },
+    "facing=up,firing=true": {
+      "model": "radar_fcs:block/sight_firing",
+      "x": 270
+    },
+    "facing=down,firing=false": {
+      "model": "radar_fcs:block/sight",
+      "x": 90
+    },
+    "facing=down,firing=true": {
+      "model": "radar_fcs:block/sight_firing",
+      "x": 90
+    }
+  }
+}

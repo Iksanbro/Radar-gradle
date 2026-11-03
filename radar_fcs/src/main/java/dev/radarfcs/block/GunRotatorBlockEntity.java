@@ -67,7 +67,11 @@ public class GunRotatorBlockEntity extends KineticBlockEntity {
 
     /** Задать угол (градусы от положения при сборке); поворот к нему - со скоростью вала. */
     public void setWant(double deg) {
-        want = deg;
+        double w = dev.radarfcs.core.Aim.wrap180(deg);
+        if (w != want) {
+            want = w;
+            setChanged();
+        }
     }
 
     public double want() {
@@ -140,15 +144,17 @@ public class GunRotatorBlockEntity extends KineticBlockEntity {
             return;
         }
         lastTarget = target;
-        double step = degPerTick(), diff = want - target;
-        target += Math.max(-step, Math.min(step, diff));
+        // кратчайшим путём: угол сервопривода держится в (-180, 180]
+        double step = degPerTick(), diff = dev.radarfcs.core.Aim.wrap180(want - target);
+        target = dev.radarfcs.core.Aim.wrap180(target + Math.max(-step, Math.min(step, diff)));
     }
 
     /** Шаг физики: цель сервопривода - между углом прошлого и этого тика. */
     private void physicsStep() {
         if (!(level instanceof ServerLevel sl) || subLevel == null || handle == null) return;
         double pt = SableRotor.partialPhysicsTick(sl);
-        double goal = lastTarget + (target - lastTarget) * Math.max(0, Math.min(1, pt));
+        double goal = dev.radarfcs.core.Aim.wrap180(lastTarget
+                + dev.radarfcs.core.Aim.wrap180(target - lastTarget) * Math.max(0, Math.min(1, pt)));
         SableRotor.servo(sl, handle, worldPosition, facing(), subLevel, Math.toRadians(goal));
     }
 

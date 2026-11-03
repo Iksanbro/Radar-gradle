@@ -10,6 +10,8 @@
     "radar_fcs:memory_block",
     "radar_fcs:camera",
     "radar_fcs:camera_monitor",
-    "radar_fcs:gun_rotator"
+    "radar_fcs:gun_rotator",
+    "radar_fcs:sight",
+    "radar_fcs:gun_link"
   ]
 }

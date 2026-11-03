@@ -228,22 +228,26 @@ public final class DevScreenshots {
         if (tick == 709) dev.radarfcs.client.FcsClientHooks.openCameraList(base.offset(-1, 0, 6));
         if (tick == 714) shot(mc, "camera_monitor_gui");
         if (tick == 716 && mc.screen != null) mc.setScreen(null);
-        // вращатели орудия на Sable: вертикальный на горизонтальном, ствол из досок
-        if (tick == 722) server.execute(() -> rotatorScene(server, mc));
+        // орудие на вращателях Sable: горизонтальный вращатель, на нём вертикальный, ствол из досок с прицелом
+        if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.turret")) tick = 720;   // только башня
+        if (tick == 722) server.execute(() -> turretScene(server));
         if (tick == 726) server.execute(() -> look(server, base.offset(-8, 2, 10).getCenter(),
-                new Vec3(base.getX() - 8.5, base.getY() + 4.5, base.getZ() + 18.5)));
+                new Vec3(base.getX() - 8.5, base.getY() + 5.5, base.getZ() + 19.5)));
         if (tick == 730) shot(mc, "rotator_before");
         if (tick == 732) server.execute(() -> {
             assembleRotator(server, base.offset(-8, 2, 10));        // вертикальный (ось север-юг) - сначала
             assembleRotator(server, base.offset(-9, 0, 10));         // горизонтальный (ось вверх)
         });
-        if (tick == 740) server.execute(() -> {
-            setRotator(server, base.offset(-9, 0, 10), 90);
-            setRotator(server, base.offset(-8, 2, 10), 30);
-        });
-        if (tick >= 740 && tick <= 800 && tick % 10 == 0) server.execute(() -> logRotators(server));
-        if (tick == 800) shot(mc, "rotator_after");
-        if (tick == 820) mc.stop();
+        // переход через ±180°: поворот на 170°, затем на -170° - кратчайшим путём через 180
+        if (tick == 740) server.execute(() -> setRotator(server, base.offset(-9, 0, 10), 170));
+        if (tick == 790) server.execute(() -> setRotator(server, base.offset(-9, 0, 10), -170));
+        if (tick >= 740 && tick <= 830 && tick % 5 == 0) server.execute(() -> logRotators(server));
+        if (tick == 832) server.execute(() -> setRotator(server, base.offset(-9, 0, 10), 0));
+        // радарный линк на основании орудия: вычислитель сцены наводит его по прицелу на цель
+        if (tick == 870) server.execute(() -> placeLink(server.overworld(), base.offset(-9, 0, 10), Direction.SOUTH, base));
+        if (tick >= 880 && tick <= 1060 && tick % 10 == 0) server.execute(() -> logTurret(server));
+        if (tick == 1000) shot(mc, "turret_aim");
+        if (tick == 1062) mc.stop();
     }
 
     private static long lastFrame;
@@ -268,10 +272,12 @@ public final class DevScreenshots {
         }
     }
 
-    private static void rotatorScene(net.minecraft.server.MinecraftServer server, Minecraft mc) {
+    private static void turretScene(net.minecraft.server.MinecraftServer server) {
         ServerLevel level = server.overworld();
+        var air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+        for (int dx = -12; dx <= -2; dx++) for (int dy = 0; dy <= 5; dy++) for (int dz = 6; dz <= 14; dz++) level.setBlock(base.offset(dx, dy, dz), air, 3);
         BlockPos y = base.offset(-9, 0, 10);                         // горизонтальный вращатель, выход вверх
-        motor(level, y.below(), Direction.UP, 16);
+        motor(level, y.below(), Direction.UP, 128);
         level.setBlock(y, FcsRegistry.GUN_ROTATOR.get().defaultBlockState()
                 .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.UP), 3);
         BlockPos plat = y.above();
@@ -280,13 +286,45 @@ public final class DevScreenshots {
         BlockPos p = plat.east().above();                            // вертикальный вращатель: выход на север
         level.setBlock(p, FcsRegistry.GUN_ROTATOR.get().defaultBlockState()
                 .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.NORTH), 3);
-        motor(level, p.south(), Direction.NORTH, 16);
+        motor(level, p.south(), Direction.NORTH, 128);
         for (int i = 0; i < 4; i++) level.setBlock(p.north().east(i), block("minecraft:oak_planks").defaultBlockState(), 3);
-        // клей: площадка + вертикальный вращатель с мотором; ствол - отдельно (его соберёт вертикальный вращатель)
+        // прицел на стволе (смотрит вдоль ствола - на восток), орудийные линки на прицеле и обоих вращателях
+        BlockPos sight = p.north().east(1).above();
+        level.setBlock(sight, FcsRegistry.SIGHT.get().defaultBlockState().setValue(dev.radarfcs.block.SightBlock.FACING, Direction.EAST), 3);
+        gunLink(level, sight, Direction.UP);
+        gunLink(level, p, Direction.EAST);
+        gunLink(level, y, Direction.WEST);
+        // клей: площадка + вертикальный вращатель с мотором и линком; ствол с прицелом и линком - отдельно
         level.addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(level,
-                new net.minecraft.world.phys.AABB(plat.getX(), plat.getY(), p.getZ(), plat.getX() + 2, p.getY() + 1, p.south().getZ() + 1)));
+                new net.minecraft.world.phys.AABB(plat.getX(), plat.getY(), p.getZ(), plat.getX() + 3, p.getY() + 1, p.south().getZ() + 1)));
         level.addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(level,
-                new net.minecraft.world.phys.AABB(p.north().getX(), p.getY(), p.north().getZ(), p.north().getX() + 4, p.getY() + 1, p.north().getZ() + 1)));
+                new net.minecraft.world.phys.AABB(p.north().getX(), p.getY(), p.north().getZ(), p.north().getX() + 4, p.getY() + 3, p.north().getZ() + 1)));
+    }
+
+    private static final java.util.UUID TURRET_NET = java.util.UUID.randomUUID();
+
+    private static void gunLink(ServerLevel level, BlockPos attached, Direction face) {
+        BlockPos at = attached.relative(face);
+        level.setBlock(at, FcsRegistry.GUN_LINK.get().defaultBlockState().setValue(dev.radarfcs.block.RadarLinkBlock.FACING, face), 3);
+        if (level.getBlockEntity(at) instanceof dev.radarfcs.block.GunLinkBlockEntity be) be.setNetwork(TURRET_NET);
+    }
+
+    private static void logTurret(net.minecraft.server.MinecraftServer server) {
+        ServerLevel level = server.overworld();
+        if (level.getBlockEntity(base) instanceof dev.radarfcs.block.FireControlBlockEntity fcs) {
+            for (var m : fcs.mountStates()) {
+                String sight = "";
+                if (m.turret != null && m.turret.sightEntity(level) instanceof dev.radarfcs.block.SightBlockEntity s) {
+                    Vec3 d = s.worldDirection();
+                    Vec3 to = husk != null ? husk.getBoundingBox().getCenter().subtract(s.worldCenter()).normalize() : Vec3.ZERO;
+                    sight = String.format(java.util.Locale.ROOT, "sight dir (%.3f, %.3f, %.3f) toHusk (%.3f, %.3f, %.3f) angle %.2f firing %s",
+                            d.x, d.y, d.z, to.x, to.y, to.z, Math.toDegrees(Math.acos(Math.max(-1, Math.min(1, d.dot(to))))), s.firing());
+                }
+                FcsMod.LOG.info("[radar_fcs dev] turret state {} status {} target {} err {} {}", m.pos, m.status, m.targetName,
+                        String.format(java.util.Locale.ROOT, "%.2f", m.aimError), sight);
+            }
+        }
+        logRotators(server);
     }
 
     private static void assembleRotator(net.minecraft.server.MinecraftServer server, BlockPos pos) {

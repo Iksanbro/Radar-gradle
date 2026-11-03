@@ -65,6 +65,21 @@ public class RadarLinkBlock extends BaseEntityBlock {
         };
     }
 
+    /**
+     * Сигнал редстоуна у линка от всех соседей, кроме аппаратуры, на которой он стоит: прицел орудия сам выдаёт
+     * сигнал огня - он не должен отключать линк на себе.
+     */
+    public static int controlSignal(Level level, BlockPos pos, BlockState state) {
+        Direction attached = state.hasProperty(FACING) ? state.getValue(FACING).getOpposite() : null;
+        int best = 0;
+        for (Direction d : Direction.values()) {
+            if (d == attached) continue;
+            best = Math.max(best, level.getSignal(pos.relative(d), d));
+            if (best >= 15) break;
+        }
+        return best;
+    }
+
     public RadarLinkBlock(Properties props) {
         super(props);
         registerDefaultState(stateDefinition.any().setValue(FACING, Direction.UP));

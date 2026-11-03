@@ -1,0 +1,31 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "body": "radar_fcs:block/sight_body",
+    "lens": "radar_fcs:block/sight_lens",
+    "particle": "radar_fcs:block/sight_body"
+  },
+  "elements": [
+    {
+      "from": [2, 2, 2], "to": [14, 14, 16],
+      "faces": {
+        "north": {"uv": [2, 2, 14, 14], "texture": "#body"},
+        "south": {"uv": [2, 2, 14, 14], "texture": "#body", "cullface": "south"},
+        "east": {"uv": [0, 2, 14, 14], "texture": "#body"},
+        "west": {"uv": [0, 2, 14, 14], "texture": "#body"},
+        "up": {"uv": [2, 0, 14, 14], "texture": "#body"},
+        "down": {"uv": [2, 0, 14, 14], "texture": "#body"}
+      }
+    },
+    {
+      "from": [4, 4, 0], "to": [12, 12, 2],
+      "faces": {
+        "north": {"uv": [0, 0, 16, 16], "texture": "#lens"},
+        "east": {"uv": [0, 0, 2, 8], "texture": "#body"},
+        "west": {"uv": [0, 0, 2, 8], "texture": "#body"},
+        "up": {"uv": [0, 0, 8, 2], "texture": "#body"},
+        "down": {"uv": [0, 0, 8, 2], "texture": "#body"}
+      }
+    }
+  ]
+}

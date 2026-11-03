@@ -28,7 +28,11 @@ public enum LinkKind {
     /** Камера: игрок смотрит через неё с монитора камер, пушки сети наводятся по её взгляду. */
     CAMERA,
     /** Монитор камер: выбор камеры сети и вид от её лица. */
-    CAMERA_MONITOR;
+    CAMERA_MONITOR,
+    /** Прицел орудия на вращателях: вычислитель наводит всё орудие (его орудийную сеть). */
+    SIGHT,
+    /** Вращатель орудия: как прицел - подключает всё орудие его орудийной сети. */
+    GUN_ROTATOR;
 
     /** Вид аппаратуры в точке или null (не аппаратура, чанк не загружен). */
     @Nullable
@@ -45,6 +49,8 @@ public enum LinkKind {
         if (be instanceof dev.radarfcs.block.MemoryBlockEntity) return MEMORY;
         if (be instanceof dev.radarfcs.block.CameraBlockEntity) return CAMERA;
         if (be instanceof dev.radarfcs.block.CameraMonitorBlockEntity) return CAMERA_MONITOR;
+        if (be instanceof dev.radarfcs.block.SightBlockEntity) return SIGHT;
+        if (be instanceof dev.radarfcs.block.GunRotatorBlockEntity) return GUN_ROTATOR;
         if (CbcMount.of(be) != null) return MOUNT;
         try {
             if (RadarLink.isRadar(be)) return RADAR;

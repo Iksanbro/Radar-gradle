@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "pattern": [
+    " T ",
+    "BEB",
+    " R "
+  ],
+  "key": {
+    "T": {"item": "create:transmitter"},
+    "B": {"item": "create:brass_ingot"},
+    "E": {"item": "create:electron_tube"},
+    "R": {"item": "minecraft:redstone"}
+  },
+  "result": {"id": "radar_fcs:gun_link", "count": 2}
+}

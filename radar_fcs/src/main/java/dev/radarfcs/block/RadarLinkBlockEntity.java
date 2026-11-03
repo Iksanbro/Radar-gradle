@@ -78,7 +78,7 @@ public class RadarLinkBlockEntity extends BlockEntity implements IHaveGoggleInfo
     /** Перерегистрация в сети, отключение по редстоуну и сводка для очков инженера. */
     public void refresh() {
         if (level == null || level.isClientSide) return;
-        boolean off = level.getBestNeighborSignal(worldPosition) >= 15;
+        boolean off = RadarLinkBlock.controlSignal(level, worldPosition, getBlockState()) >= 15;
         UUID net = network();
         if (off || net == null) {
             unregister();
@@ -155,7 +155,8 @@ public class RadarLinkBlockEntity extends BlockEntity implements IHaveGoggleInfo
         if (net == null) return Component.translatable("radar_fcs.link.not_linked").withStyle(ChatFormatting.RED);
         if (disabled) return Component.translatable("radar_fcs.link.disabled", shortName(net)).withStyle(ChatFormatting.GOLD);
         if (overflow) return Component.translatable("radar_fcs.link.overflow", shortName(net), usage[0], usage[1]).withStyle(ChatFormatting.RED);
-        return Component.translatable("radar_fcs.link.network_info", shortName(net), counts[0], counts[1], counts[2], counts[3] + counts[4],
+        return Component.translatable("radar_fcs.link.network_info", shortName(net), counts[0],
+                        counts[1] + counts[LinkKind.SIGHT.ordinal()] + counts[LinkKind.GUN_ROTATOR.ordinal()], counts[2], counts[3] + counts[4],
                         counts[5], counts[LinkKind.CAMERA.ordinal()], counts[LinkKind.CAMERA_MONITOR.ordinal()])
                 .withStyle(ChatFormatting.AQUA);
     }

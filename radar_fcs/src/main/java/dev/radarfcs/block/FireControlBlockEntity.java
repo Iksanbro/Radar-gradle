@@ -147,7 +147,10 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                     dropped.removeIf(id -> sensor.get(id) == null);
                 }
             }
-            for (MountState m : mounts.values()) {
+            List<MountState> order = new ArrayList<>(mounts.size());
+            for (MountState m : mounts.values()) if (m.turret == null || m.pos.equals(m.turret.leader)) order.add(m);
+            for (MountState m : mounts.values()) if (m.turret != null && !m.pos.equals(m.turret.leader)) order.add(m);
+            for (MountState m : order) {
                 FcsControl.control(level, this, m, sensor, now, hold, effectiveSettings().iffRule(), platformShips, des, manual);
                 if (m.targetId != null && (m.status == Status.FIRE || m.status == Status.AIMING)) {
                     UUID tid = uuidOrNull(m.targetId);
@@ -271,6 +274,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     /** Подключённая аппаратура - только на радарных линках: станки CBC, радары Create Radars, мониторы. */
     private void discover(ServerLevel level, long now) {
         Set<BlockPos> found = new HashSet<>();
+        Map<BlockPos, dev.radarfcs.fcs.Turret> turrets = new LinkedHashMap<>();
         radars.clear();
         linkedMonitors.clear();
         crMonitors.clear();
@@ -281,11 +285,15 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             BlockEntity be = level.getBlockEntity(p);
             LinkKind k = LinkKind.of(be);
             if (k == null) continue;
+            // часть орудия на вращателях (прицел, вращатель или станок в орудийной сети с прицелом) - всё орудие
+            if ((k == LinkKind.MOUNT || k == LinkKind.SIGHT || k == LinkKind.GUN_ROTATOR) && addTurret(level, p, turrets, found)) continue;
             switch (k) {
                 case MOUNT -> {
                     BlockPos key = p.immutable();
                     found.add(key);
-                    mounts.computeIfAbsent(key, MountState::new).mount = CbcMount.of(be);
+                    MountState m = mounts.computeIfAbsent(key, MountState::new);
+                    m.mount = CbcMount.of(be);
+                    m.turret = null;
                 }
                 case RADAR -> radars.add(be);
                 case MONITOR -> {
@@ -306,6 +314,9 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                 it.remove();
             }
         }
+        // ведущий каждого орудия - его первое состояние: он наводит вращатели
+        for (dev.radarfcs.fcs.Turret t : turrets.values()) t.leader = null;
+        for (MountState m : mounts.values()) if (m.turret != null && m.turret.leader == null) m.turret.leader = m.pos;
         // корабли, на которых стоит сама батарея: их корпус - не цель и не помеха
         Set<UUID> ships = new HashSet<>();
         ownShip = SableCompat.containingId(level, worldPosition);
@@ -313,9 +324,72 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         for (MountState m : mounts.values()) {
             UUID s = SableCompat.containingId(level, m.pos);
             if (s != null) ships.add(s);
+            if (m.turret != null) {
+                // поворотные части орудия - своя постройка: не цель и не помеха огню
+                for (BlockPos rp : m.turret.rotators) {
+                    if (!level.isLoaded(rp) || !(level.getBlockEntity(rp) instanceof GunRotatorBlockEntity r)) continue;
+                    if (r.subLevel() != null) ships.add(r.subLevel());
+                    UUID c = SableCompat.containingId(level, rp);
+                    if (c != null) ships.add(c);
+                }
+            }
         }
         platformShips = Set.copyOf(ships);
         updateCapacity(level);
+    }
+
+    /**
+     * Орудие на вращателях по его части p: прицел, вращатели и станки CBC орудийной сети. Станки орудия - состояния
+     * пушек с общим орудием; орудие без станков - одно состояние на прицеле (огонь сигналом прицела).
+     * false - у части нет прицела в орудии (станок без прицела - обычная пушка).
+     */
+    private boolean addTurret(ServerLevel level, BlockPos p, Map<BlockPos, dev.radarfcs.fcs.Turret> turrets, Set<BlockPos> found) {
+        List<BlockPos> group = dev.radarfcs.link.GunLinks.group(level, p);
+        BlockPos sight = null;
+        List<BlockPos> rot = new ArrayList<>(), guns = new ArrayList<>();
+        for (BlockPos q : group) {
+            if (!level.isLoaded(q)) continue;
+            BlockEntity be = level.getBlockEntity(q);
+            if (be instanceof SightBlockEntity) {
+                if (sight == null) sight = q.immutable();
+            } else if (be instanceof GunRotatorBlockEntity) {
+                rot.add(q.immutable());
+            } else if (be != null && CbcMount.of(be) != null) {
+                guns.add(q.immutable());
+            }
+        }
+        if (sight == null) return false;
+        if (turrets.containsKey(sight)) return true;
+        dev.radarfcs.fcs.Turret t = turretFor(sight);
+        t.rotators = List.copyOf(rot);
+        t.mounts = List.copyOf(guns);
+        turrets.put(sight, t);
+        if (guns.isEmpty()) {
+            found.add(sight);
+            MountState m = mounts.computeIfAbsent(sight, MountState::new);
+            m.mount = null;
+            m.turret = t;
+        } else {
+            for (BlockPos g : guns) {
+                found.add(g);
+                MountState m = mounts.computeIfAbsent(g, MountState::new);
+                m.mount = CbcMount.of(level.getBlockEntity(g));
+                m.turret = t;
+            }
+        }
+        return true;
+    }
+
+    /** Орудие с этим прицелом из уже известных состояний (сохраняет решение ведущего) или новое. */
+    private dev.radarfcs.fcs.Turret turretFor(BlockPos sight) {
+        for (MountState m : mounts.values()) if (m.turret != null && m.turret.sight.equals(sight)) return m.turret;
+        return new dev.radarfcs.fcs.Turret(sight);
+    }
+
+    /** Состояние пушки (станка или прицела орудия) или null. */
+    @Nullable
+    public MountState mountState(@Nullable BlockPos pos) {
+        return pos == null ? null : mounts.get(pos);
     }
 
     /** Ёмкость списков: 16 + 16 за каждый блок памяти с питанием в сети. */
@@ -507,12 +581,14 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         for (MountState m : mounts.values()) {
             CompoundTag mt = new CompoundTag();
             mt.putInt("S", m.status.ordinal());
-            mt.putString("N", m.mount == null ? "?" : m.mount.typeName());
+            mt.putString("N", m.mount == null ? (m.turret != null ? "@sight" : "?") : m.mount.typeName());
+            if (m.turret != null) mt.putBoolean("R", true);
             mt.putLong("Q", m.pos.asLong());
             if (settings.mountTargets.containsKey(m.pos.asLong())) mt.putBoolean("C", true);
             if (m.targetName != null && (m.status == Status.FIRE || m.status == Status.AIMING || m.status == Status.HOLD
                     || m.status == Status.BLOCKED_FRIENDLY || m.status == Status.BLOCKED_TERRAIN || m.status == Status.NO_AMMO
-                    || m.status == Status.NO_POWER || m.status == Status.NO_CONTROLLER || m.status == Status.PAUSE)) {
+                    || m.status == Status.NO_POWER || m.status == Status.NO_CONTROLLER || m.status == Status.PAUSE
+                    || m.status == Status.TURRET_NO_POWER || m.status == Status.CAMERA)) {
                 mt.putString("T", m.targetName);
                 mt.putFloat("D", (float) m.distance);
                 mt.putFloat("E", (float) m.aimError);
@@ -586,7 +662,10 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         for (int i = 0; i < ml.size(); i++) {
             CompoundTag m = ml.getCompound(i);
             Status st = Status.byOrdinal(m.getInt("S"));
-            MutableComponent line = Component.literal(" " + m.getString("N") + ": ").withStyle(ChatFormatting.GRAY)
+            Component name = "@sight".equals(m.getString("N")) ? Component.translatable("radar_fcs.report.sight_gun")
+                    : Component.literal(m.getString("N"));
+            if (m.getBoolean("R")) name = Component.translatable("radar_fcs.report.turret", name);
+            MutableComponent line = Component.literal(" ").append(name).append(": ").withStyle(ChatFormatting.GRAY)
                     .append(Component.translatable(st.key()).withStyle(st.color));
             if (m.contains("T")) {
                 line.append(Component.translatable("radar_fcs.report.engaging", m.getString("T"),

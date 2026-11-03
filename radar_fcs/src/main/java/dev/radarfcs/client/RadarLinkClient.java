@@ -49,26 +49,39 @@ public final class RadarLinkClient {
                 : mc.player.getOffhandItem().getItem() instanceof RadarLinkItem ? mc.player.getOffhandItem() : null;
         UUID show = null;
         int color = NETWORK;
+        ItemStack heldGun = mc.player.getMainHandItem().getItem() instanceof dev.radarfcs.item.GunLinkItem ? mc.player.getMainHandItem()
+                : mc.player.getOffhandItem().getItem() instanceof dev.radarfcs.item.GunLinkItem ? mc.player.getOffhandItem() : null;
+        boolean gun = false;
         if (hover != null && level.getBlockEntity(hover) instanceof RadarLinkBlockEntity link && link.network() != null) {
             show = link.network();
             color = LOOKED;
+        } else if (hover != null && level.getBlockEntity(hover) instanceof dev.radarfcs.block.GunLinkBlockEntity link && link.network() != null) {
+            show = link.network();
+            color = LOOKED;
+            gun = true;
         } else if (held != null) {
             show = RadarLinkItem.network(held);
             if (hover != null && LinkKind.at(level, hover) != null) outline("radar_fcs:link_hover", hover, VALID);
+        } else if (heldGun != null) {
+            show = dev.radarfcs.item.GunLinkItem.network(heldGun);
+            gun = true;
+            if (hover != null && dev.radarfcs.block.GunLinkBlockEntity.isGunPart(level.getBlockEntity(hover))) {
+                outline("radar_fcs:link_hover", hover, VALID);
+            }
         }
         if (show == null) return;
         long now = level.getGameTime();
         if (!show.equals(cachedNet) || now - cachedAt >= 10) {
             cachedNet = show;
             cachedAt = now;
-            cachedMembers = scan(level, mc.player.blockPosition(), show);
+            cachedMembers = scan(level, mc.player.blockPosition(), show, gun);
         }
         int i = 0;
         for (BlockPos p : cachedMembers) outline("radar_fcs:link_member_" + i++, p, color);
     }
 
     /** Аппаратура сети в загруженных чанках вокруг игрока (по линкам на ней). */
-    private static List<BlockPos> scan(ClientLevel level, BlockPos center, UUID net) {
+    private static List<BlockPos> scan(ClientLevel level, BlockPos center, UUID net, boolean gun) {
         List<BlockPos> out = new ArrayList<>();
         int cx0 = center.getX() >> 4, cz0 = center.getZ() >> 4;
         for (int cx = cx0 - SCAN_CHUNKS; cx <= cx0 + SCAN_CHUNKS; cx++) {
@@ -76,8 +89,11 @@ public final class RadarLinkClient {
                 LevelChunk chunk = level.getChunkSource().getChunk(cx, cz, false);
                 if (chunk == null) continue;
                 for (BlockEntity be : chunk.getBlockEntities().values()) {
-                    if (be instanceof RadarLinkBlockEntity link && net.equals(link.network()) && !out.contains(link.attached())) {
-                        out.add(link.attached());
+                    BlockPos at = null;
+                    if (!gun && be instanceof RadarLinkBlockEntity link && net.equals(link.network())) at = link.attached();
+                    if (gun && be instanceof dev.radarfcs.block.GunLinkBlockEntity link && net.equals(link.network())) at = link.attached();
+                    if (at != null && !out.contains(at)) {
+                        out.add(at);
                         if (out.size() >= 64) return out;
                     }
                 }

@@ -126,6 +126,7 @@ neoForge {
             // ./gradlew runClient -PfcsScreenshot: зайти в мир fcs_test, построить сцену и сделать скриншоты
             if (project.hasProperty('fcsScreenshot')) {
                 systemProperty 'radar_fcs.screenshot', 'true'
+                if (project.hasProperty('fcsTurretOnly')) systemProperty 'radar_fcs.screenshot.turret', 'true'
                 programArguments.addAll('--quickPlaySingleplayer', project.findProperty('fcsWorld') ?: 'fcs_test',
                         '--width', '1280', '--height', '720')
             }

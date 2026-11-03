@@ -4,6 +4,8 @@ import dev.radarfcs.FcsConfig;
 import dev.radarfcs.FcsMod;
 import dev.radarfcs.block.AimControllerBlockEntity;
 import dev.radarfcs.block.FireControlBlockEntity;
+import dev.radarfcs.block.GunRotatorBlockEntity;
+import dev.radarfcs.block.SightBlockEntity;
 import dev.radarfcs.compat.CbcBallistics;
 import dev.radarfcs.compat.CbcMount;
 import dev.radarfcs.compat.SableCompat;
@@ -56,73 +58,46 @@ public final class FcsControl {
                                boolean hold, IffRule iff, Set<UUID> platform, @Nullable String designated,
                                @Nullable ManualAim manual) {
         CbcMount d = m.mount;
-        if (d == null || !d.isValid()) {
+        Turret tu = m.turret;
+        if (tu != null && !m.pos.equals(tu.leader)) {                 // второй станок орудия - стреляет с ведущим
+            follow(level, fcs, m, tu, now);
+            return;
+        }
+        SightBlockEntity sight = tu != null ? tu.sightEntity(level) : null;
+        if (tu != null ? sight == null || (d != null && !d.isValid()) : d == null || !d.isValid()) {
             m.status = Status.LOST;
             return;
         }
-        if (FcsConfig.YIELD_TO_RADAR_CONTROLLERS.get() && d.hasRadarControllers()) {
+        if (tu == null && FcsConfig.YIELD_TO_RADAR_CONTROLLERS.get() && d.hasRadarControllers()) {
             yieldMount(level, fcs, m);
             m.status = Status.RADAR_CONTROLLED;
             return;
         }
-        if (!MountClaims.claim(level, m.pos, fcs.getBlockPos(), now)) {
-            if (m.locked || m.triggerOn) releaseHardware(m);
-            m.status = Status.OTHER_FCS;
+        if (d != null) {
+            if (!prepareMount(level, fcs, m, d, now)) return;
+        } else if (!claim(level, fcs, m, now)) {
             return;
         }
-        m.claimed = true;
-        m.fcsPos = fcs.getBlockPos();
-        m.fcsOwner = fcs.owner();
-        m.fcsTeam = fcs.ownerTeam();
-        if (!d.isAssembled()) {
-            setTrigger(m, false);
-            m.cmdYaw = Double.NaN;
-            if (!fcs.assembleWanted()) {                           // разобрана кнопкой - не собирать
-                m.note = null;
-                m.status = Status.DISASSEMBLED;
+        // орудие на вращателях: вращатели, которые поворачивают прицел
+        List<GunRotatorBlockEntity> chain = null;
+        if (tu != null) {
+            List<GunRotatorBlockEntity> all = tu.rotatorEntities(level);
+            chain = Turret.chain(level, tu.sight, all);
+            if (chain.isEmpty()) {
+                setTrigger(m, false);
+                boolean unassembled = false;
+                for (GunRotatorBlockEntity r : all) if (!r.assembled()) unassembled = true;
+                m.status = unassembled ? Status.NOT_ASSEMBLED : Status.TURRET_NO_ROTATOR;
                 return;
             }
-            if (FcsConfig.AUTO_ASSEMBLE.get() && now - m.lastAssembleTry >= 40) {
-                m.lastAssembleTry = now;
-                d.assemble();
-                m.note = d.assemblyError();
-            }
-            m.status = Status.NOT_ASSEMBLED;
-            return;
         }
-        m.note = null;
-        if (!d.canControl()) {
-            releaseHardware(m);
-            m.status = Status.MANUAL;
-            return;
-        }
-        CbcMount.Kind kind = d.kind();
-        if (!m.locked) {
-            d.setDriveLock(true);
-            m.locked = true;
-        }
-        if (Double.isNaN(m.cmdYaw)) {
-            m.cmdYaw = d.yaw();
-            m.cmdPitch = d.pitch();
-        }
-        // заряжание: пока пушка пуста, проверять часто (автомат заряжания успевает за несколько тиков)
-        if (m.estimate == null || now - m.estimateTick >= (m.estimate.loaded() ? 20 : 2)) m.setEstimate(CbcBallistics.estimate(level, d), now);
+        CbcMount.Kind kind = d != null ? d.kind() : CbcMount.Kind.RAPID;
         EngageSettings settings = fcs.settings();
-        // выстрелы прошлого тика: по какой цели, сколько в очереди
-        if (m.pendingShots > 0) {
-            int n = m.pendingShots;
-            m.pendingShots = 0;
-            m.salvoCount += n;
-            m.lastCountedShot = now;
-            if (m.targetId != null) {
-                if (m.targetId.equals(m.pick.currentId)) m.pick.shotsAtCurrent += n;
-                for (int i = 0; i < n; i++) fcs.onShotAt(m.targetId);
-            }
-        }
+        countShots(fcs, m, now);
 
         // система координат станка: на корабле - через позу корабля
-        SubLevelAccess ship = SableCompat.containing(level, d.pos());
-        Vec3 pivotLocal = d.localPivot();
+        SubLevelAccess ship = SableCompat.containing(level, d != null ? d.pos() : tu.sight);
+        Vec3 pivotLocal = d != null ? d.localPivot() : Vec3.atCenterOf(tu.sight);
         Vec3 pivotW = SableCompat.toWorld(level, pivotLocal);
         Vec pivot = new Vec(pivotW.x, pivotW.y, pivotW.z);
         Vec platformVel = Vec.ZERO;
@@ -131,7 +106,7 @@ public final class FcsControl {
             platformVel = new Vec(pv.x, pv.y, pv.z);
         }
 
-        if (kind == CbcMount.Kind.UNSUPPORTED) {
+        if (d != null && kind == CbcMount.Kind.UNSUPPORTED) {
             setTrigger(m, false);
             m.status = Status.UNSUPPORTED;
             return;
@@ -139,16 +114,17 @@ public final class FcsControl {
         List<Track> active = sensor.active();
         if (active.isEmpty() && manual == null) {
             idle(m, Status.IDLE);
-            syncIfNeeded(d, m, now);
+            if (d != null) syncIfNeeded(d, m, now);
             return;
         }
 
         FlightModel model = m.flightModel();
-        double muzzleDist = m.muzzleDistance(d.muzzleDistance());
+        double muzzleDist = d != null ? m.muzzleDistance(d.muzzleDistance()) : 0.5;
         BallisticSolver.Muzzle muzzle = BallisticSolver.Muzzle.offset(pivot, muzzleDist);
         boolean discrete = FcsConfig.DISCRETE_INTERCEPT.get();
-        BallisticSolver solver = new BallisticSolver(-d.maxDepression(), d.maxElevation(), FcsConfig.HIGH_ARC.get())
-                .discrete(discrete);
+        // орудие на вращателях: пределы наклона задаёт постройка, а не станок
+        BallisticSolver solver = (tu != null ? new BallisticSolver(-90, 90, FcsConfig.HIGH_ARC.get())
+                : new BallisticSolver(-d.maxDepression(), d.maxElevation(), FcsConfig.HIGH_ARC.get())).discrete(discrete);
 
         // Выбор цели по настройкам вычислителя: уровень приоритета типа, режим приоритета, удержание текущей,
         // переключение по приоритету и по правилу; назначенная с монитора - вне очереди.
@@ -192,7 +168,7 @@ public final class FcsControl {
             m.targetName = null;
             m.hintPitch = Double.NaN;
             idle(m, Status.NO_SOLUTION);
-            syncIfNeeded(d, m, now);
+            if (d != null) syncIfNeeded(d, m, now);
             return;
         }
         if (!target.id.equals(m.targetId)) {
@@ -206,48 +182,59 @@ public final class FcsControl {
         m.flightTicks = sol.flightTicks();
         m.distance = sol.aimPoint().distance(sol.muzzle());
 
-        // желаемые углы станка
+        // желаемые углы станка или поворот вращателей орудия
         Vec3 wantW = new Vec3(sol.direction().x(), sol.direction().y(), sol.direction().z());
-        Vec3 wantL = SableCompat.dirToLocal(ship, wantW);
-        Vec wl = new Vec(wantL.x, wantL.y, wantL.z);
-        double wantYaw = Aim.wrap180(wl.yawDeg() + FcsConfig.YAW_OFFSET.get());
-        double wantPitch = wl.pitchDeg() * (FcsConfig.INVERT_PITCH.get() ? -1 : 1);
-        double lo = -d.maxDepression(), hi = d.maxElevation();
-        boolean outOfArc = wantPitch < lo - 0.5 || wantPitch > hi + 0.5;
-        wantPitch = Aim.clamp(wantPitch, lo, hi);
-
-        // скорость поворота: от контроллеров наводки (вращение на их валах, как у валов CBC) или без кинетики
-        double slewYaw, slewPitch;
-        boolean noController = false;
-        if (FcsConfig.REQUIRE_ROTATION.get()) {
-            double k = FcsConfig.SHAFT_SPEED.get();
-            AimControllerBlockEntity yc = AimControllerBlockEntity.find(level, d.pos(), false);
-            AimControllerBlockEntity pc = AimControllerBlockEntity.find(level, d.pos(), true);
-            noController = yc == null || pc == null;
-            slewYaw = yc == null ? 0 : yc.degPerTick() * k;
-            slewPitch = pc == null ? 0 : pc.degPerTick() * k;
+        boolean outOfArc = false, noPower, noController = false;
+        if (tu != null) {
+            Turret.Drive drv = Turret.aim(chain, sight.worldDirection(), wantW, FcsConfig.DEADBAND.get());
+            noPower = drv.noPower();
         } else {
-            slewYaw = slewPitch = FcsConfig.SLEW.get();
+            Vec3 wantL = SableCompat.dirToLocal(ship, wantW);
+            Vec wl = new Vec(wantL.x, wantL.y, wantL.z);
+            double wantYaw = Aim.wrap180(wl.yawDeg() + FcsConfig.YAW_OFFSET.get());
+            double wantPitch = wl.pitchDeg() * (FcsConfig.INVERT_PITCH.get() ? -1 : 1);
+            double lo = -d.maxDepression(), hi = d.maxElevation();
+            outOfArc = wantPitch < lo - 0.5 || wantPitch > hi + 0.5;
+            wantPitch = Aim.clamp(wantPitch, lo, hi);
+
+            // скорость поворота: от контроллеров наводки (вращение на их валах, как у валов CBC) или без кинетики
+            double slewYaw, slewPitch;
+            if (FcsConfig.REQUIRE_ROTATION.get()) {
+                double k = FcsConfig.SHAFT_SPEED.get();
+                AimControllerBlockEntity yc = AimControllerBlockEntity.find(level, d.pos(), false);
+                AimControllerBlockEntity pc = AimControllerBlockEntity.find(level, d.pos(), true);
+                noController = yc == null || pc == null;
+                slewYaw = yc == null ? 0 : yc.degPerTick() * k;
+                slewPitch = pc == null ? 0 : pc.degPerTick() * k;
+            } else {
+                slewYaw = slewPitch = FcsConfig.SLEW.get();
+            }
+            double db = FcsConfig.DEADBAND.get();
+            noPower = (slewYaw <= 0 && Math.abs(Aim.wrap180(wantYaw - m.cmdYaw)) > db)
+                    || (slewPitch <= 0 && Math.abs(wantPitch - m.cmdPitch) > db);
+            double ny = Aim.wrap180(Aim.stepAngle(m.cmdYaw, wantYaw, slewYaw, db));
+            double np = Aim.stepLinear(m.cmdPitch, wantPitch, slewPitch, db);
+            if (ny != m.cmdYaw || np != m.cmdPitch) {
+                m.cmdYaw = ny;
+                m.cmdPitch = np;
+                d.setAngles(Aim.norm360(ny), np);
+                m.syncPending = true;
+            }
+            syncIfNeeded(d, m, now);
         }
-        double db = FcsConfig.DEADBAND.get();
-        boolean noPower = (slewYaw <= 0 && Math.abs(Aim.wrap180(wantYaw - m.cmdYaw)) > db)
-                || (slewPitch <= 0 && Math.abs(wantPitch - m.cmdPitch) > db);
-        double ny = Aim.wrap180(Aim.stepAngle(m.cmdYaw, wantYaw, slewYaw, db));
-        double np = Aim.stepLinear(m.cmdPitch, wantPitch, slewPitch, db);
-        if (ny != m.cmdYaw || np != m.cmdPitch) {
-            m.cmdYaw = ny;
-            m.cmdPitch = np;
-            d.setAngles(Aim.norm360(ny), np);
-            m.syncPending = true;
-        }
-        syncIfNeeded(d, m, now);
 
         // Проверка выстрела фактическим положением ствола, которое возьмёт CBC:
         // большая пушка стреляет сразу - по положению на начало тика, снаряд появляется сейчас;
         // автопушка стреляет в следующем тике - по только что выставленным углам, снаряд на тик позже.
+        // у орудия на вращателях ствол смотрит туда же, куда прицел
         boolean big = kind != CbcMount.Kind.RAPID;
-        Vec3 shotL = d.localBarrelDirection(big ? 0.0F : 1.0F);
-        Vec3 shotW = shotL == null ? null : SableCompat.dirToWorld(ship, shotL);
+        Vec3 shotW;
+        if (tu != null) {
+            shotW = sight.worldDirection();
+        } else {
+            Vec3 shotL = d.localBarrelDirection(big ? 0.0F : 1.0F);
+            shotW = shotL == null ? null : SableCompat.dirToWorld(ship, shotL);
+        }
         // Попадание CBC: отрезок полёта за тик задевает габарит цели, расширенный на половину размера снаряда.
         // Габарит сущности известен точно - промах считаем до него (с небольшим запасом внутрь);
         // у кораблей и контрапшенов - до центра с допуском по размеру.
@@ -335,11 +322,15 @@ public final class FcsControl {
         boolean fire = aligned && loaded && verdict == FireSafety.Verdict.CLEAR && (manual != null ? manual.fire() : !hold);
         boolean wasOn = m.triggerOn;
         long lastFireBefore = m.lastFire;
-        fireControl(level, d, m, kind, fire, pivotW, shotW, muzzleDist, now, settings);
+        if (tu != null) {
+            tu.fire = fire;
+            tu.fireTick = now;
+        }
+        fireControl(level, d, sight, m, kind, fire, pivotW, shotW, muzzleDist, now, settings);
         boolean shot = big ? m.lastFire != lastFireBefore : m.triggerOn && !wasOn;
         if (FcsConfig.LOG_SHOTS.get() && shot) {
             FcsMod.LOG.info("[radar_fcs] FIRE {} at {} pos={} vel={} acc={} res={} age={} aim={} ttf={} pitch={} yaw={} err={} miss={} allowed={} speed={} muzzle={}",
-                    d.typeName(), target.name, target.pos, target.vel, target.acc, String.format("%.3f", target.residual),
+                    d != null ? d.typeName() : "sight", target.name, target.pos, target.vel, target.acc, String.format("%.3f", target.residual),
                     now - target.lastTick,
                     sol.aimPoint(), String.format("%.2f", sol.flightTicks()), String.format("%.2f", sol.pitchDeg()),
                     String.format("%.2f", sol.yawDeg()), String.format("%.3f", m.aimError), String.format("%.2f", missDist),
@@ -347,7 +338,7 @@ public final class FcsControl {
         }
 
         if (outOfArc) m.status = Status.OUT_OF_ARC;
-        else if (noPower) m.status = noController ? Status.NO_CONTROLLER : Status.NO_POWER;
+        else if (noPower) m.status = tu != null ? Status.TURRET_NO_POWER : noController ? Status.NO_CONTROLLER : Status.NO_POWER;
         else if (!aligned) m.status = Status.AIMING;
         else if (verdict == FireSafety.Verdict.FRIENDLY) m.status = Status.BLOCKED_FRIENDLY;
         else if (verdict == FireSafety.Verdict.TERRAIN) m.status = Status.BLOCKED_TERRAIN;
@@ -360,6 +351,105 @@ public final class FcsControl {
         }
     }
 
+    /** Захват пушки вычислителем (одна пушка - один вычислитель); false - ею управляет другой. */
+    private static boolean claim(ServerLevel level, FireControlBlockEntity fcs, MountState m, long now) {
+        if (!MountClaims.claim(level, m.pos, fcs.getBlockPos(), now)) {
+            if (m.locked || m.triggerOn) releaseHardware(m);
+            m.status = Status.OTHER_FCS;
+            return false;
+        }
+        m.claimed = true;
+        m.fcsPos = fcs.getBlockPos();
+        m.fcsOwner = fcs.owner();
+        m.fcsTeam = fcs.ownerTeam();
+        return true;
+    }
+
+    /** Захват, сборка, блокировка валов и оценка заряжания станка; false - станок не готов (статус выставлен). */
+    private static boolean prepareMount(ServerLevel level, FireControlBlockEntity fcs, MountState m, CbcMount d, long now) {
+        if (!claim(level, fcs, m, now)) return false;
+        if (!d.isAssembled()) {
+            setTrigger(m, false);
+            m.cmdYaw = Double.NaN;
+            if (!fcs.assembleWanted()) {                           // разобрана кнопкой - не собирать
+                m.note = null;
+                m.status = Status.DISASSEMBLED;
+                return false;
+            }
+            if (FcsConfig.AUTO_ASSEMBLE.get() && now - m.lastAssembleTry >= 40) {
+                m.lastAssembleTry = now;
+                d.assemble();
+                m.note = d.assemblyError();
+            }
+            m.status = Status.NOT_ASSEMBLED;
+            return false;
+        }
+        m.note = null;
+        if (!d.canControl()) {
+            releaseHardware(m);
+            m.status = Status.MANUAL;
+            return false;
+        }
+        if (!m.locked) {
+            d.setDriveLock(true);
+            m.locked = true;
+        }
+        if (Double.isNaN(m.cmdYaw)) {
+            m.cmdYaw = d.yaw();
+            m.cmdPitch = d.pitch();
+        }
+        // заряжание: пока пушка пуста, проверять часто (автомат заряжания успевает за несколько тиков)
+        if (m.estimate == null || now - m.estimateTick >= (m.estimate.loaded() ? 20 : 2)) m.setEstimate(CbcBallistics.estimate(level, d), now);
+        return true;
+    }
+
+    /** Выстрелы прошлого тика: по какой цели, сколько в очереди. */
+    private static void countShots(FireControlBlockEntity fcs, MountState m, long now) {
+        if (m.pendingShots <= 0) return;
+        int n = m.pendingShots;
+        m.pendingShots = 0;
+        m.salvoCount += n;
+        m.lastCountedShot = now;
+        if (m.targetId != null) {
+            if (m.targetId.equals(m.pick.currentId)) m.pick.shotsAtCurrent += n;
+            for (int i = 0; i < n; i++) fcs.onShotAt(m.targetId);
+        }
+    }
+
+    /**
+     * Второй (и следующий) станок орудия на вращателях: наводит ведущий, этот стреляет вместе с ним - когда ствол
+     * (по прицелу) на цели и этот станок заряжен.
+     */
+    private static void follow(ServerLevel level, FireControlBlockEntity fcs, MountState m, Turret tu, long now) {
+        CbcMount d = m.mount;
+        SightBlockEntity sight = tu.sightEntity(level);
+        if (d == null || !d.isValid() || sight == null) {
+            m.status = Status.LOST;
+            return;
+        }
+        if (!prepareMount(level, fcs, m, d, now)) return;
+        CbcMount.Kind kind = d.kind();
+        if (kind == CbcMount.Kind.UNSUPPORTED) {
+            setTrigger(m, false);
+            m.status = Status.UNSUPPORTED;
+            return;
+        }
+        countShots(fcs, m, now);
+        MountState lead = fcs.mountState(tu.leader);
+        if (lead != null) {
+            m.status = lead.status;
+            m.targetId = lead.targetId;
+            m.targetName = lead.targetName;
+            m.distance = lead.distance;
+            m.aimError = lead.aimError;
+        }
+        boolean loaded = m.estimate == null || m.estimate.loaded();
+        if (!loaded && m.status == Status.FIRE) m.status = Status.NO_AMMO;
+        boolean fire = tu.fire && tu.fireTick == now && loaded;
+        Vec3 pivotW = SableCompat.toWorld(level, d.localPivot());
+        fireControl(level, d, sight, m, kind, fire, pivotW, sight.worldDirection(), m.muzzleDistance(d.muzzleDistance()), now, fcs.settings());
+    }
+
     /** id цели ручного наведения с камеры. */
     public static final String MANUAL_ID = "camera";
 
@@ -367,8 +457,18 @@ public final class FcsControl {
      * Спуск по режиму огня: автоматический - пока выстрел попадёт; одиночный и очередь - выстрел (очередь из
      * burstLength выстрелов), затем пауза pauseTicks. Выстрелы считаются по снарядам у дульного среза.
      */
-    private static void fireControl(ServerLevel level, CbcMount d, MountState m, CbcMount.Kind kind, boolean fire,
-                                    Vec3 pivotW, Vec3 barrelW, double muzzleDist, long now, EngageSettings settings) {
+    private static void fireControl(ServerLevel level, @Nullable CbcMount d, @Nullable SightBlockEntity sight, MountState m,
+                                    CbcMount.Kind kind, boolean fire, Vec3 pivotW, Vec3 barrelW, double muzzleDist, long now,
+                                    EngageSettings settings) {
+        if (d == null) {
+            // орудие без станка: сигнал прицела, пока огонь разрешён (паузы режима огня - по времени)
+            boolean on = fire && now >= m.pauseUntil;
+            if (sight != null) sight.fire(on);
+            if (on && !m.triggerOn && settings.roundsPerSalvo() <= 1 && settings.pauseTicks > 0) m.pauseUntil = now + settings.pauseTicks;
+            m.triggerOn = on;
+            if (on) m.lastFire = now;
+            return;
+        }
         boolean learn = FcsConfig.LEARN_FROM_SHOTS.get() && barrelW != null && m.estimate != null;
         int salvo = settings.roundsPerSalvo();
         // перерыв в стрельбе не короче паузы (цель пропала, пушка перезаряжается) - уже пауза: очередь заново

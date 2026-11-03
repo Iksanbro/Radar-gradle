@@ -17,7 +17,10 @@ import org.jetbrains.annotations.Nullable;
 /** Состояние одной пушки под управлением вычислителя. */
 public final class MountState implements ShotObserver.Listener {
     public final BlockPos pos;
-    public CbcMount mount;
+    /** Станок CBC; null - орудие на вращателях без станка (огонь сигналом прицела). */
+    @Nullable public CbcMount mount;
+    /** Орудие на вращателях, в которое входит этот станок (или прицел без станка), иначе null. */
+    @Nullable public Turret turret;
     public boolean locked;
     public boolean claimed;
 
@@ -88,7 +91,11 @@ public final class MountState implements ShotObserver.Listener {
     /** Последняя оценка с заряженной пушкой: пока пушка пуста (перезарядка), целимся по ней, а не по скорости «по умолчанию». */
     @Nullable private CbcBallistics.Estimate lastLoaded;
 
+    /** Орудие без станка CBC: баллистика неизвестна - прицел наводится прямо на цель (почти мгновенный «снаряд»). */
+    private static final FlightModel DIRECT = dev.radarfcs.core.CbcFlightModel.ballistic(64.0, 0.0, 0.0, false, 128);
+
     public FlightModel flightModel() {
+        if (mount == null) return DIRECT;
         CbcBallistics.Estimate src = estimate != null && estimate.loaded() ? estimate : lastLoaded != null ? lastLoaded : estimate;
         FlightModel base = src != null ? src.model() : FcsConfig.bigFallback();
         return FcsConfig.LEARN_FROM_SHOTS.get() ? correction.apply(base) : base;

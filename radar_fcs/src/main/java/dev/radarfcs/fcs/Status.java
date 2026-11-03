@@ -31,7 +31,11 @@ public enum Status {
     /** У вычислителя нет электричества (FE). */
     NO_ENERGY(ChatFormatting.DARK_RED),
     /** Ручное наведение с камеры сети: автоприцеливание приостановлено, огонь - по команде игрока. */
-    CAMERA(ChatFormatting.AQUA);
+    CAMERA(ChatFormatting.AQUA),
+    /** Орудие на вращателях: на нужный вращатель не подано вращение. */
+    TURRET_NO_POWER(ChatFormatting.GOLD),
+    /** Прицел орудия не стоит на поворотной части вращателей (или вращателей нет в орудии). */
+    TURRET_NO_ROTATOR(ChatFormatting.GOLD);
 
     public final ChatFormatting color;
 

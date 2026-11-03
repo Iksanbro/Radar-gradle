@@ -62,7 +62,7 @@ public class RadarLinkItem extends BlockItem {
         ItemStack stack = ctx.getItemInHand();
         BlockPos pos = ctx.getClickedPos();
         // ПКМ по стоящему линку - настроиться на его сеть
-        if (level.getBlockState(pos).getBlock() instanceof RadarLinkBlock) {
+        if (level.getBlockState(pos).getBlock() instanceof RadarLinkBlock && !(level.getBlockState(pos).getBlock() instanceof dev.radarfcs.block.GunLinkBlock)) {
             if (level.getBlockEntity(pos) instanceof RadarLinkBlockEntity be && be.network() != null) {
                 tune(stack, be.network());
                 say(player, level, Component.translatable("radar_fcs.link.tuned", RadarLinkBlockEntity.shortName(be.network()))

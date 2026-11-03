@@ -143,6 +143,51 @@
    контрапшена забирают соседей с `canStickTo` по умолчанию; у CR 5.0.1 `RadarContraption.movementAllowed` берёт
    только части радара, у 0.4.9.x и у подшипников Create - всё. Тест `LinkGameTests.radarLinkDoesNotStickToDish`
    (подшипник Create, отражатель над линком; контроль - наблюдатель уезжает), `monitorPinsAndSide`.
+22. (1.5) **Общий лимит подключений радарной сети** («16 подключений любой аппаратуры: 16 линков + 16 за блок памяти»):
+   `LinkRegistry.BASE_LINKS`/`LINKS_PER_MEMORY`, работающие линки - `active(level, net)` (кэш на тик `ACTIVE`/`ACTIVE_TICK`):
+   линки блоков памяти всегда и не в счёт, остальные по порядку первой регистрации (`ORDER`, `sequence`) до ёмкости
+   `capacityFor(памяти с питанием)`. `members`/`networksOf`/`linkedTo` - только через работающие. Линк: `usage`/`overflow`
+   (NBT `Usage`/`Overflow`), сообщение `radar_fcs.link.overflow`. Тест `LinkGameTests.networkLinkLimit`.
+23. (1.5) **Камеры** (`block/CameraBlock(Entity)`: FACING = грань, `eye()`, луч до `RANGE` 384 по загруженным чанкам +
+   сущности; управление - `startControl`/`control`/`stopControl`, истекает через `TIMEOUT` 10 тиков без пакетов) и
+   **монитор камер** (`CameraMonitorBlock(Entity)`, `client/CameraMonitorScreen` - список, имя, «Смотреть»).
+   `net/CameraPayloads`: Open/Start (S->C, данные в `CompoundTag` - у `StreamCodec.composite` максимум 6 полей),
+   View/Control/Stop/Rename (C->S; проверки - рядом с монитором `MAX_DIST`, `LinkRegistry.linked`, тот же игрок).
+   `client/CameraClient`: камера игрока - сущность `Marker`, мышь крутит игрока, углы - в `ComputeCameraAngles`,
+   движение обнулено, ЛКМ отменён (`InteractionKeyMappingTriggered`) и идёт в пакет огня, рука и HUD скрыты, Shift - выход
+   (после отпускания). Вычислитель: `fcs/ManualAim` (точка, огонь, камера) от камеры с последним управлением -
+   цель `Track.point(MANUAL_ID)`, автоприцеливание пропущено, огонь только при `manual.fire()`, статус `CAMERA`.
+   Тест `CameraGameTests.cameraManualAimAndFire`.
+24. (1.5) **Орудия на вращателях Sable** («прицел для конструкций... вращатели, связываемые орудийным линком;
+   радарный линк к любой части орудия; вращателям нужно вращение»):
+   - `block/GunRotatorBlock(Entity)` (`KineticBlockEntity`, FACING - выход, вал сзади, нагрузка 2x контроллера):
+     ПКМ - `compat/sable/SableRotor.assemble` (блоки - `BearingContraption.assemble`, т.е. правила клея Create;
+     `SubLevelAssemblyHelper.assembleBlocks`; вращатель внутри под-уровня - выкинуть из содержащего и перенести позу),
+     шарнир `RotaryConstraintConfiguration` + сервомотор `setMotor(goal, 1600*I, 40*I)` на каждом
+     `ForgeSablePrePhysicsTickEvent` (`physicsStepAll`, цель интерполируется по `partialPhysicsTick`). Шарнир не
+     сохраняется - переподключается в `tick`, когда под-уровень загружен. Угол - закрутка conj(qContaining)*qSub вокруг
+     оси (диапазон atan2*2: -343° = 17°); `target` идёт к `want` кратчайшим путём (`wrap180`) со скоростью вала;
+     переход через ±180° мотор Sable проходит правильно (проверено: 170 -> -170 через 180). Класс с API Sable
+     грузится только при `Mods.SABLE`.
+   - `block/SightBlock(Entity)` - прицел: FACING = взгляд игрока при установке, `worldDirection()` через позу
+     под-уровня, сигнал редстоуна `FIRING` (`fire(on)` держится 2 тика, иначе гаснет сам). Линки игнорируют сигнал
+     своей аппаратуры (`RadarLinkBlock.controlSignal`) - иначе прицел, стреляя, отключал линк на себе.
+   - `link/GunLinks` + `block/GunLinkBlock(Entity)` (наследник `RadarLinkBlock`) + `item/GunLinkItem` (`GunNetwork`) -
+     орудийные сети без лимита; `group(level, pos)` - всё орудие по цепочке сетей. Ставится на прицел, вращатель,
+     станок CBC (`GunLinkBlockEntity.isGunPart`).
+   - `LinkKind.SIGHT`/`GUN_ROTATOR`. `FireControlBlockEntity.addTurret`: часть орудия на радарном линке (или станок в
+     орудийной сети с прицелом) -> `fcs/Turret` (прицел, вращатели, станки); состояния `MountState.turret` - на каждом
+     станке орудия или одно на прицеле (без станков, `mount == null`, модель полёта `DIRECT` - прямая наводка).
+     Ведущий (`Turret.leader`, первое состояние) наводит, вторые станки - `FcsControl.follow` (стреляют с ним).
+     Поворотные части орудия - в `platformShips` (не цель и не помеха).
+   - Наведение (`Turret.aim`): цепочка вращателей от прицела вверх по `containingId` (`Turret.chain`), от внешнего:
+     поворот = угол между проекциями направления прицела и решения на плоскость ⊥ оси вращателя, затем этот поворот
+     применяется к прицелу и осям внутренних (Родриг); `want = фактический угол + поворот` (замкнутый контур каждый тик).
+     Станок орудия углы не получает (валы заблокированы), промах считается по направлению прицела.
+   - Проверка: dev-клиент `-PfcsScreenshot -PfcsTurretOnly` (`DevScreenshots.turretScene`): прицел ведёт идущего
+     хаска с ошибкой 0.1-0.3°, статус FIRE, сигнал прицела. Игровой тест `TurretGameTests.gunTurretGrouping`
+     (сети, обнаружение, станок орудия не поворачивается, прицел без вращателей); физику Sable в игровых тестах не
+     проверяем.
 
 ## 2. Окружение и сборка
 | Что | Значение |

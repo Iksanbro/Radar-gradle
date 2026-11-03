@@ -41,6 +41,11 @@ public final class FcsMod {
                     || e.getLevel().getBlockState(e.getPos()).getBlock() instanceof dev.radarfcs.block.RadarLinkBlock)) {
                 e.setUseBlock(net.neoforged.neoforge.common.util.TriState.FALSE);
             }
+            if (e.getItemStack().getItem() instanceof dev.radarfcs.item.GunLinkItem
+                    && (dev.radarfcs.block.GunLinkBlockEntity.isGunPart(e.getLevel().getBlockEntity(e.getPos()))
+                    || e.getLevel().getBlockState(e.getPos()).getBlock() instanceof dev.radarfcs.block.GunLinkBlock)) {
+                e.setUseBlock(net.neoforged.neoforge.common.util.TriState.FALSE);
+            }
         });
         NeoForge.EVENT_BUS.addListener(ServerStoppedEvent.class, e -> {
             ShotObserver.clear();
@@ -48,6 +53,7 @@ public final class FcsMod {
             IffRegistry.clear();
             dev.radarfcs.fcs.FcsControl.clearClaims();
             dev.radarfcs.link.LinkRegistry.clear();
+            dev.radarfcs.link.GunLinks.clear();
         });
     }
 }
