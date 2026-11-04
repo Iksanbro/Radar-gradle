@@ -61,6 +61,8 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     private long clientViewTime = Long.MIN_VALUE / 2;
     private boolean fire;
     @Nullable private Vec3 aimPoint;
+    /** Скорость точки взгляда (корабль Sable, сущность), блоков/тик: пушки берут упреждение. */
+    private Vec3 aimVelocity = Vec3.ZERO;
 
     public CameraBlockEntity(BlockPos pos, BlockState state) {
         super(FcsRegistry.CAMERA_BE.get(), pos, state);
@@ -198,7 +200,8 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     @Nullable
     public ManualAim manualAim(long now) {
         if (controller(now) == null || aimPoint == null) return null;
-        return new ManualAim(new Vec(aimPoint.x, aimPoint.y, aimPoint.z), fire, displayName().getString());
+        return new ManualAim(new Vec(aimPoint.x, aimPoint.y, aimPoint.z), fire, displayName().getString(),
+                new Vec(aimVelocity.x, aimVelocity.y, aimVelocity.z));
     }
 
     @Nullable
@@ -206,17 +209,36 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
         return aimPoint;
     }
 
-    /** Точка взгляда: первая сущность или блок на луче (только по загруженным чанкам), иначе конец луча. */
+    /**
+     * Точка взгляда: первая сущность, блок постройки Sable (корабль, поворотная часть) или блок мира на луче (только по
+     * загруженным чанкам), иначе конец луча. Своя постройка (камера на ней) лучу не мешает. Для корабля и сущности
+     * запоминается скорость точки - орудия ведут её с упреждением.
+     */
     private Vec3 lookPoint(ServerLevel sl, @Nullable Entity viewer) {
         Vec3 eye = eye();
         Vec3 dir = Vec3.directionFromRotation(viewPitch, viewYaw);
         Vec3 end = eye.add(dir.scale(RANGE));
-        BlockHitResult bh = loadedOnly(sl, worldPosition).clip(new ClipContext(eye, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE,
+        BlockGetter blocks = loadedOnly(sl, worldPosition);
+        BlockHitResult bh = blocks.clip(new ClipContext(eye, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE,
                 CollisionContext.empty()));
         Vec3 stop = bh.getType() == HitResult.Type.MISS ? end : bh.getLocation();
+        Vec3 vel = Vec3.ZERO;
+        SableCompat.ShipHit ship = SableCompat.clipShips(sl, eye, stop, SableCompat.containingId(sl, worldPosition), blocks, true);
+        if (ship != null) {
+            stop = ship.point();
+            vel = ship.velocity();
+        }
         EntityHitResult eh = ProjectileUtil.getEntityHitResult(sl, viewer, eye, stop, new AABB(eye, stop).inflate(1.0),
                 e -> e != viewer && !e.isSpectator() && e.isPickable(), 0.3f);
-        return eh != null ? eh.getEntity().getBoundingBox().getCenter() : stop;
+        if (eh != null) {
+            Entity e = eh.getEntity();
+            // скорость сущности - по её перемещению за прошлый тик (на земле - без вертикали)
+            Vec3 d = e.position().subtract(e.xo, e.yo, e.zo);
+            aimVelocity = e.onGround() ? new Vec3(d.x, 0, d.z) : d;
+            return e.getBoundingBox().getCenter();
+        }
+        aimVelocity = vel;
+        return stop;
     }
 
     /** Мир для луча: незагруженные чанки - пустота (луч не грузит чанки). */

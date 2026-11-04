@@ -160,4 +160,57 @@ public class CameraGameTests {
             h.succeed();
         });
     }
+    /**
+     * Камера смотрит на корабль Sable (летит туда-обратно): точка взгляда - на его блоках (луч переводится в
+     * координаты корабля), со скоростью корабля; автопушка по ЛКМ бьёт корабль с упреждением.
+     */
+    @GameTest(template = ARENA, batch = "camera", timeoutTicks = 400)
+    public static void cameraAimsAtSableShip(GameTestHelper h) {
+        if (!net.neoforged.fml.ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        BlockPos mount = new BlockPos(10, 1, 32), fcsPos = new BlockPos(6, 1, 28), camPos = new BlockPos(8, 3, 30);
+        autocannon(h, mount, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcs(h, fcsPos);
+        h.setBlock(camPos, FcsRegistry.CAMERA.get().defaultBlockState().setValue(CameraBlock.FACING, Direction.EAST));
+        FcsGameTests.CREATED.add(h.absolutePos(camPos));
+        link(h, camPos, Direction.UP, fcsPos);
+        Object sub = SableTestSupport.ship(h, new BlockPos(40, 3, 26), 3, new Vec3(0, 0, 0.12), 12, null);
+        AtomicInteger hits = SableTestSupport.watchShipHits(h, sub, "camera_ship");
+        UUID who = UUID.randomUUID();
+        List<String> log = new ArrayList<>();
+        boolean[] checked = {false};
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            if (!(h.getLevel().getBlockEntity(h.absolutePos(camPos)) instanceof CameraBlockEntity cam)) return;
+            var box = SableTestSupport.box(sub);
+            Vec3 eye = cam.eye(), c = box.getCenter(), d = c.subtract(eye);
+            float yaw = (float) Math.toDegrees(Math.atan2(-d.x, d.z));
+            float pitch = (float) -Math.toDegrees(Math.atan2(d.y, Math.hypot(d.x, d.z)));
+            cam.controlForTest(who, yaw, pitch, t > 30);
+            Vec3 aim = cam.aimPoint();
+            if (aim == null || t < 10) return;
+            if (!checked[0]) {
+                // точка - на ближней стороне корабля, а не за ним (луч не прошёл насквозь)
+                double toAim = aim.distanceTo(eye), toCenter = c.distanceTo(eye);
+                if (toAim > toCenter || toAim < toCenter - 3) throw new GameTestAssertException("aim point not on the ship: aim "
+                        + String.format(java.util.Locale.ROOT, "%.2f", toAim) + " center " + String.format(java.util.Locale.ROOT, "%.2f", toCenter));
+                var ma = cam.manualAim(h.getLevel().getGameTime());
+                if (ma == null || Math.abs(Math.abs(ma.velocity().z()) - 0.12) > 0.03)
+                    throw new GameTestAssertException("ship velocity not passed: " + (ma == null ? null : ma.velocity()));
+                log.add("aim on ship side at " + String.format(java.util.Locale.ROOT, "%.1f", toAim) + " (center " + String.format(java.util.Locale.ROOT, "%.1f", toCenter)
+                        + "), velocity " + ma.velocity());
+                checked[0] = true;
+            }
+            if (hits.get() >= 3) {
+                log.add("ship hits " + hits.get() + " at t=" + t);
+                FcsMod.LOG.info("[radar_fcs test] camera_ship: {}", log);
+                h.succeed();
+            } else if (t > 380) {
+                throw new GameTestAssertException("camera fire did not hit the ship: hits " + hits.get() + " " + log);
+            }
+        });
+    }
 }

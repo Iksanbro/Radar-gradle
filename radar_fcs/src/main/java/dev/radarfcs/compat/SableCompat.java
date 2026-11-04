@@ -203,4 +203,50 @@ public final class SableCompat {
         }
         return null;
     }
+
+    /** Попадание луча в постройку Sable: точка в мире, скорость этой точки (блоков/тик), id постройки. */
+    public record ShipHit(Vec3 point, Vec3 velocity, UUID ship) {}
+
+    /**
+     * Луч from-to по блокам построек Sable (кораблей, поворотных частей): луч переводится в координаты каждой постройки
+     * на пути (её плот) и проверяется по её блокам. Ближайшее попадание или null. ignore - своя постройка (камера на ней).
+     *
+     * @param blocks   откуда брать блоки плота (на сервере - только загруженные чанки)
+     * @param velocity считать ли скорость точки (на клиенте не нужна)
+     */
+    @Nullable
+    public static ShipHit clipShips(Level level, Vec3 from, Vec3 to, @Nullable UUID ignore, net.minecraft.world.level.BlockGetter blocks,
+                                    boolean velocity) {
+        SableCompanion api = api();
+        if (api == null) return null;
+        ShipHit best = null;
+        double bestD = Double.POSITIVE_INFINITY;
+        try {
+            AABB area = new AABB(from, to).inflate(1);
+            for (SubLevelAccess s : api.getAllIntersecting(level, new BoundingBox3d(area))) {
+                if (s == null || s.getUniqueId().equals(ignore)) continue;
+                BoundingBox3dc b = s.boundingBox();
+                AABB box = new AABB(b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ()).inflate(0.5);
+                if (!box.contains(from) && box.clip(from, to).isEmpty()) continue;
+                var pose = s.logicalPose();
+                Vec3 lf = pose.transformPositionInverse(from), lt = pose.transformPositionInverse(to);
+                net.minecraft.world.phys.BlockHitResult bh = blocks.clip(new net.minecraft.world.level.ClipContext(lf, lt,
+                        net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE,
+                        net.minecraft.world.phys.shapes.CollisionContext.empty()));
+                if (bh.getType() == net.minecraft.world.phys.HitResult.Type.MISS) continue;
+                Vec3 w = pose.transformPosition(bh.getLocation());
+                double d = w.distanceToSqr(from);
+                if (d < bestD) {
+                    bestD = d;
+                    Vec3 v = velocity ? pointVelocity(level, s, bh.getLocation()) : Vec3.ZERO;
+                    best = new ShipHit(w, v, s.getUniqueId());
+                }
+            }
+        } catch (Throwable t) {
+            // на клиенте часть API Sable может быть недоступна - без построек, совместимость не выключаем
+            if (!level.isClientSide) fail(t);
+            return null;
+        }
+        return best;
+    }
 }

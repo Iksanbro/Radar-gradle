@@ -164,7 +164,14 @@ public final class FcsControl {
         List<Track> cands;
         if (manual != null) {
             // ручное наведение с камеры: одна цель - точка взгляда камеры
-            cands = List.of(Track.point(MANUAL_ID, manual.camera(), manual.point(), now));
+            // точка на движущемся корабле или сущности - со скоростью: упреждение, как по цели
+            Track pt = Track.point(MANUAL_ID, manual.camera(), manual.point(), now);
+            if (manual.velocity().length() > 1e-4) {
+                pt.vel = manual.velocity();
+                pt.knownVel = manual.velocity();
+                pt.moving = true;
+            }
+            cands = List.of(pt);
         } else {
             List<Track> pool = new ArrayList<>(active);
             pool.removeIf(t -> fcs.isDropped(t.id));

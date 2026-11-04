@@ -138,6 +138,17 @@ public final class CameraClient {
             shiftReleased = true;
         }
         if (mc.getCameraEntity() != view && view != null) mc.setCameraEntity(view);
+        // камера на движущейся постройке Sable: вид едет вместе с ней (плавно, между тиками)
+        if (view != null && mc.level.isLoaded(camera) && mc.level.getBlockEntity(camera) instanceof CameraBlockEntity cbe) {
+            Vec3 e = cbe.eye();
+            view.xo = view.xOld = view.getX();
+            view.yo = view.yOld = view.getY();
+            view.zo = view.zOld = view.getZ();
+            if (e.distanceToSqr(view.position()) > 1e-8) {
+                view.setPos(e.x, e.y, e.z);
+                eye = e;
+            }
+        }
         float yaw = mc.player.getYRot(), pitch = mc.player.getXRot();
         if (view != null) {
             view.yRotO = view.getYRot();
@@ -219,7 +230,13 @@ public final class CameraClient {
         // луч - от края своего блока (глаз в центре камеры, сам блок не помеха)
         BlockHitResult hit = mc.level.clip(new ClipContext(eye.add(dir.scale(0.9)), eye.add(dir.scale(CameraBlockEntity.RANGE)),
                 ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player));
-        String dist = hit.getType() == HitResult.Type.MISS ? "-" : String.format(java.util.Locale.ROOT, "%.0f", hit.getLocation().distanceTo(eye));
+        Vec3 stop = hit.getType() == HitResult.Type.MISS ? null : hit.getLocation();
+        // постройки Sable (корабли) на луче - тоже точка взгляда
+        var ship = dev.radarfcs.compat.SableCompat.clipShips(mc.level, eye.add(dir.scale(0.9)),
+                stop != null ? stop : eye.add(dir.scale(CameraBlockEntity.RANGE)),
+                dev.radarfcs.compat.SableCompat.containingId(mc.level, camera), mc.level, false);
+        if (ship != null) stop = ship.point();
+        String dist = stop == null ? "-" : String.format(java.util.Locale.ROOT, "%.0f", stop.distanceTo(eye));
         g.drawString(mc.font, Component.literal(name).withStyle(ChatFormatting.AQUA), 10, 10, 0xFFFFFF);
         g.drawString(mc.font, Component.translatable("radar_fcs.camera.distance", dist), 10, 22, 0xFFFFFF);
         Component hint = Component.translatable(fire ? "radar_fcs.camera.firing" : "radar_fcs.camera.hint");
