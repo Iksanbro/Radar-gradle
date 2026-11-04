@@ -41,10 +41,14 @@ public class CameraBlock extends BaseEntityBlock {
     private static final Map<Direction, VoxelShape> SHAPES = new EnumMap<>(Direction.class);
 
     static {
-        // корпус 8x7x13 у задней грани, объектив спереди - модель для FACING=north
-        for (Direction d : Direction.values()) {
-            SHAPES.put(d, Shapes.or(box(d, 4, 4, 3, 12, 11, 16), box(d, 6, 5.5, 1, 10, 9.5, 3)));
+        // кронштейн на стене (FACING=north: стена с юга), под ним цилиндр поворота и шар-голова;
+        // на потолке и на полу - стойка, цилиндр и шар по вертикали
+        VoxelShape body = Block.box(3.5, 1.5, 3.5, 12.5, 13, 12.5);
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            SHAPES.put(d, Shapes.or(box(d, 4, 5, 15, 12, 15, 16), box(d, 6, 13, 7, 10, 15, 15), body));
         }
+        SHAPES.put(Direction.DOWN, Shapes.or(Block.box(4, 13, 4, 12, 16, 12), body));
+        SHAPES.put(Direction.UP, Shapes.or(Block.box(4, 0, 4, 12, 3, 12), Block.box(3.5, 3, 3.5, 12.5, 14.5, 12.5)));
     }
 
     /** Коробка модели FACING=north, повёрнутая на сторону d. */

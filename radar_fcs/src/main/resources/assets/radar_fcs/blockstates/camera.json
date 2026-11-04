@@ -1,10 +1,25 @@
 {
   "variants": {
-    "facing=north": {"model": "radar_fcs:block/camera"},
-    "facing=east": {"model": "radar_fcs:block/camera", "y": 90},
-    "facing=south": {"model": "radar_fcs:block/camera", "y": 180},
-    "facing=west": {"model": "radar_fcs:block/camera", "y": 270},
-    "facing=up": {"model": "radar_fcs:block/camera", "x": 270},
-    "facing=down": {"model": "radar_fcs:block/camera", "x": 90}
+    "facing=north": {
+      "model": "radar_fcs:block/camera"
+    },
+    "facing=east": {
+      "model": "radar_fcs:block/camera",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "radar_fcs:block/camera",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "radar_fcs:block/camera",
+      "y": 270
+    },
+    "facing=up": {
+      "model": "radar_fcs:block/camera_floor"
+    },
+    "facing=down": {
+      "model": "radar_fcs:block/camera_ceiling"
+    }
   }
 }

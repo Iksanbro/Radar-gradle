@@ -175,7 +175,7 @@ public final class CameraPayloads {
                 return;
             }
             Vec3 eye = cam.eye();
-            float[] v = cam.defaultView();
+            float[] v = cam.view();
             CompoundTag d = new CompoundTag();
             d.putDouble("x", eye.x);
             d.putDouble("y", eye.y);

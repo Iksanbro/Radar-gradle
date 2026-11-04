@@ -52,6 +52,13 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     @Nullable private BlockPos controlMonitor;
     private long lastControl = Long.MIN_VALUE / 2;
     private float viewYaw, viewPitch;
+    /** Взгляд уже задавался игроком (иначе - от грани установки); последний взгляд сохраняется. */
+    private boolean hasView;
+    private long lastViewSync = Long.MIN_VALUE / 2;
+    private boolean viewDirty;
+    // клиент: прошлый и новый взгляд для плавного поворота головы
+    private float clientPrevYaw, clientPrevPitch;
+    private long clientViewTime = Long.MIN_VALUE / 2;
     private boolean fire;
     @Nullable private Vec3 aimPoint;
 
@@ -64,10 +71,34 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
         return st.hasProperty(CameraBlock.FACING) ? st.getValue(CameraBlock.FACING) : Direction.NORTH;
     }
 
-    /** Глаз камеры в мире: перед объективом (на корабле Sable - через позу корабля). */
+    /**
+     * Центр шара-головы (в координатах блока, на корабле - плот-координаты): под поворотным цилиндром; у камеры на полу
+     * (FACING = UP) цилиндр снизу, шар сверху.
+     */
+    public Vec3 pivot() {
+        return Vec3.atCenterOf(worldPosition).add(0, facing() == Direction.UP ? 3.0 / 16 : -3.0 / 16, 0);
+    }
+
+    /** Глаз камеры в мире: перед объективом повёрнутой головы (на корабле Sable - через позу корабля). */
     public Vec3 eye() {
-        Vec3 local = Vec3.atCenterOf(worldPosition).add(Vec3.atLowerCornerOf(facing().getNormal()).scale(0.55));
-        return level == null ? local : SableCompat.toWorld(level, local);
+        float[] v = view();
+        Vec3 dir = Vec3.directionFromRotation(v[1], v[0]);
+        Vec3 p = level == null ? pivot() : SableCompat.toWorld(level, pivot());
+        return p.add(dir.scale(0.45));                               // перед объективом, вне шара головы
+    }
+
+    /** Куда смотрит камера сейчас: последний взгляд игрока или от грани установки - {yaw, pitch}. */
+    public float[] view() {
+        return hasView ? new float[]{viewYaw, viewPitch} : defaultView();
+    }
+
+    /** Клиент: взгляд для отрисовки головы - плавно от прошлого к новому за 2 тика. */
+    public float[] renderView(float partialTicks) {
+        float[] v = view();
+        if (level == null) return v;
+        float t = Math.max(0, Math.min(1, (level.getGameTime() - clientViewTime + partialTicks) / 2f));
+        float dy = net.minecraft.util.Mth.wrapDegrees(v[0] - clientPrevYaw);
+        return new float[]{clientPrevYaw + dy * t, clientPrevPitch + (v[1] - clientPrevPitch) * t};
     }
 
     /** Курс и наклон взгляда по умолчанию - от грани, на которой стоит камера: {yaw, pitch} Minecraft. */
@@ -119,9 +150,10 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
         controller = p.getUUID();
         controlMonitor = monitor.immutable();
         lastControl = now;
-        float[] v = defaultView();
+        float[] v = view();                                        // с последнего положения
         viewYaw = v[0];
         viewPitch = v[1];
+        hasView = true;
         fire = false;
         aimPoint = null;
         return true;
@@ -131,8 +163,20 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     public void control(@Nullable Entity player, float yaw, float pitch, boolean fire) {
         if (!(level instanceof ServerLevel sl)) return;
         lastControl = sl.getGameTime();
-        viewYaw = yaw;
-        viewPitch = Math.max(-90, Math.min(90, pitch));
+        float ny = net.minecraft.util.Mth.wrapDegrees(yaw), np = Math.max(-90, Math.min(90, pitch));
+        if (!hasView || Math.abs(net.minecraft.util.Mth.wrapDegrees(ny - viewYaw)) > 0.05f || Math.abs(np - viewPitch) > 0.05f) {
+            viewDirty = true;
+            setChanged();
+        }
+        viewYaw = ny;
+        viewPitch = np;
+        hasView = true;
+        // голову видят другие игроки: рассылка не чаще раза в 2 тика
+        if (viewDirty && sl.getGameTime() - lastViewSync >= 2) {
+            viewDirty = false;
+            lastViewSync = sl.getGameTime();
+            sl.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+        }
         this.fire = fire;
         aimPoint = lookPoint(sl, player);
     }
@@ -220,12 +264,30 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
         if (!name.isEmpty()) tag.putString("Name", name);
+        if (hasView) {
+            tag.putFloat("ViewYaw", viewYaw);
+            tag.putFloat("ViewPitch", viewPitch);
+        }
     }
 
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
         name = tag.getString("Name");
+        boolean had = hasView;
+        float[] before = level != null && level.isClientSide && had ? renderView(0) : view();
+        hasView = tag.contains("ViewYaw");
+        if (hasView) {
+            viewYaw = tag.getFloat("ViewYaw");
+            viewPitch = tag.getFloat("ViewPitch");
+        }
+        if (level != null && level.isClientSide) {
+            // плавный поворот от того, что видно сейчас
+            float[] shown = clientViewTime == Long.MIN_VALUE / 2 ? view() : before;
+            clientPrevYaw = shown[0];
+            clientPrevPitch = shown[1];
+            clientViewTime = level.getGameTime();
+        }
     }
 
     @Override

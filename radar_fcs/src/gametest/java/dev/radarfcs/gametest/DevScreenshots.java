@@ -224,13 +224,27 @@ public final class DevScreenshots {
                 new Vec3(base.getX() - 1.5, base.getY() + 1.62, base.getZ() + 8.5)));
         if (tick == 696) net.neoforged.neoforge.network.PacketDistributor.sendToServer(
                 new dev.radarfcs.net.CameraPayloads.View(base.offset(-1, 0, 6), base.offset(2, 3, -1)));
+        // повернуть взгляд камеры: вниз и в сторону - голова камеры должна повернуться и остаться так после выхода
+        if (tick >= 699 && tick <= 703 && mc.player != null) {
+            mc.player.setYRot(-55f);
+            mc.player.setXRot(22f);
+        }
         if (tick == 706) shot(mc, "camera_view");
         if (tick == 708) dev.radarfcs.client.CameraClient.stop(true);
         if (tick == 709) dev.radarfcs.client.FcsClientHooks.openCameraList(base.offset(-1, 0, 6));
         if (tick == 714) shot(mc, "camera_monitor_gui");
         if (tick == 716 && mc.screen != null) mc.setScreen(null);
+        if (tick == 716) server.execute(() -> {
+            cameraGallery(server.overworld());
+            look(server, base.offset(-6, 2, -14).getCenter(), new Vec3(base.getX() - 5.5, base.getY() + 3.6, base.getZ() - 9.0));
+        });
+        if (tick == 721) {
+            shot(mc, "camera_head");
+            if (Boolean.getBoolean("radar_fcs.screenshot.camera")) mc.stop();
+        }
         // орудие на вращателях Sable: горизонтальный вращатель, на нём вертикальный, ствол из досок с прицелом
         if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.turret")) tick = 720;   // только башня
+        if (tick == 400 && Boolean.getBoolean("radar_fcs.screenshot.camera")) tick = 690;   // только камера
         if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.swivel")) tick = 1100;  // только подшипник-шарнир
         if (tick == 722) server.execute(() -> turretScene(server));
         if (tick == 726) server.execute(() -> look(server, base.offset(-8, 2, 10).getCenter(),
@@ -310,6 +324,26 @@ public final class DevScreenshots {
                 new net.minecraft.world.phys.AABB(plat.getX(), plat.getY(), p.getZ(), plat.getX() + 3, p.getY() + 1, p.south().getZ() + 1)));
         level.addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(level,
                 new net.minecraft.world.phys.AABB(p.north().getX(), p.getY(), p.north().getZ(), p.north().getX() + 4, p.getY() + 3, p.north().getZ() + 1)));
+    }
+
+    /** Витрина камер у стены: по умолчанию, с повёрнутой головой, на потолке, на полу. */
+    private static void cameraGallery(ServerLevel level) {
+        BlockPos w = base.offset(-9, 0, -15);
+        for (int dx = 0; dx < 7; dx++) for (int dy = 0; dy < 5; dy++) level.setBlock(w.offset(dx, dy, 0), block("minecraft:smooth_stone").defaultBlockState(), 3);
+        for (int dx = 0; dx < 7; dx++) level.setBlock(w.offset(dx, 4, 1), block("minecraft:smooth_stone").defaultBlockState(), 3);
+        cam(level, w.offset(1, 2, 1), Direction.SOUTH, Float.NaN, 0);
+        cam(level, w.offset(3, 2, 1), Direction.SOUTH, -40f, 25f);
+        cam(level, w.offset(5, 3, 1).below(), Direction.DOWN, 30f, 35f);
+        cam(level, w.offset(5, 0, 2), Direction.UP, -20f, -20f);
+    }
+
+    private static void cam(ServerLevel level, BlockPos at, Direction facing, float yaw, float pitch) {
+        level.setBlock(at, FcsRegistry.CAMERA.get().defaultBlockState().setValue(dev.radarfcs.block.CameraBlock.FACING, facing), 3);
+        if (!Float.isNaN(yaw) && level.getBlockEntity(at) instanceof dev.radarfcs.block.CameraBlockEntity c) {
+            java.util.UUID who = java.util.UUID.randomUUID();
+            c.controlForTest(who, yaw, pitch, false);
+            c.stopControl(who);
+        }
     }
 
     private static final java.util.UUID TURRET_NET = java.util.UUID.randomUUID();

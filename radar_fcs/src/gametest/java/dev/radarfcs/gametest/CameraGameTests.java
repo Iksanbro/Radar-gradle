@@ -23,6 +23,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.AfterBatch;
 import net.minecraft.gametest.framework.BeforeBatch;
 import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
@@ -119,5 +120,29 @@ public class CameraGameTests {
             if (phase.get() < 4) throw new net.minecraft.gametest.framework.GameTestAssertException("phase " + phase.get() + ": " + log);
             FcsMod.LOG.info("[radar_fcs test] camera: {}", log);
         });
+    }
+    /**
+     * Голова камеры: после управления камера сохраняет последний взгляд (курс, наклон) - и после выхода игрока,
+     * и в сохранении блока; глаз камеры - перед объективом повёрнутой головы.
+     */
+    @GameTest(template = ARENA, batch = "camera", timeoutTicks = 100)
+    public static void cameraKeepsLastView(GameTestHelper h) {
+        BlockPos camPos = new BlockPos(8, 3, 30);
+        h.setBlock(camPos, FcsRegistry.CAMERA.get().defaultBlockState().setValue(CameraBlock.FACING, Direction.EAST));
+        FcsGameTests.CREATED.add(h.absolutePos(camPos));
+        if (!(h.getLevel().getBlockEntity(h.absolutePos(camPos)) instanceof CameraBlockEntity cam)) throw new GameTestAssertException("no camera");
+        float[] d = cam.view();
+        if (Math.abs(d[0] - Direction.EAST.toYRot()) > 0.01 || Math.abs(d[1]) > 0.01) throw new GameTestAssertException("default view " + d[0] + " " + d[1]);
+        UUID who = UUID.randomUUID();
+        cam.controlForTest(who, -40f, 25f, false);
+        cam.stopControl(who);
+        float[] v = cam.view();
+        if (Math.abs(v[0] + 40f) > 0.01 || Math.abs(v[1] - 25f) > 0.01) throw new GameTestAssertException("view not kept: " + v[0] + " " + v[1]);
+        Vec3 dir = Vec3.directionFromRotation(25f, -40f);
+        Vec3 eyeDir = cam.eye().subtract(cam.pivot()).normalize();
+        if (eyeDir.dot(dir) < 0.999) throw new GameTestAssertException("eye not in front of the turned lens: " + eyeDir);
+        var tag = cam.saveWithoutMetadata(h.getLevel().registryAccess());
+        if (!tag.contains("ViewYaw") || Math.abs(tag.getFloat("ViewPitch") - 25f) > 0.01) throw new GameTestAssertException("view not saved: " + tag);
+        h.succeed();
     }
 }
