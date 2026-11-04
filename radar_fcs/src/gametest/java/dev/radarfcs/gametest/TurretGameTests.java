@@ -9,6 +9,7 @@ import static dev.radarfcs.gametest.FcsGameTests.movingTarget;
 import com.simibubi.create.content.kinetics.base.DirectionalKineticBlock;
 import dev.radarfcs.FcsMod;
 import dev.radarfcs.block.FireControlBlockEntity;
+import dev.radarfcs.block.GunDriveBlock;
 import dev.radarfcs.block.GunLinkBlockEntity;
 import dev.radarfcs.block.RadarLinkBlock;
 import dev.radarfcs.block.SightBlock;
@@ -135,6 +136,52 @@ public class TurretGameTests {
                     }
                 }
                 default -> { }
+            }
+        });
+    }
+
+    /**
+     * Автопушка без контроллеров наводки: её валы крутят приводы орудия (курс - снизу, наклон - сбоку) от моторов
+     * 256 об/мин. Станок и приводы - в одной орудийной сети, прицела нет: наводится ствол. Вычислитель должен довести
+     * ствол валами CBC до цели (передаточное число учится) и попасть.
+     */
+    @GameTest(template = ARENA, batch = "turret", timeoutTicks = 600)
+    public static void gunDrivesTurnMountByShafts(GameTestHelper h) {
+        floor(h);
+        BlockPos mount = new BlockPos(10, 1, 32), fcsPos = new BlockPos(6, 1, 28);
+        autocannon(h, mount, Direction.EAST, 4, 64);
+        // контроллеры наводки -> приводы орудия (моторы на тех же валах остаются)
+        h.setBlock(mount.below(), FcsRegistry.GUN_DRIVE.get().defaultBlockState()
+                .setValue(DirectionalKineticBlock.FACING, Direction.UP).setValue(GunDriveBlock.PITCH, false));
+        h.setBlock(mount.south(), FcsRegistry.GUN_DRIVE.get().defaultBlockState()
+                .setValue(DirectionalKineticBlock.FACING, Direction.NORTH).setValue(GunDriveBlock.PITCH, true));
+        UUID gun = UUID.randomUUID();
+        gunLink(h, mount, Direction.NORTH, gun);
+        gunLink(h, mount.below(), Direction.WEST, gun);
+        gunLink(h, mount.south(), Direction.EAST, gun);
+        FireControlBlockEntity be = FcsGameTests.fcs(h, fcsPos);
+        SettingsGameTests.configure(be, st -> st.dropStatic = false);
+        // цель сбоку и выше: нужен и поворот, и подъём ствола
+        var target = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(28.5, 4, 46.5), 0, 0));
+        h.setBlock(new BlockPos(28, 3, 46), Blocks.STONE.defaultBlockState());
+        AtomicInteger hits = FcsGameTests.countHits(h, target);
+        BlockPos mAbs = h.absolutePos(mount);
+        float[] yaw0 = {Float.NaN};
+        h.onEachTick(() -> {
+            List<MountState> ms = be.mountStates();
+            MountState m = ms.isEmpty() ? null : ms.get(0);
+            if (m == null || m.mount == null || !m.mount.isAssembled()) return;
+            if (m.turret == null || !m.pos.equals(mAbs)) throw new GameTestAssertException("mount is not a gun with drives: " + describe(ms));
+            if (Float.isNaN(yaw0[0])) yaw0[0] = (float) m.mount.yaw();
+            if (hits.get() >= 3) {
+                FcsMod.LOG.info("[radar_fcs test] gun_drives: hits {} at t={}, yaw {} -> {}, pitch {}, status {}, miss {}", hits.get(),
+                        h.getTick(), yaw0[0], String.format(java.util.Locale.ROOT, "%.1f", m.mount.yaw()),
+                        String.format(java.util.Locale.ROOT, "%.1f", m.mount.pitch()), m.status,
+                        String.format(java.util.Locale.ROOT, "%.2f", m.predictedMiss));
+                h.succeed();
+            } else if (h.getTick() > 560) {
+                throw new GameTestAssertException("gun drives did not bring the barrel on target: hits " + hits.get() + ", status "
+                        + m.status + ", yaw " + m.mount.yaw() + ", pitch " + m.mount.pitch() + ", err " + m.aimError);
             }
         });
     }

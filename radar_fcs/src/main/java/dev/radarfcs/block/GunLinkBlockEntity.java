@@ -52,9 +52,10 @@ public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInform
         if (level != null) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
     }
 
-    /** Можно ли поставить орудийный линк на этот блок: прицел, вращатель орудия или станок CBC. */
+    /** Можно ли поставить орудийный линк на этот блок: прицел, вращатель или привод орудия, станок CBC. */
     public static boolean isGunPart(@Nullable BlockEntity be) {
-        return be instanceof SightBlockEntity || be instanceof GunRotatorBlockEntity || (be != null && CbcMount.of(be) != null);
+        return be instanceof SightBlockEntity || be instanceof GunRotatorBlockEntity || be instanceof GunDriveBlockEntity
+                || (be != null && CbcMount.of(be) != null);
     }
 
     public void refresh() {
@@ -73,7 +74,7 @@ public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInform
                 if (!level.isLoaded(p)) continue;
                 BlockEntity be = level.getBlockEntity(p);
                 if (be instanceof SightBlockEntity) c[0]++;
-                else if (be instanceof GunRotatorBlockEntity) c[1]++;
+                else if (be instanceof GunRotatorBlockEntity || be instanceof GunDriveBlockEntity) c[1]++;
                 else if (be != null && CbcMount.of(be) != null) c[2]++;
             }
         }
@@ -115,7 +116,7 @@ public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInform
     public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
         tooltip.add(Component.literal("    ").append(Component.translatable("block.radar_fcs.gun_link").withStyle(ChatFormatting.GRAY)));
         tooltip.add(Component.literal("    ").append(describe()));
-        if (network != null && !disabled && counts[0] == 0) tooltip.add(Component.literal("    ")
+        if (network != null && !disabled && counts[0] == 0 && counts[2] == 0) tooltip.add(Component.literal("    ")
                 .append(Component.translatable("radar_fcs.gun_link.no_sight").withStyle(ChatFormatting.RED)));
         return true;
     }

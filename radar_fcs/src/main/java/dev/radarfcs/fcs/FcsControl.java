@@ -4,6 +4,7 @@ import dev.radarfcs.FcsConfig;
 import dev.radarfcs.FcsMod;
 import dev.radarfcs.block.AimControllerBlockEntity;
 import dev.radarfcs.block.FireControlBlockEntity;
+import dev.radarfcs.block.GunDriveBlockEntity;
 import dev.radarfcs.block.GunRotatorBlockEntity;
 import dev.radarfcs.block.SightBlockEntity;
 import dev.radarfcs.compat.CbcBallistics;
@@ -64,7 +65,10 @@ public final class FcsControl {
             return;
         }
         SightBlockEntity sight = tu != null ? tu.sightEntity(level) : null;
-        if (tu != null ? sight == null || (d != null && !d.isValid()) : d == null || !d.isValid()) {
+        // орудие: прицел (если он в орудии) на месте; без прицела наводится ствол станка
+        boolean lost = tu != null ? (tu.sight != null && sight == null) || (d != null && !d.isValid()) || (tu.sight == null && d == null)
+                : d == null || !d.isValid();
+        if (lost) {
             m.status = Status.LOST;
             return;
         }
@@ -74,16 +78,18 @@ public final class FcsControl {
             return;
         }
         if (d != null) {
-            if (!prepareMount(level, fcs, m, d, now)) return;
+            if (!prepareMount(level, fcs, m, d, now, tu == null)) return;
         } else if (!claim(level, fcs, m, now)) {
             return;
         }
         // орудие на вращателях: вращатели, которые поворачивают прицел
         List<GunRotatorBlockEntity> chain = null;
+        List<GunDriveBlockEntity> drives = null;
         if (tu != null) {
             List<GunRotatorBlockEntity> all = tu.rotatorEntities(level);
-            chain = Turret.chain(level, tu.sight, all);
-            if (chain.isEmpty()) {
+            chain = Turret.chain(level, tu.sight != null ? tu.sight : d.pos(), all);
+            drives = tu.driveEntities(level);
+            if (chain.isEmpty() && drives.isEmpty()) {
                 setTrigger(m, false);
                 boolean unassembled = false;
                 for (GunRotatorBlockEntity r : all) if (!r.assembled()) unassembled = true;
@@ -97,6 +103,21 @@ public final class FcsControl {
 
         // система координат станка: на корабле - через позу корабля
         SubLevelAccess ship = SableCompat.containing(level, d != null ? d.pos() : tu.sight);
+        // направление наведения орудия: прицел или ствол станка
+        Vec3 aimDir = null;
+        if (tu != null) {
+            if (sight != null) {
+                aimDir = sight.worldDirection();
+            } else {
+                Vec3 bl = d.localBarrelDirection(1.0F);
+                if (bl == null) {
+                    setTrigger(m, false);
+                    m.status = Status.NOT_ASSEMBLED;
+                    return;
+                }
+                aimDir = SableCompat.dirToWorld(ship, bl).normalize();
+            }
+        }
         Vec3 pivotLocal = d != null ? d.localPivot() : Vec3.atCenterOf(tu.sight);
         Vec3 pivotW = SableCompat.toWorld(level, pivotLocal);
         Vec pivot = new Vec(pivotW.x, pivotW.y, pivotW.z);
@@ -186,8 +207,9 @@ public final class FcsControl {
         Vec3 wantW = new Vec3(sol.direction().x(), sol.direction().y(), sol.direction().z());
         boolean outOfArc = false, noPower, noController = false;
         if (tu != null) {
-            Turret.Drive drv = Turret.aim(chain, sight.worldDirection(), wantW, FcsConfig.DEADBAND.get());
+            Turret.Drive drv = Turret.aim(chain, aimDir, wantW, FcsConfig.DEADBAND.get());
             noPower = drv.noPower();
+            if (tu.drive(level, drives, aimDir, drv.after(), wantW, FcsConfig.DEADBAND.get(), now)) noPower = true;
         } else {
             Vec3 wantL = SableCompat.dirToLocal(ship, wantW);
             Vec wl = new Vec(wantL.x, wantL.y, wantL.z);
@@ -229,8 +251,8 @@ public final class FcsControl {
         // у орудия на вращателях ствол смотрит туда же, куда прицел
         boolean big = kind != CbcMount.Kind.RAPID;
         Vec3 shotW;
-        if (tu != null) {
-            shotW = sight.worldDirection();
+        if (tu != null && sight != null) {
+            shotW = aimDir;
         } else {
             Vec3 shotL = d.localBarrelDirection(big ? 0.0F : 1.0F);
             shotW = shotL == null ? null : SableCompat.dirToWorld(ship, shotL);
@@ -366,7 +388,7 @@ public final class FcsControl {
     }
 
     /** Захват, сборка, блокировка валов и оценка заряжания станка; false - станок не готов (статус выставлен). */
-    private static boolean prepareMount(ServerLevel level, FireControlBlockEntity fcs, MountState m, CbcMount d, long now) {
+    private static boolean prepareMount(ServerLevel level, FireControlBlockEntity fcs, MountState m, CbcMount d, long now, boolean lock) {
         if (!claim(level, fcs, m, now)) return false;
         if (!d.isAssembled()) {
             setTrigger(m, false);
@@ -390,9 +412,13 @@ public final class FcsControl {
             m.status = Status.MANUAL;
             return false;
         }
-        if (!m.locked) {
+        // станок орудия поворачивают валы (приводы орудия) или вращатели - его валы не блокируются
+        if (lock && !m.locked) {
             d.setDriveLock(true);
             m.locked = true;
+        } else if (!lock && m.locked) {
+            d.setDriveLock(false);
+            m.locked = false;
         }
         if (Double.isNaN(m.cmdYaw)) {
             m.cmdYaw = d.yaw();
@@ -423,11 +449,11 @@ public final class FcsControl {
     private static void follow(ServerLevel level, FireControlBlockEntity fcs, MountState m, Turret tu, long now) {
         CbcMount d = m.mount;
         SightBlockEntity sight = tu.sightEntity(level);
-        if (d == null || !d.isValid() || sight == null) {
+        if (d == null || !d.isValid() || (tu.sight != null && sight == null)) {
             m.status = Status.LOST;
             return;
         }
-        if (!prepareMount(level, fcs, m, d, now)) return;
+        if (!prepareMount(level, fcs, m, d, now, false)) return;
         CbcMount.Kind kind = d.kind();
         if (kind == CbcMount.Kind.UNSUPPORTED) {
             setTrigger(m, false);
@@ -447,7 +473,11 @@ public final class FcsControl {
         if (!loaded && m.status == Status.FIRE) m.status = Status.NO_AMMO;
         boolean fire = tu.fire && tu.fireTick == now && loaded;
         Vec3 pivotW = SableCompat.toWorld(level, d.localPivot());
-        fireControl(level, d, sight, m, kind, fire, pivotW, sight.worldDirection(), m.muzzleDistance(d.muzzleDistance()), now, fcs.settings());
+        Vec3 bl = d.localBarrelDirection(kind == CbcMount.Kind.RAPID ? 1.0F : 0.0F);
+        Vec3 barrel = sight != null ? sight.worldDirection() : bl == null ? null
+                : SableCompat.dirToWorld(SableCompat.containing(level, d.pos()), bl);
+        // сигнал прицела выдаёт ведущий; второй станок - только свой огонь
+        fireControl(level, d, null, m, kind, fire, pivotW, barrel, m.muzzleDistance(d.muzzleDistance()), now, fcs.settings());
     }
 
     /** id цели ручного наведения с камеры. */
@@ -469,6 +499,8 @@ public final class FcsControl {
             if (on) m.lastFire = now;
             return;
         }
+        // прицел в орудии со станками тоже выдаёт сигнал огня (для своих схем и других пушек)
+        if (sight != null) sight.fire(fire && now >= m.pauseUntil);
         boolean learn = FcsConfig.LEARN_FROM_SHOTS.get() && barrelW != null && m.estimate != null;
         int salvo = settings.roundsPerSalvo();
         // перерыв в стрельбе не короче паузы (цель пропала, пушка перезаряжается) - уже пауза: очередь заново

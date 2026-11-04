@@ -81,7 +81,7 @@ public class SightBlockEntity extends BlockEntity implements IHaveGoggleInformat
         for (BlockPos p : GunLinks.group(level, worldPosition)) {
             if (!level.isLoaded(p)) continue;
             BlockEntity be = level.getBlockEntity(p);
-            if (be instanceof GunRotatorBlockEntity) rot++;
+            if (be instanceof GunRotatorBlockEntity || be instanceof GunDriveBlockEntity) rot++;
             else if (be != null && CbcMount.of(be) != null) mounts++;
         }
         return new int[]{rot, mounts};

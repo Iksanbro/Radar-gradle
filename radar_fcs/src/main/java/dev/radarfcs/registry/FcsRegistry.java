@@ -81,6 +81,9 @@ public final class FcsRegistry {
     public static final DeferredBlock<dev.radarfcs.block.GunLinkBlock> GUN_LINK = BLOCKS.register("gun_link",
             () -> new dev.radarfcs.block.GunLinkBlock(metal(MapColor.COLOR_ORANGE, 1.5f).noOcclusion().lightLevel(s -> 4)));
 
+    public static final DeferredBlock<dev.radarfcs.block.GunDriveBlock> GUN_DRIVE = BLOCKS.register("gun_drive",
+            () -> new dev.radarfcs.block.GunDriveBlock(metal(MapColor.COLOR_ORANGE, 3.0f).noOcclusion()));
+
     public static final DeferredItem<BlockItem> FIRE_CONTROL_ITEM = ITEMS.registerSimpleBlockItem(FIRE_CONTROL);
     public static final DeferredItem<BlockItem> GUN_ROTATOR_ITEM = ITEMS.registerSimpleBlockItem(GUN_ROTATOR);
     public static final DeferredItem<BlockItem> CAMERA_ITEM = ITEMS.registerSimpleBlockItem(CAMERA);
@@ -90,6 +93,7 @@ public final class FcsRegistry {
     public static final DeferredItem<BlockItem> PITCH_CONTROLLER_ITEM = ITEMS.registerSimpleBlockItem(PITCH_CONTROLLER);
     public static final DeferredItem<RadarLinkItem> RADAR_LINK_ITEM = ITEMS.register("radar_link",
             () -> new RadarLinkItem(RADAR_LINK.get(), new net.minecraft.world.item.Item.Properties()));
+    public static final DeferredItem<BlockItem> GUN_DRIVE_ITEM = ITEMS.registerSimpleBlockItem(GUN_DRIVE);
     public static final DeferredItem<BlockItem> SIGHT_ITEM = ITEMS.registerSimpleBlockItem(SIGHT);
     public static final DeferredItem<dev.radarfcs.item.GunLinkItem> GUN_LINK_ITEM = ITEMS.register("gun_link",
             () -> new dev.radarfcs.item.GunLinkItem(GUN_LINK.get(), new net.minecraft.world.item.Item.Properties()));
@@ -131,6 +135,10 @@ public final class FcsRegistry {
                     (pos, state) -> new dev.radarfcs.block.GunRotatorBlockEntity(FcsRegistry.GUN_ROTATOR_BE.get(), pos, state),
                     GUN_ROTATOR.get()).build(null));
 
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<dev.radarfcs.block.GunDriveBlockEntity>> GUN_DRIVE_BE =
+            BLOCK_ENTITIES.register("gun_drive", () -> BlockEntityType.Builder.of(
+                    (pos, state) -> new dev.radarfcs.block.GunDriveBlockEntity(FcsRegistry.GUN_DRIVE_BE.get(), pos, state),
+                    GUN_DRIVE.get()).build(null));
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<dev.radarfcs.block.SightBlockEntity>> SIGHT_BE =
             BLOCK_ENTITIES.register("sight",
                     () -> BlockEntityType.Builder.of(dev.radarfcs.block.SightBlockEntity::new, SIGHT.get()).build(null));
@@ -156,6 +164,7 @@ public final class FcsRegistry {
                         out.accept(CAMERA_ITEM.get());
                         out.accept(CAMERA_MONITOR_ITEM.get());
                         out.accept(GUN_ROTATOR_ITEM.get());
+                        out.accept(GUN_DRIVE_ITEM.get());
                         out.accept(SIGHT_ITEM.get());
                         out.accept(GUN_LINK_ITEM.get());
                     })
@@ -188,6 +197,7 @@ public final class FcsRegistry {
         BlockStressValues.IMPACTS.register(YAW_CONTROLLER.get(), () -> FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
         BlockStressValues.IMPACTS.register(PITCH_CONTROLLER.get(), () -> FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
         BlockStressValues.IMPACTS.register(GUN_ROTATOR.get(), () -> 2 * FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
+        BlockStressValues.IMPACTS.register(GUN_DRIVE.get(), () -> FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
     }
 
     private FcsRegistry() {}

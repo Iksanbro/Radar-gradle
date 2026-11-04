@@ -127,6 +127,7 @@ neoForge {
             if (project.hasProperty('fcsScreenshot')) {
                 systemProperty 'radar_fcs.screenshot', 'true'
                 if (project.hasProperty('fcsTurretOnly')) systemProperty 'radar_fcs.screenshot.turret', 'true'
+                if (project.hasProperty('fcsSwivelOnly')) systemProperty 'radar_fcs.screenshot.swivel', 'true'
                 programArguments.addAll('--quickPlaySingleplayer', project.findProperty('fcsWorld') ?: 'fcs_test',
                         '--width', '1280', '--height', '720')
             }

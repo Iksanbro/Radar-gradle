@@ -32,7 +32,9 @@ public enum LinkKind {
     /** Прицел орудия на вращателях: вычислитель наводит всё орудие (его орудийную сеть). */
     SIGHT,
     /** Вращатель орудия: как прицел - подключает всё орудие его орудийной сети. */
-    GUN_ROTATOR;
+    GUN_ROTATOR,
+    /** Привод орудия (выдаёт управляемое вращение): как вращатель - подключает всё орудие. */
+    GUN_DRIVE;
 
     /** Вид аппаратуры в точке или null (не аппаратура, чанк не загружен). */
     @Nullable
@@ -51,6 +53,7 @@ public enum LinkKind {
         if (be instanceof dev.radarfcs.block.CameraMonitorBlockEntity) return CAMERA_MONITOR;
         if (be instanceof dev.radarfcs.block.SightBlockEntity) return SIGHT;
         if (be instanceof dev.radarfcs.block.GunRotatorBlockEntity) return GUN_ROTATOR;
+        if (be instanceof dev.radarfcs.block.GunDriveBlockEntity) return GUN_DRIVE;
         if (CbcMount.of(be) != null) return MOUNT;
         try {
             if (RadarLink.isRadar(be)) return RADAR;

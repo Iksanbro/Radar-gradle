@@ -3,6 +3,7 @@ package dev.radarfcs.gametest;
 import net.minecraft.world.phys.Vec3;
 
 import dev.radarfcs.FcsMod;
+import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.block.FireControlBlock;
 import dev.radarfcs.block.IffTransponderBlock;
 import dev.radarfcs.registry.FcsRegistry;
@@ -230,6 +231,7 @@ public final class DevScreenshots {
         if (tick == 716 && mc.screen != null) mc.setScreen(null);
         // орудие на вращателях Sable: горизонтальный вращатель, на нём вертикальный, ствол из досок с прицелом
         if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.turret")) tick = 720;   // только башня
+        if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.swivel")) tick = 1100;  // только подшипник-шарнир
         if (tick == 722) server.execute(() -> turretScene(server));
         if (tick == 726) server.execute(() -> look(server, base.offset(-8, 2, 10).getCenter(),
                 new Vec3(base.getX() - 8.5, base.getY() + 5.5, base.getZ() + 19.5)));
@@ -247,7 +249,16 @@ public final class DevScreenshots {
         if (tick == 870) server.execute(() -> placeLink(server.overworld(), base.offset(-9, 0, 10), Direction.SOUTH, base));
         if (tick >= 880 && tick <= 1060 && tick % 10 == 0) server.execute(() -> logTurret(server));
         if (tick == 1000) shot(mc, "turret_aim");
-        if (tick == 1062) mc.stop();
+        if (tick == 1062 && !Boolean.getBoolean("radar_fcs.screenshot.swivel")) tick = 1099;
+        // привод орудия: курс - подшипник-шарнир Create Aeronautics через шестерню, наклон - вал станка CBC
+        if (tick == 1102) server.execute(() -> swivelScene(server));
+        if (tick == 1106) server.execute(() -> look(server, base.offset(-8, 4, 24).getCenter(),
+                new Vec3(base.getX() - 8.5, base.getY() + 8.5, base.getZ() + 34.5)));
+        if (tick == 1110) server.execute(() -> assembleSwivel(server));
+        if (tick == 1130) server.execute(() -> placeLink(server.overworld(), base.offset(-12, 1, 24), Direction.SOUTH, base));
+        if (tick >= 1140 && tick <= 1500 && tick % 10 == 0) server.execute(() -> logTurret(server));
+        if (tick == 1400) shot(mc, "swivel_aim");
+        if (tick == 1502) mc.stop();
     }
 
     private static long lastFrame;
@@ -302,6 +313,78 @@ public final class DevScreenshots {
     }
 
     private static final java.util.UUID TURRET_NET = java.util.UUID.randomUUID();
+    private static final java.util.UUID SWIVEL_NET = java.util.UUID.randomUUID();
+
+    /** Подшипник-шарнир (курс) на шестерне от привода, на нём автопушка; наклон - привод в вал станка. */
+    private static void swivelScene(net.minecraft.server.MinecraftServer server) {
+        ServerLevel level = server.overworld();
+        var air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+        for (int dx = -14; dx <= -2; dx++) for (int dy = 0; dy <= 8; dy++) for (int dz = 19; dz <= 29; dz++) level.setBlock(base.offset(dx, dy, dz), air, 3);
+        BlockPos b = base.offset(-9, 2, 24);                          // подшипник-шарнир, выход вверх
+        level.setBlock(b, block("simulated:swivel_bearing").defaultBlockState().trySetValue(BlockStateProperties.FACING, Direction.UP), 3);
+        // шестерня рядом с шестернёй подшипника, под ней привод курса и мотор
+        BlockPos cog = b.west(3);
+        level.setBlock(b.west(), block("create:cogwheel").defaultBlockState().trySetValue(BlockStateProperties.AXIS, Direction.Axis.Y), 3);
+        level.setBlock(b.west(2), block("create:cogwheel").defaultBlockState().trySetValue(BlockStateProperties.AXIS, Direction.Axis.Y), 3);
+        level.setBlock(cog, block("create:cogwheel").defaultBlockState().trySetValue(BlockStateProperties.AXIS, Direction.Axis.Y), 3);
+        BlockPos yawDrive = cog.below();
+        level.setBlock(yawDrive, FcsRegistry.GUN_DRIVE.get().defaultBlockState()
+                .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.UP), 3);
+        motor(level, yawDrive.below(), Direction.UP, 64);
+        // станок с автопушкой на подшипнике, привод наклона сбоку (вал станка), мотор за ним
+        BlockPos m = b.above();
+        Direction dir = Direction.EAST;
+        level.setBlock(m, block("createbigcannons:cannon_mount").defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, dir), 3);
+        BlockPos pivot = m.above(2);
+        level.setBlock(pivot.relative(dir, -1), block("createbigcannons:cast_iron_autocannon_breech").defaultBlockState()
+                .setValue(BlockStateProperties.FACING, dir), 3);
+        level.setBlock(pivot, block("createbigcannons:cast_iron_autocannon_recoil_spring").defaultBlockState()
+                .setValue(BlockStateProperties.FACING, dir), 3);
+        for (int i = 1; i <= 4; i++) level.setBlock(pivot.relative(dir, i), block("createbigcannons:cast_iron_autocannon_barrel").defaultBlockState()
+                .setValue(BlockStateProperties.FACING, dir), 3);
+        for (int i = -1; i < 4; i++) {
+            if (level.getBlockEntity(pivot.relative(dir, i)) instanceof ICannonBlockEntity<?> x
+                    && level.getBlockEntity(pivot.relative(dir, i + 1)) instanceof ICannonBlockEntity<?> y) {
+                x.cannonBehavior().setConnectedFace(dir, true);
+                y.cannonBehavior().setConnectedFace(dir.getOpposite(), true);
+            }
+        }
+        if (level.getBlockEntity(pivot.relative(dir, -1)) instanceof rbasamoyai.createbigcannons.cannons.autocannon.breech.AbstractAutocannonBreechBlockEntity br) {
+            var round = BuiltInRegistries.ITEM.get(ResourceLocation.parse("createbigcannons:machine_gun_round"));
+            for (int i = 0; i < 200; i++) br.getInputBuffer().add(new ItemStack(round));
+        }
+        BlockPos pitchDrive = m.south();
+        level.setBlock(pitchDrive, FcsRegistry.GUN_DRIVE.get().defaultBlockState()
+                .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.NORTH)
+                .setValue(dev.radarfcs.block.GunDriveBlock.PITCH, true), 3);
+        motor(level, pitchDrive.south(), Direction.NORTH, 64);
+        swivelLink(level, m, Direction.NORTH);
+        swivelLink(level, pitchDrive, Direction.EAST);
+        swivelLink(level, yawDrive, Direction.WEST);
+        // клей: всё над подшипником (станок, пушка, привод наклона с мотором и линками)
+        level.addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(level,
+                new net.minecraft.world.phys.AABB(m.getX() - 2, m.getY(), m.getZ() - 1, m.getX() + 6, m.getY() + 4, m.getZ() + 3)));
+        swivelBearing = b;
+    }
+
+    private static BlockPos swivelBearing;
+
+    private static void swivelLink(ServerLevel level, BlockPos attached, Direction face) {
+        BlockPos at = attached.relative(face);
+        level.setBlock(at, FcsRegistry.GUN_LINK.get().defaultBlockState().setValue(dev.radarfcs.block.RadarLinkBlock.FACING, face), 3);
+        if (level.getBlockEntity(at) instanceof dev.radarfcs.block.GunLinkBlockEntity be) be.setNetwork(SWIVEL_NET);
+    }
+
+    private static void assembleSwivel(net.minecraft.server.MinecraftServer server) {
+        var be = server.overworld().getBlockEntity(swivelBearing);
+        try {
+            if (be != null) be.getClass().getMethod("assemble").invoke(be);
+            FcsMod.LOG.info("[radar_fcs dev] swivel {} assembled {}", swivelBearing,
+                    be == null ? null : be.getClass().getMethod("isAssembled").invoke(be));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            FcsMod.LOG.warn("[radar_fcs dev] swivel bearing not assembled: {}", e.toString());
+        }
+    }
 
     private static void gunLink(ServerLevel level, BlockPos attached, Direction face) {
         BlockPos at = attached.relative(face);
@@ -319,6 +402,12 @@ public final class DevScreenshots {
                     Vec3 to = husk != null ? husk.getBoundingBox().getCenter().subtract(s.worldCenter()).normalize() : Vec3.ZERO;
                     sight = String.format(java.util.Locale.ROOT, "sight dir (%.3f, %.3f, %.3f) toHusk (%.3f, %.3f, %.3f) angle %.2f firing %s",
                             d.x, d.y, d.z, to.x, to.y, to.z, Math.toDegrees(Math.acos(Math.max(-1, Math.min(1, d.dot(to))))), s.firing());
+                }
+                if (m.turret != null && m.mount != null && m.mount.localBarrelDirection() != null) {
+                    Vec3 d = SableCompat.dirToWorld(SableCompat.containing(level, m.pos), m.mount.localBarrelDirection());
+                    sight += String.format(java.util.Locale.ROOT, " barrel (%.3f, %.3f, %.3f) shots %d", d.x, d.y, d.z, m.shotsFired);
+                    for (BlockPos dp : m.turret.drives) if (level.getBlockEntity(dp) instanceof dev.radarfcs.block.GunDriveBlockEntity g)
+                        sight += String.format(java.util.Locale.ROOT, " drive%s out %.2f rate %.3f", g.pitch() ? "P" : "Y", g.output(), g.rate());
                 }
                 FcsMod.LOG.info("[radar_fcs dev] turret state {} status {} target {} err {} {}", m.pos, m.status, m.targetName,
                         String.format(java.util.Locale.ROOT, "%.2f", m.aimError), sight);
