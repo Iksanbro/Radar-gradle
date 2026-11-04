@@ -100,6 +100,17 @@ public final class CameraPayloads {
         }
     }
 
+    /** Сервер -> клиент: выйти из камеры (у монитора нет энергии). */
+    public record Kick(BlockPos camera) implements CustomPacketPayload {
+        public static final Type<Kick> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(FcsMod.MODID, "camera_kick"));
+        public static final StreamCodec<ByteBuf, Kick> CODEC = StreamCodec.composite(BlockPos.STREAM_CODEC, Kick::camera, Kick::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
     /** Клиент -> сервер: имя камеры. */
     public record Rename(BlockPos monitor, BlockPos camera, String name) implements CustomPacketPayload {
         public static final Type<Rename> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(FcsMod.MODID, "camera_rename"));
@@ -124,6 +135,7 @@ public final class CameraPayloads {
                     && sp.level().getBlockEntity(p.camera()) instanceof CameraBlockEntity cam) cam.stopControl(sp.getUUID());
         }));
         r.playToServer(Rename.TYPE, Rename.CODEC, CameraPayloads::handleRename);
+        r.playToClient(Kick.TYPE, Kick.CODEC, (p, ctx) -> ctx.enqueueWork(() -> dev.radarfcs.client.CameraClient.kick(p.camera())));
     }
 
     /** Камеры сети монитора (через работающие линки). */
@@ -170,6 +182,10 @@ public final class CameraPayloads {
                 sp.displayClientMessage(Component.translatable("radar_fcs.camera.not_linked").withStyle(ChatFormatting.RED), true);
                 return;
             }
+            if (level.getBlockEntity(p.monitor()) instanceof CameraMonitorBlockEntity mon && !mon.powered()) {
+                sp.displayClientMessage(Component.translatable("radar_fcs.camera_monitor.no_energy", mon.usage()).withStyle(ChatFormatting.RED), true);
+                return;
+            }
             if (!cam.startControl(sp, p.monitor())) {
                 sp.displayClientMessage(Component.translatable("radar_fcs.camera.busy").withStyle(ChatFormatting.RED), true);
                 return;
@@ -196,6 +212,12 @@ public final class CameraPayloads {
             BlockPos monitor = cam.controlMonitor();
             if (monitor == null || !nearMonitor(sp, monitor) || !LinkRegistry.linked(level, monitor, p.camera())) {
                 cam.stopControl(sp.getUUID());
+                return;
+            }
+            if (level.getBlockEntity(monitor) instanceof CameraMonitorBlockEntity mon && !mon.powered()) {
+                cam.stopControl(sp.getUUID());
+                PacketDistributor.sendToPlayer(sp, new Kick(p.camera()));
+                sp.displayClientMessage(Component.translatable("radar_fcs.camera_monitor.no_energy", mon.usage()).withStyle(ChatFormatting.RED), true);
                 return;
             }
             if (!Float.isFinite(p.yaw()) || !Float.isFinite(p.pitch())) return;

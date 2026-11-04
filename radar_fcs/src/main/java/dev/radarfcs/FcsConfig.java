@@ -47,7 +47,7 @@ public final class FcsConfig {
     public static final ModConfigSpec.IntValue MONITOR_MAX_SIZE, DESIGNATION_TICKS;
     // электропитание (FE)
     public static final ModConfigSpec.BooleanValue REQUIRE_POWER;
-    public static final ModConfigSpec.IntValue FCS_USAGE, MEMORY_USAGE, MONITOR_USAGE, TRANSPONDER_USAGE;
+    public static final ModConfigSpec.IntValue FCS_USAGE, MEMORY_USAGE, MONITOR_USAGE, TRANSPONDER_USAGE, CAMERA_MONITOR_USAGE;
 
     static {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
@@ -199,6 +199,8 @@ public final class FcsConfig {
         MEMORY_USAGE = b.comment("Блок памяти, FE/тик").defineInRange("memoryUsage", 240, 0, 1_000_000);
         MONITOR_USAGE = b.comment("Радарный монитор, FE/тик за каждый блок экрана").defineInRange("monitorUsage", 32, 0, 1_000_000);
         TRANSPONDER_USAGE = b.comment("Транспондер «свой», FE/тик").defineInRange("transponderUsage", 64, 0, 1_000_000);
+        CAMERA_MONITOR_USAGE = b.comment("Монитор камер, FE/тик за каждую камеру его сети")
+                .defineInRange("cameraMonitorUsagePerCamera", 64, 0, 1_000_000);
         b.pop();
 
         SPEC = b.build();

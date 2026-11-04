@@ -25,6 +25,8 @@ public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInform
     private boolean registered, disabled;
     /** Для очков инженера: прицелы, вращатели, станки CBC в сети. */
     private int[] counts = {0, 0, 0};
+    /** Настройки орудия (одинаковые у всех линков сети; новее - по метке времени). */
+    private dev.radarfcs.fcs.GunSettings settings = dev.radarfcs.fcs.GunSettings.DEFAULT;
 
     public GunLinkBlockEntity(BlockPos pos, BlockState state) {
         super(FcsRegistry.GUN_LINK_BE.get(), pos, state);
@@ -65,7 +67,14 @@ public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInform
             if (registered) GunLinks.remove(level, worldPosition);
             registered = false;
         } else {
-            GunLinks.put(level, worldPosition, attached(), network);
+            GunLinks.put(level, worldPosition, attached(), network, settings);
+            // другой линк сети настроен позже - взять его настройки
+            dev.radarfcs.fcs.GunSettings net = GunLinks.settings(level, network);
+            if (net.stamp > settings.stamp) {
+                settings = net;
+                setChanged();
+                level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+            }
             registered = true;
         }
         int[] c = {0, 0, 0};
@@ -105,17 +114,43 @@ public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInform
         super.onChunkUnloaded();
     }
 
+    public dev.radarfcs.fcs.GunSettings settings() {
+        return settings;
+    }
+
+    /** Новые настройки орудия - всем загруженным линкам его сети (экран Shift+ПКМ). */
+    public void saveSettings(dev.radarfcs.fcs.GunSettings s) {
+        if (level == null || level.isClientSide || network == null) return;
+        dev.radarfcs.fcs.GunSettings st = s.withStamp(Math.max(System.currentTimeMillis(), settings.stamp + 1));
+        java.util.Set<BlockPos> links = new java.util.HashSet<>(GunLinks.links(level, network));
+        links.add(worldPosition);
+        for (BlockPos p : links) {
+            if (level.isLoaded(p) && level.getBlockEntity(p) instanceof GunLinkBlockEntity l) {
+                l.settings = st;
+                l.setChanged();
+                l.refresh();
+                level.sendBlockUpdated(p, l.getBlockState(), l.getBlockState(), 3);
+            }
+        }
+    }
+
     public Component describe() {
         if (network == null) return Component.translatable("radar_fcs.gun_link.not_linked").withStyle(ChatFormatting.RED);
         String name = RadarLinkBlockEntity.shortName(network);
         if (disabled) return Component.translatable("radar_fcs.link.disabled", name).withStyle(ChatFormatting.GOLD);
-        return Component.translatable("radar_fcs.gun_link.info", name, counts[0], counts[1], counts[2]).withStyle(ChatFormatting.GOLD);
+        Component info = Component.translatable("radar_fcs.gun_link.info", settings.name.isEmpty() ? name : settings.name + " " + name,
+                counts[0], counts[1], counts[2]);
+        return info.copy().withStyle(ChatFormatting.GOLD);
     }
 
     @Override
     public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
         tooltip.add(Component.literal("    ").append(Component.translatable("block.radar_fcs.gun_link").withStyle(ChatFormatting.GRAY)));
         tooltip.add(Component.literal("    ").append(describe()));
+        if (network != null) tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.gun.summary",
+                Component.translatable(settings.type.key()),
+                Component.translatable(settings.autoAim ? "radar_fcs.gun.on" : "radar_fcs.gun.off"),
+                Component.translatable(settings.fire ? "radar_fcs.gun.on" : "radar_fcs.gun.off")).withStyle(ChatFormatting.GRAY)));
         if (network != null && !disabled && counts[0] == 0 && counts[2] == 0) tooltip.add(Component.literal("    ")
                 .append(Component.translatable("radar_fcs.gun_link.no_sight").withStyle(ChatFormatting.RED)));
         return true;
@@ -127,6 +162,7 @@ public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInform
         if (network != null) tag.putUUID("Network", network);
         tag.putIntArray("Counts", counts);
         tag.putBoolean("Disabled", disabled);
+        tag.put("Gun", settings.write());
     }
 
     @Override
@@ -136,6 +172,7 @@ public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInform
         int[] c = tag.getIntArray("Counts");
         counts = c.length == 3 ? c : new int[]{0, 0, 0};
         disabled = tag.getBoolean("Disabled");
+        settings = dev.radarfcs.fcs.GunSettings.read(tag.getCompound("Gun"));
     }
 
     @Override

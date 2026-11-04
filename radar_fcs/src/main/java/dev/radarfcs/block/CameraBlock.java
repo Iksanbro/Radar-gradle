@@ -89,6 +89,9 @@ public class CameraBlock extends BaseEntityBlock {
 
     @Override
     protected VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext ctx) {
+        // взгляд из камеры идёт от сущности-наблюдателя (Marker) из центра блока: своя камера ему не мешает
+        if (ctx instanceof net.minecraft.world.phys.shapes.EntityCollisionContext ec
+                && ec.getEntity() instanceof net.minecraft.world.entity.Marker) return Shapes.empty();
         return SHAPES.get(state.getValue(FACING));
     }
 

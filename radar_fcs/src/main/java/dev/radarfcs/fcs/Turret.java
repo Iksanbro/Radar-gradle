@@ -30,6 +30,12 @@ public final class Turret {
     public List<BlockPos> rotators = List.of();
     public List<BlockPos> drives = List.of();
     public List<BlockPos> mounts = List.of();
+    /** Орудийные сети орудия - по ним настройки (тип, автоприцел, стрельба, имя). */
+    public java.util.Set<UUID> networks = java.util.Set.of();
+
+    public GunSettings settings(Level level) {
+        return dev.radarfcs.link.GunLinks.settingsOf(level, networks);
+    }
     /** Направление наведения прошлого тика - по нему приводы учат свой отклик. */
     @Nullable private Vec3 prevAim;
     private long prevTick = Long.MIN_VALUE / 2;

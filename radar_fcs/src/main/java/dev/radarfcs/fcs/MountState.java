@@ -21,6 +21,8 @@ public final class MountState implements ShotObserver.Listener {
     @Nullable public CbcMount mount;
     /** Орудие на вращателях, в которое входит этот станок (или прицел без станка), иначе null. */
     @Nullable public Turret turret;
+    /** Настройки орудия на этот тик (у орудия; у обычной пушки null). */
+    @Nullable public GunSettings gunSettings;
     public boolean locked;
     public boolean claimed;
 
@@ -95,7 +97,7 @@ public final class MountState implements ShotObserver.Listener {
     private static final FlightModel DIRECT = dev.radarfcs.core.CbcFlightModel.ballistic(64.0, 0.0, 0.0, false, 128);
 
     public FlightModel flightModel() {
-        if (mount == null) return DIRECT;
+        if (mount == null) return gunSettings != null ? gunSettings.model() : DIRECT;
         CbcBallistics.Estimate src = estimate != null && estimate.loaded() ? estimate : lastLoaded != null ? lastLoaded : estimate;
         FlightModel base = src != null ? src.model() : FcsConfig.bigFallback();
         return FcsConfig.LEARN_FROM_SHOTS.get() ? correction.apply(base) : base;

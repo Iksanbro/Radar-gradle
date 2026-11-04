@@ -185,6 +185,7 @@ public final class FcsRegistry {
         event.registerBlockEntity(cap, MEMORY_BE.get(), (be, side) -> be.energy());
         event.registerBlockEntity(cap, RADAR_MONITOR_BE.get(), (be, side) -> be.energy());
         event.registerBlockEntity(cap, IFF_BE.get(), (be, side) -> be.energy());
+        event.registerBlockEntity(cap, CAMERA_MONITOR_BE.get(), (be, side) -> be.energy());
     }
 
     private static BlockBehaviour.Properties metal(MapColor color, float strength) {

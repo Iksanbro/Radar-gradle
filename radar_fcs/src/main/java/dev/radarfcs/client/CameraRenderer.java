@@ -34,6 +34,8 @@ public class CameraRenderer extends SafeBlockEntityRenderer<CameraBlockEntity> {
 
     @Override
     protected void renderSafe(CameraBlockEntity be, float partialTicks, PoseStack ms, MultiBufferSource buffer, int light, int overlay) {
+        // игрок смотрит через эту камеру: глаз в центре шара - свой корпус не рисуем
+        if (be.getBlockPos().equals(CameraClient.viewedCamera())) return;
         float[] v = be.renderView(partialTicks);
         // взгляд в мире -> в координатах блока (камера на корабле Sable поворачивается вместе с ним)
         Vec3 dir = Vec3.directionFromRotation(v[1], v[0]);

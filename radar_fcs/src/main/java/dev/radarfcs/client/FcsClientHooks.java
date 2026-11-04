@@ -38,4 +38,8 @@ public final class FcsClientHooks {
         var sp = mc.getSingleplayerServer().getPlayerList().getPlayer(mc.player.getUUID());
         if (sp != null) mc.getSingleplayerServer().execute(() -> dev.radarfcs.net.CameraPayloads.openList(sp, monitor));
     }
+
+    public static void openGunSettings(dev.radarfcs.net.GunPayloads.Open p) {
+        net.minecraft.client.Minecraft.getInstance().setScreen(new GunSettingsScreen(p));
+    }
 }

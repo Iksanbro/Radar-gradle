@@ -79,12 +79,9 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
         return Vec3.atCenterOf(worldPosition).add(0, facing() == Direction.UP ? 3.0 / 16 : -3.0 / 16, 0);
     }
 
-    /** Глаз камеры в мире: перед объективом повёрнутой головы (на корабле Sable - через позу корабля). */
+    /** Глаз камеры в мире: центр шара-головы (на корабле Sable - через позу корабля). Свой корпус в виде камеры не рисуется. */
     public Vec3 eye() {
-        float[] v = view();
-        Vec3 dir = Vec3.directionFromRotation(v[1], v[0]);
-        Vec3 p = level == null ? pivot() : SableCompat.toWorld(level, pivot());
-        return p.add(dir.scale(0.45));                               // перед объективом, вне шара головы
+        return level == null ? pivot() : SableCompat.toWorld(level, pivot());
     }
 
     /** Куда смотрит камера сейчас: последний взгляд игрока или от грани установки - {yaw, pitch}. */
@@ -214,7 +211,7 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
         Vec3 eye = eye();
         Vec3 dir = Vec3.directionFromRotation(viewPitch, viewYaw);
         Vec3 end = eye.add(dir.scale(RANGE));
-        BlockHitResult bh = loadedOnly(sl).clip(new ClipContext(eye, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE,
+        BlockHitResult bh = loadedOnly(sl, worldPosition).clip(new ClipContext(eye, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE,
                 CollisionContext.empty()));
         Vec3 stop = bh.getType() == HitResult.Type.MISS ? end : bh.getLocation();
         EntityHitResult eh = ProjectileUtil.getEntityHitResult(sl, viewer, eye, stop, new AABB(eye, stop).inflate(1.0),
@@ -223,7 +220,7 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     }
 
     /** Мир для луча: незагруженные чанки - пустота (луч не грузит чанки). */
-    private static BlockGetter loadedOnly(ServerLevel sl) {
+    private static BlockGetter loadedOnly(ServerLevel sl, BlockPos self) {
         return new BlockGetter() {
             @Nullable
             @Override
@@ -233,6 +230,8 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
 
             @Override
             public BlockState getBlockState(BlockPos pos) {
+                // луч начинается в центре своего блока - сама камера ему не помеха
+                if (pos.equals(self)) return Blocks.AIR.defaultBlockState();
                 return sl.isLoaded(pos) ? sl.getBlockState(pos) : Blocks.AIR.defaultBlockState();
             }
 

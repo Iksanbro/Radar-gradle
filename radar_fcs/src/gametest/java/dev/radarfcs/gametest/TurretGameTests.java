@@ -186,6 +186,85 @@ public class TurretGameTests {
         });
     }
 
+    /**
+     * Настройки орудия (Shift+ПКМ по орудийному линку): автоприцел выключен - орудие не ведёт цель и не стреляет
+     * (статус «только камера»); стрельба выключена - наводится, но не стреляет; всё включено - попадает.
+     * Настройки расходятся на все линки сети, имя - в сводке вычислителя.
+     */
+    @GameTest(template = ARENA, batch = "turret", timeoutTicks = 700)
+    public static void gunSettingsAutoAimAndFire(GameTestHelper h) {
+        floor(h);
+        BlockPos mount = new BlockPos(10, 1, 32), fcsPos = new BlockPos(6, 1, 28);
+        autocannon(h, mount, Direction.EAST, 4, 64);
+        h.setBlock(mount.below(), FcsRegistry.GUN_DRIVE.get().defaultBlockState()
+                .setValue(DirectionalKineticBlock.FACING, Direction.UP).setValue(GunDriveBlock.PITCH, false));
+        h.setBlock(mount.south(), FcsRegistry.GUN_DRIVE.get().defaultBlockState()
+                .setValue(DirectionalKineticBlock.FACING, Direction.NORTH).setValue(GunDriveBlock.PITCH, true));
+        UUID gun = UUID.randomUUID();
+        GunLinkBlockEntity l1 = gunLink(h, mount, Direction.NORTH, gun);
+        GunLinkBlockEntity l2 = gunLink(h, mount.below(), Direction.WEST, gun);
+        gunLink(h, mount.south(), Direction.EAST, gun);
+        FireControlBlockEntity be = FcsGameTests.fcs(h, fcsPos);
+        SettingsGameTests.configure(be, st -> st.dropStatic = false);
+        var target = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(28.5, 4, 40.5), 0, 0));
+        h.setBlock(new BlockPos(28, 3, 40), Blocks.STONE.defaultBlockState());
+        AtomicInteger hits = FcsGameTests.countHits(h, target);
+        AtomicInteger phase = new AtomicInteger(), since = new AtomicInteger();
+        float[] yaw0 = {Float.NaN};
+        boolean[] sawHold = {false};
+        List<String> log = new java.util.ArrayList<>();
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            List<MountState> ms = be.mountStates();
+            MountState m = ms.isEmpty() ? null : ms.get(0);
+            switch (phase.get()) {
+                case 0 -> {                                         // автоприцел выключен
+                    if (t < 5) return;
+                    l1.saveSettings(new dev.radarfcs.fcs.GunSettings(dev.radarfcs.fcs.GunSettings.Type.AUTOCANNON, false, true, "Зенитка-1", 0));
+                    if (!l2.settings().name.equals("Зенитка-1") || l2.settings().autoAim) throw new GameTestAssertException("settings not shared: " + l2.settings().write());
+                    since.set(t);
+                    phase.set(1);
+                }
+                case 1 -> {
+                    if (m == null || m.mount == null || !m.mount.isAssembled()) return;
+                    // до сохранения настроек автоприцел был включён: курс - через 20 тиков после выключения
+                    if (t - since.get() == 20) yaw0[0] = (float) m.mount.yaw();
+                    if (t - since.get() < 80 || Float.isNaN(yaw0[0])) return;
+                    if (m.status != Status.GUN_AUTO_OFF || hits.get() > 0 || Math.abs(m.mount.yaw() - yaw0[0]) > 0.5)
+                        throw new GameTestAssertException("auto-aim off still engaged: " + m.status + " hits " + hits.get() + " yaw " + yaw0[0] + " -> " + m.mount.yaw());
+                    if (!"Зенитка-1".equals(be.summary().getList("Mounts", 10).getCompound(0).getString("G"))) throw new GameTestAssertException("gun name not in summary");
+                    log.add("auto-aim off: idle, yaw kept");
+                    l2.saveSettings(new dev.radarfcs.fcs.GunSettings(dev.radarfcs.fcs.GunSettings.Type.AUTOCANNON, true, false, "Зенитка-1", 0));
+                    since.set(t);
+                    phase.set(2);
+                }
+                case 2 -> {                                         // стрельба выключена - наводится без огня
+                    if (m != null && m.status == Status.HOLD) sawHold[0] = true;
+                    if (t - since.get() < 100) return;
+                    if (hits.get() > 0 || m == null || !sawHold[0] || Math.abs(m.mount.yaw() - yaw0[0]) < 5)
+                        throw new GameTestAssertException("fire off: status " + (m == null ? null : m.status) + " hits " + hits.get()
+                                + " yaw " + yaw0[0] + " -> " + (m == null ? 0 : m.mount.yaw()) + " pitch " + (m == null ? 0 : m.mount.pitch())
+                                + " err " + (m == null ? 0 : m.aimError) + " miss " + (m == null ? 0 : m.predictedMiss) + " tol "
+                                + (m == null ? 0 : m.tolerance));
+                    log.add("fire off: aimed " + String.format(java.util.Locale.ROOT, "%.1f", m.mount.yaw() - yaw0[0]) + " deg, no shots");
+                    l1.saveSettings(new dev.radarfcs.fcs.GunSettings(dev.radarfcs.fcs.GunSettings.Type.AUTOCANNON, true, true, "Зенитка-1", 0));
+                    since.set(t);
+                    phase.set(3);
+                }
+                case 3 -> {
+                    if (hits.get() >= 2) {
+                        log.add("all on: hits " + hits.get() + " after " + (t - since.get()) + " ticks");
+                        FcsMod.LOG.info("[radar_fcs test] gun_settings: {}", log);
+                        h.succeed();
+                    } else if (t - since.get() > 200) {
+                        throw new GameTestAssertException("no hits with settings on: " + (m == null ? null : m.status));
+                    }
+                }
+                default -> { }
+            }
+        });
+    }
+
     private static String describe(List<MountState> ms) {
         StringBuilder sb = new StringBuilder();
         for (MountState m : ms) sb.append(m.pos.toShortString()).append(' ').append(m.status).append(m.turret != null ? " turret" : "")

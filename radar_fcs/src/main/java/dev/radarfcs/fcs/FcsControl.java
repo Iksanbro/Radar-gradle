@@ -18,6 +18,7 @@ import dev.radarfcs.core.IffRule;
 import dev.radarfcs.compat.Interception;
 import dev.radarfcs.core.ProjectileType;
 import dev.radarfcs.core.TargetPath;
+import dev.radarfcs.core.TargetMotion;
 import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.core.TargetPicker;
 import dev.radarfcs.core.Track;
@@ -61,7 +62,7 @@ public final class FcsControl {
         CbcMount d = m.mount;
         Turret tu = m.turret;
         if (tu != null && !m.pos.equals(tu.leader)) {                 // второй станок орудия - стреляет с ведущим
-            follow(level, fcs, m, tu, now);
+            follow(level, fcs, m, tu, now, manual);
             return;
         }
         SightBlockEntity sight = tu != null ? tu.sightEntity(level) : null;
@@ -97,7 +98,12 @@ public final class FcsControl {
                 return;
             }
         }
-        CbcMount.Kind kind = d != null ? d.kind() : CbcMount.Kind.RAPID;
+        // настройки орудия (Shift+ПКМ по орудийному линку): тип, автоприцел, стрельба
+        GunSettings gs = tu != null ? tu.settings(level) : null;
+        m.gunSettings = gs;
+        CbcMount.Kind kind = d != null ? d.kind() : gs != null && gs.type.pulse() ? CbcMount.Kind.BIG : CbcMount.Kind.RAPID;
+        boolean noLead = d == null && gs != null && gs.type == GunSettings.Type.CUSTOM;
+        boolean gunFireOff = gs != null && !gs.fire;
         EngageSettings settings = fcs.settings();
         countShots(fcs, m, now);
 
@@ -133,6 +139,12 @@ public final class FcsControl {
             return;
         }
         List<Track> active = sensor.active();
+        if (gs != null && !gs.autoAim && manual == null) {                // орудие только для камеры
+            idle(m, Status.GUN_AUTO_OFF);
+            m.targetId = null;
+            m.targetName = null;
+            return;
+        }
         if (active.isEmpty() && manual == null) {
             idle(m, Status.IDLE);
             if (d != null) syncIfNeeded(d, m, now);
@@ -171,7 +183,9 @@ public final class FcsControl {
             Track t = cands.get(i);
             double horizon = FcsConfig.USE_ACCELERATION.get() && !t.grounded ? FcsConfig.ACCEL_HORIZON.get() : 0;
             // снаряд-цель: его путь по тикам (физика CBC или замеры); прочие цели - движение по оценке
-            TargetPath mo = t.predictor(horizon).relativeTo(platformVel);
+            // кастомное орудие - без упреждения: цель там, где она сейчас
+            TargetPath mo = noLead ? new TargetMotion(t.pos, Vec.ZERO, Vec.ZERO, false, 0)
+                    : t.predictor(horizon).relativeTo(platformVel);
             double a = (now - t.lastTick) + FcsConfig.LATENCY.get();
             double hint = t.id.equals(m.targetId) ? m.hintPitch : Double.NaN;
             // встреча снарядов проверяется непрерывно (отрезки обоих за тик), а не по положению цели на конец тика
@@ -190,6 +204,10 @@ public final class FcsControl {
             m.hintPitch = Double.NaN;
             idle(m, Status.NO_SOLUTION);
             if (d != null) syncIfNeeded(d, m, now);
+            if (manual != null) {                                      // ЛКМ с камеры - огонь и без решения
+                manualTrigger(level, m, d, sight, tu, manual.fire(), pivotW, null, 0, now);
+                m.status = Status.CAMERA;
+            }
             return;
         }
         if (!target.id.equals(m.targetId)) {
@@ -341,14 +359,19 @@ public final class FcsControl {
             }
             verdict = m.safety;
         }
-        boolean fire = aligned && loaded && verdict == FireSafety.Verdict.CLEAR && (manual != null ? manual.fire() : !hold);
+        boolean fire = aligned && loaded && verdict == FireSafety.Verdict.CLEAR && (manual != null ? manual.fire() : !hold && !gunFireOff);
         boolean wasOn = m.triggerOn;
         long lastFireBefore = m.lastFire;
-        if (tu != null) {
-            tu.fire = fire;
-            tu.fireTick = now;
+        if (manual != null) {
+            // ЛКМ с камеры - сигнал огня как редстоун 15, пока кнопка зажата (без проверки наводки)
+            manualTrigger(level, m, d, sight, tu, manual.fire(), pivotW, shotW, muzzleDist, now);
+        } else {
+            if (tu != null) {
+                tu.fire = fire;
+                tu.fireTick = now;
+            }
+            fireControl(level, d, sight, m, kind, fire, pivotW, shotW, muzzleDist, now, settings);
         }
-        fireControl(level, d, sight, m, kind, fire, pivotW, shotW, muzzleDist, now, settings);
         boolean shot = big ? m.lastFire != lastFireBefore : m.triggerOn && !wasOn;
         if (FcsConfig.LOG_SHOTS.get() && shot) {
             FcsMod.LOG.info("[radar_fcs] FIRE {} at {} pos={} vel={} acc={} res={} age={} aim={} ttf={} pitch={} yaw={} err={} miss={} allowed={} speed={} muzzle={}",
@@ -365,7 +388,7 @@ public final class FcsControl {
         else if (verdict == FireSafety.Verdict.FRIENDLY) m.status = Status.BLOCKED_FRIENDLY;
         else if (verdict == FireSafety.Verdict.TERRAIN) m.status = Status.BLOCKED_TERRAIN;
         else if (!loaded) m.status = Status.NO_AMMO;
-        else if (hold) m.status = Status.HOLD;
+        else if (hold || gunFireOff) m.status = Status.HOLD;
         else if (now < m.pauseUntil) m.status = Status.PAUSE;
         else m.status = Status.FIRE;
         if (manual != null && (m.status == Status.FIRE || m.status == Status.AIMING || m.status == Status.HOLD || m.status == Status.PAUSE)) {
@@ -446,7 +469,8 @@ public final class FcsControl {
      * Второй (и следующий) станок орудия на вращателях: наводит ведущий, этот стреляет вместе с ним - когда ствол
      * (по прицелу) на цели и этот станок заряжен.
      */
-    private static void follow(ServerLevel level, FireControlBlockEntity fcs, MountState m, Turret tu, long now) {
+    private static void follow(ServerLevel level, FireControlBlockEntity fcs, MountState m, Turret tu, long now,
+                               @Nullable ManualAim manual) {
         CbcMount d = m.mount;
         SightBlockEntity sight = tu.sightEntity(level);
         if (d == null || !d.isValid() || (tu.sight != null && sight == null)) {
@@ -476,8 +500,32 @@ public final class FcsControl {
         Vec3 bl = d.localBarrelDirection(kind == CbcMount.Kind.RAPID ? 1.0F : 0.0F);
         Vec3 barrel = sight != null ? sight.worldDirection() : bl == null ? null
                 : SableCompat.dirToWorld(SableCompat.containing(level, d.pos()), bl);
+        if (manual != null) {
+            manualTrigger(level, m, d, null, null, tu.fire && tu.fireTick == now, pivotW, barrel, m.muzzleDistance(d.muzzleDistance()), now);
+            return;
+        }
         // сигнал прицела выдаёт ведущий; второй станок - только свой огонь
         fireControl(level, d, null, m, kind, fire, pivotW, barrel, m.muzzleDistance(d.muzzleDistance()), now, fcs.settings());
+    }
+
+    /**
+     * Спуск с камеры: пока зажата ЛКМ - сигнал огня станку (сила 15, как редстоун: большая пушка стреляет по фронту,
+     * скорострельная - непрерывно) и прицелу; без проверки наводки и режима огня.
+     */
+    private static void manualTrigger(ServerLevel level, MountState m, @Nullable CbcMount d, @Nullable SightBlockEntity sight,
+                                      @Nullable Turret tu, boolean on, Vec3 pivotW, @Nullable Vec3 barrelW, double muzzleDist, long now) {
+        if (tu != null) {
+            tu.fire = on;
+            tu.fireTick = now;
+        }
+        if (sight != null) sight.fire(on);
+        if (d != null && d.isValid()) {
+            if (on != m.triggerOn || (on && !d.firePowered())) d.setFire(on, on ? 15 : 0);
+            // свои снаряды - свои (не цели перехвата)
+            if (on && barrelW != null) ShotObserver.count(level, pivotW.add(barrelW.scale(muzzleDist)), barrelW, 3, m);
+        }
+        m.triggerOn = on;
+        if (on) m.lastFire = now;
     }
 
     /** id цели ручного наведения с камеры. */
@@ -493,6 +541,15 @@ public final class FcsControl {
         if (d == null) {
             // орудие без станка: сигнал прицела, пока огонь разрешён (паузы режима огня - по времени)
             boolean on = fire && now >= m.pauseUntil;
+            GunSettings gs = m.gunSettings;
+            if (gs != null && gs.type.pulse()) {
+                // среднее орудие и большая пушка - импульс сигнала (как фронт редстоуна у CBC), не чаще интервала
+                boolean pulse = on && now - m.lastFire >= FcsConfig.BIG_PULSE_INTERVAL.get();
+                if (sight != null) sight.fire(pulse);
+                if (pulse) m.lastFire = now;
+                m.triggerOn = pulse;
+                return;
+            }
             if (sight != null) sight.fire(on);
             if (on && !m.triggerOn && settings.roundsPerSalvo() <= 1 && settings.pauseTicks > 0) m.pauseUntil = now + settings.pauseTicks;
             m.triggerOn = on;

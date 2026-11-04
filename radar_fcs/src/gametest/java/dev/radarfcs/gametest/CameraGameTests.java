@@ -123,7 +123,7 @@ public class CameraGameTests {
     }
     /**
      * Голова камеры: после управления камера сохраняет последний взгляд (курс, наклон) - и после выхода игрока,
-     * и в сохранении блока; глаз камеры - перед объективом повёрнутой головы.
+     * и в сохранении блока; глаз камеры - центр шара-головы.
      */
     @GameTest(template = ARENA, batch = "camera", timeoutTicks = 100)
     public static void cameraKeepsLastView(GameTestHelper h) {
@@ -138,11 +138,26 @@ public class CameraGameTests {
         cam.stopControl(who);
         float[] v = cam.view();
         if (Math.abs(v[0] + 40f) > 0.01 || Math.abs(v[1] - 25f) > 0.01) throw new GameTestAssertException("view not kept: " + v[0] + " " + v[1]);
-        Vec3 dir = Vec3.directionFromRotation(25f, -40f);
-        Vec3 eyeDir = cam.eye().subtract(cam.pivot()).normalize();
-        if (eyeDir.dot(dir) < 0.999) throw new GameTestAssertException("eye not in front of the turned lens: " + eyeDir);
+        if (cam.eye().distanceTo(cam.pivot()) > 1e-6) throw new GameTestAssertException("eye is not the ball center: " + cam.eye());
         var tag = cam.saveWithoutMetadata(h.getLevel().registryAccess());
         if (!tag.contains("ViewYaw") || Math.abs(tag.getFloat("ViewPitch") - 25f) > 0.01) throw new GameTestAssertException("view not saved: " + tag);
         h.succeed();
+    }
+    /** Монитор камер тратит 64 FE/т за каждую камеру своей сети. */
+    @GameTest(template = ARENA, batch = "camera", timeoutTicks = 100)
+    public static void cameraMonitorUsagePerCamera(GameTestHelper h) {
+        BlockPos mon = new BlockPos(6, 1, 26), c1 = new BlockPos(8, 3, 30), c2 = new BlockPos(10, 3, 30);
+        h.setBlock(mon, FcsRegistry.CAMERA_MONITOR.get().defaultBlockState());
+        h.setBlock(c1, FcsRegistry.CAMERA.get().defaultBlockState().setValue(CameraBlock.FACING, Direction.EAST));
+        h.setBlock(c2, FcsRegistry.CAMERA.get().defaultBlockState().setValue(CameraBlock.FACING, Direction.EAST));
+        for (BlockPos p : List.of(mon, c1, c2)) FcsGameTests.CREATED.add(h.absolutePos(p));
+        FcsGameTests.link(h, c1, Direction.UP, mon);
+        FcsGameTests.link(h, c2, Direction.UP, mon);
+        h.runAfterDelay(45, () -> {
+            if (!(h.getLevel().getBlockEntity(h.absolutePos(mon)) instanceof dev.radarfcs.block.CameraMonitorBlockEntity m))
+                throw new GameTestAssertException("no camera monitor");
+            if (m.cameras() != 2 || m.usage() != 128) throw new GameTestAssertException("usage " + m.usage() + " for " + m.cameras() + " cameras");
+            h.succeed();
+        });
     }
 }

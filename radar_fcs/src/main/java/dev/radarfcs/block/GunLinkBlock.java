@@ -40,7 +40,9 @@ public class GunLinkBlock extends RadarLinkBlock {
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
         if (!level.isClientSide && level.getBlockEntity(pos) instanceof GunLinkBlockEntity be) {
-            player.displayClientMessage(be.describe(), true);
+            // Shift+ПКМ - настройки орудия, ПКМ - сводка
+            if (player.isShiftKeyDown() && player instanceof net.minecraft.server.level.ServerPlayer sp) dev.radarfcs.net.GunPayloads.open(sp, be);
+            else player.displayClientMessage(be.describe(), true);
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
     }

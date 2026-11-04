@@ -238,9 +238,14 @@ public final class DevScreenshots {
             cameraGallery(server.overworld());
             look(server, base.offset(-6, 2, -14).getCenter(), new Vec3(base.getX() - 5.5, base.getY() + 3.6, base.getZ() - 9.0));
         });
-        if (tick == 721) {
-            shot(mc, "camera_head");
-            if (Boolean.getBoolean("radar_fcs.screenshot.camera")) mc.stop();
+        if (tick == 721) shot(mc, "camera_head");
+        if (Boolean.getBoolean("radar_fcs.screenshot.camera")) {
+            // окно настроек орудия (Shift+ПКМ по орудийному линку)
+            if (tick == 722) dev.radarfcs.client.FcsClientHooks.openGunSettings(new dev.radarfcs.net.GunPayloads.Open(base, "#3F2A",
+                    new dev.radarfcs.fcs.GunSettings(dev.radarfcs.fcs.GunSettings.Type.AUTOCANNON, true, false, "Зенитка-1", 1).write()));
+            if (tick == 728) shot(mc, "gun_settings");
+            if (tick == 730) mc.stop();
+            if (tick > 721) return;
         }
         // орудие на вращателях Sable: горизонтальный вращатель, на нём вертикальный, ствол из досок с прицелом
         if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.turret")) tick = 720;   // только башня

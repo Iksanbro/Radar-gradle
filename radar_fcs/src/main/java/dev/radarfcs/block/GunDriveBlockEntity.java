@@ -28,7 +28,9 @@ public class GunDriveBlockEntity extends SplitShaftBlockEntity implements IHaveG
     private long commandUntil = Long.MIN_VALUE / 2;
     /** Выученный отклик орудия: градусов/тик поворота на 1 об/мин выхода; знак - направление. */
     private double gainMag = DEFAULT_GAIN;
-    private int gainSign = 1, against;
+    private int gainSign = 1, against, stall;
+    /** Тиков упора (выход есть, движения нет), после которых привод пробует обратное направление. */
+    private static final int STALL_TICKS = 12;
     private float lastOutput;
 
     public GunDriveBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
@@ -87,7 +89,19 @@ public class GunDriveBlockEntity extends SplitShaftBlockEntity implements IHaveG
     public void learn(double observedDeg) {
         double drive = lastOutput * inputRpm();
         lastOutput = output;
-        if (Math.abs(drive) < 0.5 || Math.abs(observedDeg) < 0.02) return;
+        if (Math.abs(drive) < 0.5) {
+            stall = 0;
+            return;
+        }
+        if (Math.abs(observedDeg) < 0.02) {
+            // крутим, а орудие стоит: упёрлись (предел наклона станка) - знак, видимо, неверный, пробуем обратный
+            if (Math.abs(lastOutput) >= 0.3 && ++stall >= STALL_TICKS) {
+                gainSign = -gainSign;
+                stall = 0;
+            }
+            return;
+        }
+        stall = 0;
         double sample = observedDeg / drive;
         if (Math.signum(sample) != gainSign) {
             if (Math.abs(observedDeg) > 0.05 && ++against >= 2) {

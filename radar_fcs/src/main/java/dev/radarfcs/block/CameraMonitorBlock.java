@@ -71,6 +71,14 @@ public class CameraMonitorBlock extends BaseEntityBlock {
         return new CameraMonitorBlockEntity(pos, state);
     }
 
+    @org.jetbrains.annotations.Nullable
+    @Override
+    public <T extends BlockEntity> net.minecraft.world.level.block.entity.BlockEntityTicker<T> getTicker(Level level, BlockState state,
+            net.minecraft.world.level.block.entity.BlockEntityType<T> type) {
+        return level.isClientSide ? null : createTickerHelper(type, dev.radarfcs.registry.FcsRegistry.CAMERA_MONITOR_BE.get(),
+                CameraMonitorBlockEntity::serverTick);
+    }
+
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
         if (!level.isClientSide && player instanceof ServerPlayer sp) CameraPayloads.openList(sp, pos);

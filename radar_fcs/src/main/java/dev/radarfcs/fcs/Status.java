@@ -35,7 +35,9 @@ public enum Status {
     /** Орудие на вращателях: на нужный вращатель не подано вращение. */
     TURRET_NO_POWER(ChatFormatting.GOLD),
     /** Прицел орудия не стоит на поворотной части вращателей (или вращателей нет в орудии). */
-    TURRET_NO_ROTATOR(ChatFormatting.GOLD);
+    TURRET_NO_ROTATOR(ChatFormatting.GOLD),
+    /** Орудию выключено автоприцеливание (настройки орудия): наводится только с камеры. */
+    GUN_AUTO_OFF(ChatFormatting.GRAY);
 
     public final ChatFormatting color;
 

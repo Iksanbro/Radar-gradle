@@ -49,6 +49,12 @@ public final class CameraClient {
         return camera != null;
     }
 
+    /** Камера, через которую сейчас смотрит этот игрок, или null. */
+    @Nullable
+    public static BlockPos viewedCamera() {
+        return camera;
+    }
+
     public static void openList(CameraPayloads.Open p) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level != null) mc.setScreen(new CameraMonitorScreen(p));
@@ -85,6 +91,11 @@ public final class CameraClient {
         mc.player.yRotO = yaw;
         mc.player.xRotO = pitch;
         mc.player.setYHeadRot(yaw);
+    }
+
+    /** Сервер выкинул из камеры (у монитора нет энергии). */
+    public static void kick(BlockPos cam) {
+        if (cam.equals(camera)) stop(false);
     }
 
     /** Выйти из камеры (send - сообщить серверу). */
@@ -176,6 +187,12 @@ public final class CameraClient {
     @SubscribeEvent
     public static void hideHud(RenderGuiLayerEvent.Pre event) {
         if (!active()) return;
+        // глаз внутри своего блока: «под прицелом» была бы сама камера (подсказки, очки инженера) - ничего не выделено
+        Minecraft mc = Minecraft.getInstance();
+        if (eye != null && mc.hitResult instanceof BlockHitResult bh && bh.getBlockPos().equals(camera)) {
+            // «промах» с точкой вне мира: оверлеи (очки инженера) смотрят только на координаты блока
+            mc.hitResult = BlockHitResult.miss(eye, net.minecraft.core.Direction.UP, new BlockPos(camera.getX(), 100_000, camera.getZ()));
+        }
         var n = event.getName();
         if (n.equals(VanillaGuiLayers.HOTBAR) || n.equals(VanillaGuiLayers.CROSSHAIR) || n.equals(VanillaGuiLayers.EXPERIENCE_BAR)
                 || n.equals(VanillaGuiLayers.PLAYER_HEALTH) || n.equals(VanillaGuiLayers.FOOD_LEVEL) || n.equals(VanillaGuiLayers.ARMOR_LEVEL)
@@ -199,7 +216,8 @@ public final class CameraClient {
         g.fill(cx, cy + 3, cx + 1, cy + 9, col);
         g.renderOutline(4, 4, w - 8, h - 8, 0x60FFFFFF);
         Vec3 dir = Vec3.directionFromRotation(mc.player.getXRot(), mc.player.getYRot());
-        BlockHitResult hit = mc.level.clip(new ClipContext(eye, eye.add(dir.scale(CameraBlockEntity.RANGE)),
+        // луч - от края своего блока (глаз в центре камеры, сам блок не помеха)
+        BlockHitResult hit = mc.level.clip(new ClipContext(eye.add(dir.scale(0.9)), eye.add(dir.scale(CameraBlockEntity.RANGE)),
                 ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player));
         String dist = hit.getType() == HitResult.Type.MISS ? "-" : String.format(java.util.Locale.ROOT, "%.0f", hit.getLocation().distanceTo(eye));
         g.drawString(mc.font, Component.literal(name).withStyle(ChatFormatting.AQUA), 10, 10, 0xFFFFFF);

@@ -369,6 +369,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         dev.radarfcs.fcs.Turret t = turretFor(sight, key);
         t.rotators = List.copyOf(rot);
         t.drives = List.copyOf(drv);
+        t.networks = java.util.Set.copyOf(dev.radarfcs.link.GunLinks.groupNetworks(level, p));
         t.mounts = List.copyOf(guns);
         turrets.put(key, t);
         if (guns.isEmpty()) {
@@ -591,7 +592,11 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             CompoundTag mt = new CompoundTag();
             mt.putInt("S", m.status.ordinal());
             mt.putString("N", m.mount == null ? (m.turret != null ? "@sight" : "?") : m.mount.typeName());
-            if (m.turret != null) mt.putBoolean("R", true);
+            if (m.turret != null) {
+                mt.putBoolean("R", true);
+                String gn = m.turret.settings(level).name;
+                if (!gn.isEmpty()) mt.putString("G", gn);
+            }
             mt.putLong("Q", m.pos.asLong());
             if (settings.mountTargets.containsKey(m.pos.asLong())) mt.putBoolean("C", true);
             if (m.targetName != null && (m.status == Status.FIRE || m.status == Status.AIMING || m.status == Status.HOLD
@@ -674,6 +679,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             Component name = "@sight".equals(m.getString("N")) ? Component.translatable("radar_fcs.report.sight_gun")
                     : Component.literal(m.getString("N"));
             if (m.getBoolean("R")) name = Component.translatable("radar_fcs.report.turret", name);
+            if (m.contains("G")) name = Component.literal(m.getString("G") + " (").append(name).append(")");
             MutableComponent line = Component.literal(" ").append(name).append(": ").withStyle(ChatFormatting.GRAY)
                     .append(Component.translatable(st.key()).withStyle(st.color));
             if (m.contains("T")) {
