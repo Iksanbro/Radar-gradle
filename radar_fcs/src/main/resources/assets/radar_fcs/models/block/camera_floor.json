@@ -2,6 +2,10 @@
  "parent": "minecraft:block/block",
  "textures": {
   "white": "radar_fcs:block/camera_white",
+  "bracket": "radar_fcs:block/camera_bracket",
+  "pan_side": "radar_fcs:block/camera_pan_side",
+  "pan_top": "radar_fcs:block/camera_pan_top",
+  "ball": "radar_fcs:block/camera_ball",
   "face": "radar_fcs:block/camera_face",
   "particle": "radar_fcs:block/camera_white"
  },
@@ -31,10 +35,22 @@
      "texture": "#white"
     },
     "up": {
-     "texture": "#white"
+     "texture": "#bracket",
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ]
     },
     "down": {
-     "texture": "#white"
+     "texture": "#bracket",
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ]
     }
    }
   },

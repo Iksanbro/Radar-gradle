@@ -213,4 +213,44 @@ public class CameraGameTests {
             }
         });
     }
+    /**
+     * Камера без радарного линка (как фабричный датчик Create): предмет настраивается ПКМ по радарному линку, камера
+     * из такого предмета сразу в сети - монитор камер её видит, вычислитель наводит по ней; сеть уходит в выпавший
+     * предмет, снятая камера выходит из сети.
+     */
+    @GameTest(template = ARENA, batch = "camera", timeoutTicks = 120)
+    public static void cameraJoinsNetworkWithoutLink(GameTestHelper h) {
+        BlockPos fcsPos = new BlockPos(6, 1, 28), mon = new BlockPos(6, 1, 24), camPos = new BlockPos(8, 3, 30);
+        FireControlBlockEntity be = FcsGameTests.fcsBare(h, fcsPos);
+        h.setBlock(mon, FcsRegistry.CAMERA_MONITOR.get().defaultBlockState());
+        FcsGameTests.CREATED.add(h.absolutePos(mon));
+        var link = link(h, mon, Direction.UP, fcsPos);
+        java.util.UUID netId = link.network();
+        // предмет камеры по радарному линку - настроен на его сеть
+        if (!netId.equals(dev.radarfcs.item.CameraItem.tunableNetwork(h.getLevel(), link.getBlockPos())))
+            throw new GameTestAssertException("radar link is not a tuning target");
+        net.minecraft.world.item.ItemStack stack = new net.minecraft.world.item.ItemStack(FcsRegistry.CAMERA_ITEM.get());
+        dev.radarfcs.item.RadarLinkItem.tune(stack, netId);
+        h.setBlock(camPos, FcsRegistry.CAMERA.get().defaultBlockState().setValue(CameraBlock.FACING, Direction.EAST));
+        FcsGameTests.CREATED.add(h.absolutePos(camPos));
+        if (!(h.getLevel().getBlockEntity(h.absolutePos(camPos)) instanceof CameraBlockEntity cam)) throw new GameTestAssertException("no camera");
+        cam.applyComponentsFromItemStack(stack);                       // как при установке предметом
+        if (!netId.equals(cam.network())) throw new GameTestAssertException("camera did not take the item network");
+        UUID who = UUID.randomUUID();
+        h.runAfterDelay(45, () -> {
+            var cams = dev.radarfcs.net.CameraPayloads.cameras(h.getLevel(), h.absolutePos(mon));
+            if (cams.size() != 1 || cams.get(0) != cam) throw new GameTestAssertException("monitor does not see the linkless camera: " + cams.size());
+            cam.controlForTest(who, -90f, 0f, false);
+            if (be.currentManualAim() == null) throw new GameTestAssertException("fire control does not see the linkless camera");
+            var data = cam.collectComponents().get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
+            if (data == null || !netId.equals(data.copyTag().getUUID("RadarNetwork"))) throw new GameTestAssertException("network not kept for the drop");
+            cam.stopControl(who);
+            h.setBlock(camPos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+        });
+        h.runAfterDelay(50, () -> {
+            if (!dev.radarfcs.net.CameraPayloads.cameras(h.getLevel(), h.absolutePos(mon)).isEmpty())
+                throw new GameTestAssertException("removed camera still in the network");
+            h.succeed();
+        });
+    }
 }

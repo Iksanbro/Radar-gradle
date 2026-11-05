@@ -48,6 +48,12 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     public static final int NAME_MAX = 24;
 
     private String name = "";
+    /**
+     * Своя радарная сеть камеры (без радарного линка, как фабричный датчик Create): предмет камеры настраивается ПКМ по
+     * радарному линку и ставится уже в сети. Занимает одно подключение в лимите сети. null - только через линк.
+     */
+    @Nullable private UUID network;
+    private boolean registered;
     @Nullable private UUID controller;
     @Nullable private BlockPos controlMonitor;
     private long lastControl = Long.MIN_VALUE / 2;
@@ -278,13 +284,105 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
         tooltip.add(Component.literal("    ").append(Component.translatable("block.radar_fcs.camera").withStyle(ChatFormatting.GRAY)));
         tooltip.add(Component.literal("    ").append(displayName().copy().withStyle(ChatFormatting.AQUA)));
+        if (network != null) tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.camera.network",
+                RadarLinkBlockEntity.shortName(network)).withStyle(ChatFormatting.GRAY)));
         return true;
+    }
+
+    // ------------------------------------------------------------ своя сеть (без линка)
+
+    @Nullable
+    public UUID network() {
+        return network;
+    }
+
+    public void setNetwork(@Nullable UUID net) {
+        if (java.util.Objects.equals(net, network)) return;
+        unregister();
+        network = net;
+        setChanged();
+        refresh();
+        if (level != null) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+    }
+
+    public static void serverTick(net.minecraft.world.level.Level level, BlockPos pos, BlockState state, CameraBlockEntity be) {
+        if (be.network != null && (!be.registered || level.getGameTime() % 20 == Math.floorMod(pos.hashCode(), 20))) be.refresh();
+    }
+
+    /** Камера сама - участник своей сети (как радарный линк на ней). */
+    private void refresh() {
+        if (level == null || level.isClientSide || network == null) return;
+        dev.radarfcs.link.LinkRegistry.put(level, worldPosition, List.of(new dev.radarfcs.link.LinkRegistry.Member(worldPosition, worldPosition, network)));
+        if (!registered) {
+            registered = true;
+            notifyNetwork(network);
+        }
+    }
+
+    private void unregister() {
+        if (level == null || level.isClientSide || !registered) return;
+        dev.radarfcs.link.LinkRegistry.remove(level, worldPosition);
+        registered = false;
+        if (network != null) notifyNetwork(network);
+    }
+
+    /** Вычислители сети пересматривают аппаратуру сразу. */
+    private void notifyNetwork(UUID net) {
+        for (BlockPos p : dev.radarfcs.link.LinkRegistry.members(level, net)) {
+            if (level.isLoaded(p) && level.getBlockEntity(p) instanceof FireControlBlockEntity fcs) fcs.requestDiscover();
+        }
+    }
+
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        refresh();
+    }
+
+    @Override
+    public void setRemoved() {
+        unregister();
+        super.setRemoved();
+    }
+
+    @Override
+    public void onChunkUnloaded() {
+        unregister();
+        super.onChunkUnloaded();
+    }
+
+    /** Сеть камеры - в предмете при поломке (и обратно при установке). */
+    @Override
+    protected void collectImplicitComponents(net.minecraft.core.component.DataComponentMap.Builder components) {
+        super.collectImplicitComponents(components);
+        if (network != null) {
+            CompoundTag t = new CompoundTag();
+            t.putUUID("RadarNetwork", network);
+            components.set(net.minecraft.core.component.DataComponents.CUSTOM_DATA, net.minecraft.world.item.component.CustomData.of(t));
+        }
+    }
+
+    @Override
+    protected void applyImplicitComponents(BlockEntity.DataComponentInput input) {
+        super.applyImplicitComponents(input);
+        var data = input.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
+        if (data != null) {
+            CompoundTag t = data.copyTag();
+            if (t.hasUUID("RadarNetwork")) network = t.getUUID("RadarNetwork");
+        }
+    }
+
+    @Override
+    public void removeComponentsFromTag(CompoundTag tag) {
+        super.removeComponentsFromTag(tag);
+        tag.remove("Network");
     }
 
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
         if (!name.isEmpty()) tag.putString("Name", name);
+        if (network != null) tag.putUUID("Network", network);
         if (hasView) {
             tag.putFloat("ViewYaw", viewYaw);
             tag.putFloat("ViewPitch", viewPitch);
@@ -295,6 +393,7 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
         name = tag.getString("Name");
+        network = tag.hasUUID("Network") ? tag.getUUID("Network") : null;
         boolean had = hasView;
         float[] before = level != null && level.isClientSide && had ? renderView(0) : view();
         hasView = tag.contains("ViewYaw");

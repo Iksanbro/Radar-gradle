@@ -42,6 +42,11 @@ public final class FcsMod {
                     || e.getLevel().getBlockState(e.getPos()).getBlock() instanceof dev.radarfcs.block.RadarLinkBlock)) {
                 e.setUseBlock(net.neoforged.neoforge.common.util.TriState.FALSE);
             }
+            // камера в руке по радарному линку или по камере в сети - настроить предмет на сеть
+            if (e.getItemStack().getItem() instanceof dev.radarfcs.item.CameraItem
+                    && dev.radarfcs.item.CameraItem.tunableNetwork(e.getLevel(), e.getPos()) != null) {
+                e.setUseBlock(net.neoforged.neoforge.common.util.TriState.FALSE);
+            }
             if (e.getItemStack().getItem() instanceof dev.radarfcs.item.GunLinkItem
                     && (dev.radarfcs.block.GunLinkBlockEntity.isGunPart(e.getLevel().getBlockEntity(e.getPos()))
                     || e.getLevel().getBlockState(e.getPos()).getBlock() instanceof dev.radarfcs.block.GunLinkBlock)) {

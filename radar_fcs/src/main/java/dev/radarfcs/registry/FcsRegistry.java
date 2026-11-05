@@ -86,7 +86,8 @@ public final class FcsRegistry {
 
     public static final DeferredItem<BlockItem> FIRE_CONTROL_ITEM = ITEMS.registerSimpleBlockItem(FIRE_CONTROL);
     public static final DeferredItem<BlockItem> GUN_ROTATOR_ITEM = ITEMS.registerSimpleBlockItem(GUN_ROTATOR);
-    public static final DeferredItem<BlockItem> CAMERA_ITEM = ITEMS.registerSimpleBlockItem(CAMERA);
+    public static final DeferredItem<dev.radarfcs.item.CameraItem> CAMERA_ITEM = ITEMS.register("camera",
+            () -> new dev.radarfcs.item.CameraItem(CAMERA.get(), new net.minecraft.world.item.Item.Properties()));
     public static final DeferredItem<BlockItem> CAMERA_MONITOR_ITEM = ITEMS.registerSimpleBlockItem(CAMERA_MONITOR);
     public static final DeferredItem<BlockItem> MEMORY_ITEM = ITEMS.registerSimpleBlockItem(MEMORY);
     public static final DeferredItem<BlockItem> YAW_CONTROLLER_ITEM = ITEMS.registerSimpleBlockItem(YAW_CONTROLLER);
