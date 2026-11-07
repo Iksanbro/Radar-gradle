@@ -20,6 +20,9 @@ public final class GunSettingsScreen extends Screen {
     private GunSettings.Type type;
     private boolean autoAim, fire;
     private final String initialName;
+    /** Станок, на котором стоит этот линк (null - не станок), и основная пушка орудия. */
+    @org.jetbrains.annotations.Nullable private final BlockPos thisMount;
+    @org.jetbrains.annotations.Nullable private BlockPos mainMount;
     private int left, top;
     private EditBox name;
     private Button typeButton, aimButton, fireButton;
@@ -33,12 +36,18 @@ public final class GunSettingsScreen extends Screen {
         autoAim = s.autoAim;
         fire = s.fire;
         initialName = s.name;
+        mainMount = s.mainMount;
+        thisMount = p.settings().contains("ThisMount") ? BlockPos.of(p.settings().getLong("ThisMount")) : null;
+    }
+
+    private int h() {
+        return thisMount != null ? H + 22 : H;
     }
 
     @Override
     protected void init() {
         left = (width - W) / 2;
-        top = (height - H) / 2;
+        top = (height - h()) / 2;
         String keep = name != null ? name.getValue() : initialName;
         name = new EditBox(font, left + 110, top + 26, W - 120, 16, Component.translatable("radar_fcs.gun.name"));
         name.setMaxLength(GunSettings.NAME_MAX);
@@ -57,12 +66,18 @@ public final class GunSettingsScreen extends Screen {
             fire = !fire;
             b.setMessage(onOff(fire));
         }).bounds(left + 110, top + 92, W - 120, 18).build());
+        if (thisMount != null) {
+            addRenderableWidget(Button.builder(onOff(thisMount.equals(mainMount)), b -> {
+                mainMount = thisMount.equals(mainMount) ? null : thisMount;
+                b.setMessage(onOff(thisMount.equals(mainMount)));
+            }).bounds(left + 110, top + 114, W - 120, 18).build());
+        }
         addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gun.save"), b -> {
-            PacketDistributor.sendToServer(new GunPayloads.Save(link, new GunSettings(type, autoAim, fire, name.getValue(), 0).write()));
+            PacketDistributor.sendToServer(new GunPayloads.Save(link, new GunSettings(type, autoAim, fire, name.getValue(), 0, mainMount).write()));
             onClose();
-        }).bounds(left + W / 2 - 104, top + H - 26, 100, 20).build());
+        }).bounds(left + W / 2 - 104, top + h() - 26, 100, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.close"), b -> onClose())
-                .bounds(left + W / 2 + 4, top + H - 26, 100, 20).build());
+                .bounds(left + W / 2 + 4, top + h() - 26, 100, 20).build());
     }
 
     private Component typeLabel() {
@@ -76,8 +91,8 @@ public final class GunSettingsScreen extends Screen {
     @Override
     public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         super.renderBackground(g, mouseX, mouseY, partialTick);
-        g.fill(left, top, left + W, top + H, 0xE0101418);
-        g.renderOutline(left, top, W, H, 0xFF3A4048);
+        g.fill(left, top, left + W, top + h(), 0xE0101418);
+        g.renderOutline(left, top, W, h(), 0xFF3A4048);
     }
 
     @Override
@@ -88,7 +103,12 @@ public final class GunSettingsScreen extends Screen {
         g.drawString(font, Component.translatable("radar_fcs.gun.type"), left + 8, top + 53, 0xC0C0C0, false);
         g.drawString(font, Component.translatable("radar_fcs.gun.auto_aim"), left + 8, top + 75, 0xC0C0C0, false);
         g.drawString(font, Component.translatable("radar_fcs.gun.fire"), left + 8, top + 97, 0xC0C0C0, false);
-        g.drawWordWrap(font, Component.translatable(type.key() + ".hint"), left + 8, top + 116, W - 16, 0x8A9098);
+        int hy = top + 116;
+        if (thisMount != null) {
+            g.drawString(font, Component.translatable("radar_fcs.gun.main_mount"), left + 8, top + 119, 0xC0C0C0, false);
+            hy += 22;
+        }
+        g.drawWordWrap(font, Component.translatable(type.key() + ".hint"), left + 8, hy, W - 16, 0x8A9098);
     }
 
     @Override

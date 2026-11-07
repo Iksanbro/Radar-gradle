@@ -133,8 +133,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         runningRadars = live.size();
         // ручное наведение: цель, выбранная на мониторе сети (своём или Create Radars)
         String des = designation(level, now);
-        ManualAim manual = manualAim(level, now);
-        if (runningRadars == 0 && !FcsDev.radarless && des == null && manual == null) {
+        List<ManualAim> manuals = manualAims(level, now);
+        if (runningRadars == 0 && !FcsDev.radarless && des == null && manuals.isEmpty()) {
             sensor.clear();
             for (MountState m : mounts.values()) FcsControl.cease(level, m, Status.NO_RADAR);
         } else {
@@ -151,7 +151,9 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             for (MountState m : mounts.values()) if (m.turret == null || m.pos.equals(m.turret.leader)) order.add(m);
             for (MountState m : mounts.values()) if (m.turret != null && !m.pos.equals(m.turret.leader)) order.add(m);
             for (MountState m : order) {
-                FcsControl.control(level, this, m, sensor, now, hold, effectiveSettings().iffRule(), platformShips, des, manual);
+                // орудие слушается последней по времени камеры, которой оно назначено (остальные - автоприцел)
+                FcsControl.control(level, this, m, sensor, now, hold, effectiveSettings().iffRule(), platformShips, des,
+                        manualFor(manuals, m));
                 if (m.targetId != null && (m.status == Status.FIRE || m.status == Status.AIMING)) {
                     UUID tid = uuidOrNull(m.targetId);
                     if (tid != null) {
@@ -238,26 +240,58 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         return out;
     }
 
-    /** Ручное наведение с камеры сети, которой сейчас управляет игрок (последней по времени), или null. */
-    @Nullable
-    private ManualAim manualAim(ServerLevel level, long now) {
-        ManualAim best = null;
-        long bestTick = Long.MIN_VALUE;
+    /** Ручное наведение с камер сети, которыми сейчас управляют игроки: от последней по времени к первой. */
+    private List<ManualAim> manualAims(ServerLevel level, long now) {
+        List<ManualAim> out = new ArrayList<>();
         for (BlockPos p : cameras) {
             if (!level.isLoaded(p) || !(level.getBlockEntity(p) instanceof CameraBlockEntity cam)) continue;
             ManualAim a = cam.manualAim(now);
-            if (a != null && cam.lastControl() > bestTick) {
-                best = a;
-                bestTick = cam.lastControl();
-            }
+            if (a != null) out.add(a);
         }
-        return best;
+        out.sort((a, b) -> Long.compare(b.stamp(), a.stamp()));
+        return out;
     }
 
-    /** Ручное наведение сейчас (для тестов и сводки). */
+    /** Ключ орудия для выбора с камеры: орудие на вращателях/приводах - его ключ, обычная пушка - станок. */
+    public static long gunKey(MountState m) {
+        return (m.turret != null ? m.turret.key : m.pos).asLong();
+    }
+
+    /** Камера, которая сейчас управляет этой пушкой (последняя по времени из назначенных ей), или null. */
+    @Nullable
+    private static ManualAim manualFor(List<ManualAim> manuals, MountState m) {
+        long key = gunKey(m);
+        for (ManualAim a : manuals) if (a.controls(key)) return a;
+        return null;
+    }
+
+    /** Ручное наведение сейчас - последняя камера (для тестов и сводки). */
     @Nullable
     public ManualAim currentManualAim() {
-        return level instanceof ServerLevel sl ? manualAim(sl, sl.getGameTime()) : null;
+        if (!(level instanceof ServerLevel sl)) return null;
+        List<ManualAim> l = manualAims(sl, sl.getGameTime());
+        return l.isEmpty() ? null : l.get(0);
+    }
+
+    /** Ручное наведение этой пушки сейчас (для тестов). */
+    @Nullable
+    public ManualAim manualAimFor(MountState m) {
+        return level instanceof ServerLevel sl ? manualFor(manualAims(sl, sl.getGameTime()), m) : null;
+    }
+
+    /** Орудия вычислителя для выбора с монитора камер: ключ -> подпись. */
+    public java.util.Map<Long, String> gunLabels(ServerLevel level) {
+        java.util.Map<Long, String> out = new LinkedHashMap<>();
+        for (MountState m : mounts.values()) {
+            long k = gunKey(m);
+            if (out.containsKey(k)) continue;
+            String name = m.turret != null ? m.turret.settings(level).name : "";
+            String type = m.mount != null ? m.mount.typeName() : "Sight";
+            // на корабле Sable - мировые координаты (плот далеко)
+            BlockPos p = BlockPos.containing(SableCompat.toWorld(level, Vec3.atCenterOf(m.turret != null ? m.turret.key : m.pos)));
+            out.put(k, (name.isEmpty() ? type : name) + (m.turret != null ? " *" : "") + " [" + p.getX() + " " + p.getY() + " " + p.getZ() + "]");
+        }
+        return out;
     }
 
     /** Назначенная сейчас цель (для экрана и тестов). */
@@ -317,6 +351,9 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         }
         // ведущий каждого орудия - его первое состояние: он наводит вращатели
         for (dev.radarfcs.fcs.Turret t : turrets.values()) t.leader = null;
+        for (MountState m : mounts.values()) {
+            if (m.turret != null && m.turret.main != null && m.pos.equals(m.turret.main)) m.turret.leader = m.pos;
+        }
         for (MountState m : mounts.values()) if (m.turret != null && m.turret.leader == null) m.turret.leader = m.pos;
         // корабли, на которых стоит сама батарея: их корпус - не цель и не помеха
         Set<UUID> ships = new HashSet<>();
@@ -364,12 +401,17 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         }
         // орудие - есть прицел или станок с вращателями/приводами (тогда наводится его ствол)
         if (sight == null && (guns.isEmpty() || (rot.isEmpty() && drv.isEmpty()))) return false;
-        BlockPos key = sight != null ? sight : guns.get(0);
+        // основная пушка из настроек орудия (Shift+ПКМ по орудийному линку на станке) - ключ орудия без прицела и ведущий
+        java.util.Set<UUID> nets = java.util.Set.copyOf(dev.radarfcs.link.GunLinks.groupNetworks(level, p));
+        BlockPos main = dev.radarfcs.link.GunLinks.settingsOf(level, nets).mainMount;
+        if (main != null && !guns.contains(main)) main = null;
+        BlockPos key = sight != null ? sight : main != null ? main : guns.get(0);
         if (turrets.containsKey(key)) return true;
         dev.radarfcs.fcs.Turret t = turretFor(sight, key);
         t.rotators = List.copyOf(rot);
         t.drives = List.copyOf(drv);
-        t.networks = java.util.Set.copyOf(dev.radarfcs.link.GunLinks.groupNetworks(level, p));
+        t.networks = nets;
+        t.main = main;
         t.mounts = List.copyOf(guns);
         turrets.put(key, t);
         if (guns.isEmpty()) {

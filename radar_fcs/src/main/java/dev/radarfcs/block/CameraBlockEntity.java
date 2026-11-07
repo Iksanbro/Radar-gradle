@@ -54,6 +54,8 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
      */
     @Nullable private UUID network;
     private boolean registered;
+    /** Орудия, которыми управляет камера (ключи: станок или орудие), пустой набор - все орудия сети. */
+    private java.util.Set<Long> guns = java.util.Set.of();
     @Nullable private UUID controller;
     @Nullable private BlockPos controlMonitor;
     private long lastControl = Long.MIN_VALUE / 2;
@@ -207,7 +209,7 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     public ManualAim manualAim(long now) {
         if (controller(now) == null || aimPoint == null) return null;
         return new ManualAim(new Vec(aimPoint.x, aimPoint.y, aimPoint.z), fire, displayName().getString(),
-                new Vec(aimVelocity.x, aimVelocity.y, aimVelocity.z));
+                new Vec(aimVelocity.x, aimVelocity.y, aimVelocity.z), guns, lastControl);
     }
 
     @Nullable
@@ -294,6 +296,16 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     @Nullable
     public UUID network() {
         return network;
+    }
+
+    public java.util.Set<Long> guns() {
+        return guns;
+    }
+
+    /** Орудия камеры (с монитора камер); пустой набор - все. */
+    public void setGuns(java.util.Collection<Long> keys) {
+        guns = java.util.Set.copyOf(keys);
+        setChanged();
     }
 
     public void setNetwork(@Nullable UUID net) {
@@ -383,6 +395,7 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
         super.saveAdditional(tag, registries);
         if (!name.isEmpty()) tag.putString("Name", name);
         if (network != null) tag.putUUID("Network", network);
+        if (!guns.isEmpty()) tag.putLongArray("Guns", guns.stream().mapToLong(Long::longValue).toArray());
         if (hasView) {
             tag.putFloat("ViewYaw", viewYaw);
             tag.putFloat("ViewPitch", viewPitch);
@@ -394,6 +407,9 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
         super.loadAdditional(tag, registries);
         name = tag.getString("Name");
         network = tag.hasUUID("Network") ? tag.getUUID("Network") : null;
+        java.util.Set<Long> g = new java.util.HashSet<>();
+        for (long k : tag.getLongArray("Guns")) g.add(k);
+        guns = java.util.Set.copyOf(g);
         boolean had = hasView;
         float[] before = level != null && level.isClientSide && had ? renderView(0) : view();
         hasView = tag.contains("ViewYaw");

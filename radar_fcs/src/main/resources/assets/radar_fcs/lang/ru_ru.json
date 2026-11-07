@@ -339,7 +339,7 @@
   "radar_fcs.camera_gui.view": "Смотреть",
   "radar_fcs.camera_gui.busy": "занята",
   "radar_fcs.camera_gui.empty": "В радарной сети этого монитора нет камер. Поставьте камеру и соедините её с монитором радарным линком.",
-  "radar_fcs.camera_gui.hint": "Имя камеры - Enter сохраняет. Пока вы смотрите через камеру, автоприцеливание пушек сети на паузе.",
+  "radar_fcs.camera_gui.hint": "Имя камеры - Enter сохраняет. «Орудия» - какими орудиями управляет камера (по умолчанию - всеми); пока вы смотрите через неё, их автоприцеливание на паузе.",
   "radar_fcs.status.camera": "ручное наведение с камеры",
   "radar_fcs.link.kind.camera": "камера",
   "radar_fcs.link.kind.camera_monitor": "монитор камер",
@@ -402,5 +402,13 @@
   "radar_fcs.camera.tuned": "Камера настроена на радарную сеть %s - поставьте её, линк не нужен",
   "radar_fcs.camera.placed_in_network": "Камера в радарной сети %s",
   "radar_fcs.camera.tooltip_tuned": "Радарная сеть: %s (ставится без линка)",
-  "radar_fcs.camera.tooltip_untuned": "ПКМ по радарному линку - настроить на его сеть (линк для камеры не нужен)"
+  "radar_fcs.camera.tooltip_untuned": "ПКМ по радарному линку - настроить на его сеть (линк для камеры не нужен)",
+  "radar_fcs.gun.main_mount": "Основная пушка",
+  "radar_fcs.camera_gui.guns_all": "Все орудия",
+  "radar_fcs.camera_gui.guns_some": "Орудий: %s из %s",
+  "radar_fcs.camera_gui.guns_title": "Орудия камеры",
+  "radar_fcs.camera_gui.guns_header": "Камера «%s» управляет: %s",
+  "radar_fcs.camera_gui.guns_empty": "В сети этого монитора нет вычислителей с пушками или орудиями.",
+  "radar_fcs.camera_gui.guns_hint": "Отмеченные орудия наводятся по взгляду этой камеры и стреляют по ЛКМ; остальные в это время ведут цели сами. Ничего не отмечено - все орудия. * - орудие на вращателях или приводах.",
+  "radar_fcs.camera_gui.back": "Назад"
 }

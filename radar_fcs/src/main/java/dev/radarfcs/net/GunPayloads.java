@@ -60,7 +60,11 @@ public final class GunPayloads {
             sp.displayClientMessage(Component.translatable("radar_fcs.gun_link.not_linked").withStyle(ChatFormatting.RED), true);
             return;
         }
-        PacketDistributor.sendToPlayer(sp, new Open(be.getBlockPos(), RadarLinkBlockEntity.shortName(be.network()), be.settings().write()));
+        CompoundTag t = be.settings().write();
+        // линк на станке CBC - этот станок можно сделать основной пушкой орудия
+        if (sp.level().getBlockEntity(be.attached()) instanceof net.minecraft.world.level.block.entity.BlockEntity a
+                && dev.radarfcs.compat.CbcMount.of(a) != null) t.putLong("ThisMount", be.attached().asLong());
+        PacketDistributor.sendToPlayer(sp, new Open(be.getBlockPos(), RadarLinkBlockEntity.shortName(be.network()), t));
     }
 
     private static void handleSave(Save p, IPayloadContext ctx) {

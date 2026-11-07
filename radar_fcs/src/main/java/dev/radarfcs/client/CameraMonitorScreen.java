@@ -18,10 +18,14 @@ import net.neoforged.neoforge.network.PacketDistributor;
 public final class CameraMonitorScreen extends Screen {
     private static final int W = 360, ROW = 22, ROWS = 8;
 
-    private record Entry(BlockPos pos, String shown, String raw, boolean busy) {}
+    private record Entry(BlockPos pos, String shown, String raw, boolean busy, long[] guns) {}
+
+    /** Орудие вычислителей сети: ключ (станок или орудие) и подпись. */
+    public record Gun(long key, String label) {}
 
     private final BlockPos monitor;
     private final List<Entry> cameras = new ArrayList<>();
+    private final List<Gun> guns = new ArrayList<>();
     private int left, top, scroll;
 
     public CameraMonitorScreen(CameraPayloads.Open p) {
@@ -29,7 +33,11 @@ public final class CameraMonitorScreen extends Screen {
         monitor = p.monitor();
         for (Tag t : p.cameras().getList("c", Tag.TAG_COMPOUND)) {
             CompoundTag c = (CompoundTag) t;
-            cameras.add(new Entry(BlockPos.of(c.getLong("p")), c.getString("n"), c.getString("r"), c.getBoolean("b")));
+            cameras.add(new Entry(BlockPos.of(c.getLong("p")), c.getString("n"), c.getString("r"), c.getBoolean("b"), c.getLongArray("g")));
+        }
+        for (Tag t : p.cameras().getList("guns", Tag.TAG_COMPOUND)) {
+            CompoundTag g = (CompoundTag) t;
+            guns.add(new Gun(g.getLong("k"), g.getString("n")));
         }
     }
 
@@ -45,7 +53,12 @@ public final class CameraMonitorScreen extends Screen {
         for (int i = 0; i < ROWS && scroll + i < cameras.size(); i++) {
             Entry e = cameras.get(scroll + i);
             int y = top + 24 + i * ROW;
-            EditBox name = new EditBox(font, left + 8, y + 2, 180, 16, Component.empty()) {
+            // какими орудиями управляет камера: «все» или «N из M»
+            Component gl = e.guns().length == 0 ? Component.translatable("radar_fcs.camera_gui.guns_all")
+                    : Component.translatable("radar_fcs.camera_gui.guns_some", e.guns().length, guns.size());
+            addRenderableWidget(Button.builder(gl, b -> minecraft.setScreen(new CameraGunsScreen(this, monitor, e.pos(), e.shown(), guns, e.guns())))
+                    .bounds(left + 162, y, 82, 20).build());
+            EditBox name = new EditBox(font, left + 8, y + 2, 150, 16, Component.empty()) {
                 @Override
                 public boolean keyPressed(int key, int scan, int mods) {
                     if (key == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER || key == org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER) {

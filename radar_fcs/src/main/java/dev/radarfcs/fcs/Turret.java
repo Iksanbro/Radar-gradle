@@ -39,6 +39,8 @@ public final class Turret {
     /** Направление наведения прошлого тика - по нему приводы учат свой отклик. */
     @Nullable private Vec3 prevAim;
     private long prevTick = Long.MIN_VALUE / 2;
+    /** Основная пушка из настроек орудия (станок орудия) или null. */
+    @Nullable public BlockPos main;
     /** Состояние, которое наводит орудие (остальные станки орудия только стреляют вместе с ним). */
     @Nullable public BlockPos leader;
 

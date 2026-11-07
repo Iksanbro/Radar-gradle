@@ -339,7 +339,7 @@
   "radar_fcs.camera_gui.view": "View",
   "radar_fcs.camera_gui.busy": "busy",
   "radar_fcs.camera_gui.empty": "There are no cameras in this monitor's radar network. Place a camera and connect it to the monitor with radar links.",
-  "radar_fcs.camera_gui.hint": "Camera name - Enter saves. While you look through a camera, the network cannons' auto-aiming is paused.",
+  "radar_fcs.camera_gui.hint": "Camera name - Enter saves. \"Guns\" - which guns the camera controls (all by default); while you look through it, their auto-aim is paused.",
   "radar_fcs.status.camera": "manual aiming from a camera",
   "radar_fcs.link.kind.camera": "camera",
   "radar_fcs.link.kind.camera_monitor": "camera monitor",
@@ -402,5 +402,13 @@
   "radar_fcs.camera.tuned": "Camera tuned to radar network %s - place it, no link needed",
   "radar_fcs.camera.placed_in_network": "Camera joined radar network %s",
   "radar_fcs.camera.tooltip_tuned": "Radar network: %s (placed without a link)",
-  "radar_fcs.camera.tooltip_untuned": "Right-click a radar link to tune it to that network (no link needed for the camera)"
+  "radar_fcs.camera.tooltip_untuned": "Right-click a radar link to tune it to that network (no link needed for the camera)",
+  "radar_fcs.gun.main_mount": "Main gun",
+  "radar_fcs.camera_gui.guns_all": "All guns",
+  "radar_fcs.camera_gui.guns_some": "Guns: %s of %s",
+  "radar_fcs.camera_gui.guns_title": "Camera guns",
+  "radar_fcs.camera_gui.guns_header": "Camera '%s' controls: %s",
+  "radar_fcs.camera_gui.guns_empty": "No fire controls with cannons or guns in this monitor's network.",
+  "radar_fcs.camera_gui.guns_hint": "Checked guns aim by this camera's view and fire on LMB; the others keep engaging targets on their own. Nothing checked - all guns. * - a gun on rotators or drives.",
+  "radar_fcs.camera_gui.back": "Back"
 }

@@ -253,4 +253,39 @@ public class CameraGameTests {
             h.succeed();
         });
     }
+    /**
+     * Орудия камеры (монитор камер): камера, которой назначена одна пушка, управляет только ею - вторая остаётся на
+     * автоприцеле; без назначения камера управляет всеми. Набор сохраняется в камере.
+     */
+    @GameTest(template = ARENA, batch = "camera", timeoutTicks = 120)
+    public static void cameraControlsChosenGuns(GameTestHelper h) {
+        floor(h);
+        BlockPos a = new BlockPos(10, 1, 24), b = new BlockPos(10, 1, 32), fcsPos = new BlockPos(6, 1, 28), camPos = new BlockPos(8, 3, 30);
+        autocannon(h, a, Direction.EAST, 4, 64);
+        autocannon(h, b, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcs(h, fcsPos);
+        h.setBlock(camPos, FcsRegistry.CAMERA.get().defaultBlockState().setValue(CameraBlock.FACING, Direction.EAST));
+        FcsGameTests.CREATED.add(h.absolutePos(camPos));
+        link(h, camPos, Direction.UP, fcsPos);
+        UUID who = UUID.randomUUID();
+        h.runAfterDelay(30, () -> {
+            if (!(h.getLevel().getBlockEntity(h.absolutePos(camPos)) instanceof CameraBlockEntity cam)) throw new GameTestAssertException("no camera");
+            MountState ma = null, mb = null;
+            for (MountState m : be.mountStates()) {
+                if (m.pos.equals(h.absolutePos(a))) ma = m;
+                if (m.pos.equals(h.absolutePos(b))) mb = m;
+            }
+            if (ma == null || mb == null) throw new GameTestAssertException("mounts not discovered");
+            cam.setGuns(List.of(h.absolutePos(a).asLong()));
+            cam.controlForTest(who, -90f, 0f, false);
+            if (be.manualAimFor(ma) == null || be.manualAimFor(mb) != null) throw new GameTestAssertException("chosen guns not respected");
+            if (!be.gunLabels(h.getLevel()).containsKey(h.absolutePos(b).asLong())) throw new GameTestAssertException("gun list misses a mount");
+            var tag = cam.saveWithoutMetadata(h.getLevel().registryAccess());
+            if (tag.getLongArray("Guns").length != 1) throw new GameTestAssertException("guns not saved");
+            cam.setGuns(List.of());
+            if (be.manualAimFor(ma) == null || be.manualAimFor(mb) == null) throw new GameTestAssertException("empty set must control all guns");
+            cam.stopControl(who);
+            h.succeed();
+        });
+    }
 }

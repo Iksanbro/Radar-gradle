@@ -265,6 +265,48 @@ public class TurretGameTests {
         });
     }
 
+    /**
+     * Основная пушка (Shift+ПКМ по орудийному линку на станке): в орудии два станка без прицела, приводы крутят только
+     * второй. Он отмечен основным - вычислитель наводит по его стволу (ключ и ведущий орудия) и попадает.
+     */
+    @GameTest(template = ARENA, batch = "turret", timeoutTicks = 500)
+    public static void gunMainMountIsAimReference(GameTestHelper h) {
+        floor(h);
+        BlockPos other = new BlockPos(10, 1, 24), mount = new BlockPos(10, 1, 32), fcsPos = new BlockPos(6, 1, 28);
+        autocannon(h, other, Direction.EAST, 4, 64);
+        autocannon(h, mount, Direction.EAST, 4, 64);
+        h.setBlock(mount.below(), FcsRegistry.GUN_DRIVE.get().defaultBlockState()
+                .setValue(DirectionalKineticBlock.FACING, Direction.UP).setValue(GunDriveBlock.PITCH, false));
+        h.setBlock(mount.south(), FcsRegistry.GUN_DRIVE.get().defaultBlockState()
+                .setValue(DirectionalKineticBlock.FACING, Direction.NORTH).setValue(GunDriveBlock.PITCH, true));
+        UUID gun = UUID.randomUUID();
+        gunLink(h, other, Direction.NORTH, gun);
+        GunLinkBlockEntity onMain = gunLink(h, mount, Direction.NORTH, gun);
+        gunLink(h, mount.below(), Direction.WEST, gun);
+        gunLink(h, mount.south(), Direction.EAST, gun);
+        FireControlBlockEntity be = FcsGameTests.fcs(h, fcsPos);
+        SettingsGameTests.configure(be, st -> st.dropStatic = false);
+        onMain.saveSettings(new dev.radarfcs.fcs.GunSettings(dev.radarfcs.fcs.GunSettings.Type.AUTOCANNON, true, true, "", 0, h.absolutePos(mount)));
+        be.requestDiscover();
+        var target = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(28.5, 4, 46.5), 0, 0));
+        h.setBlock(new BlockPos(28, 3, 46), Blocks.STONE.defaultBlockState());
+        AtomicInteger hits = FcsGameTests.countHits(h, target);
+        BlockPos mAbs = h.absolutePos(mount);
+        h.onEachTick(() -> {
+            MountState lead = null;
+            for (MountState m : be.mountStates()) if (m.turret != null && m.pos.equals(m.turret.leader)) lead = m;
+            if (lead == null) return;
+            if (!lead.pos.equals(mAbs) || !lead.turret.key.equals(mAbs))
+                throw new GameTestAssertException("main gun is not the leader: leader " + lead.pos + " key " + lead.turret.key);
+            if (hits.get() >= 2) {
+                FcsMod.LOG.info("[radar_fcs test] gun_main: main gun leads, hits {} at t={}", hits.get(), h.getTick());
+                h.succeed();
+            } else if (h.getTick() > 460) {
+                throw new GameTestAssertException("main gun did not hit: " + lead.status + " err " + lead.aimError);
+            }
+        });
+    }
+
     private static String describe(List<MountState> ms) {
         StringBuilder sb = new StringBuilder();
         for (MountState m : ms) sb.append(m.pos.toShortString()).append(' ').append(m.status).append(m.turret != null ? " turret" : "")

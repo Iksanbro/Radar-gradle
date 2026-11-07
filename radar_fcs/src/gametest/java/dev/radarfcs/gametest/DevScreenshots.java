@@ -244,7 +244,16 @@ public final class DevScreenshots {
             if (tick == 722) dev.radarfcs.client.FcsClientHooks.openGunSettings(new dev.radarfcs.net.GunPayloads.Open(base, "#3F2A",
                     new dev.radarfcs.fcs.GunSettings(dev.radarfcs.fcs.GunSettings.Type.AUTOCANNON, true, false, "Зенитка-1", 1).write()));
             if (tick == 728) shot(mc, "gun_settings");
-            if (tick == 730) mc.stop();
+            // витрина блоков мода (текстуры)
+            if (tick == 730) {
+                if (mc.screen != null) mc.setScreen(null);
+                server.execute(() -> {
+                    blockGallery(server.overworld());
+                    look(server, base.offset(-6, 1, -32).getCenter(), new Vec3(base.getX() - 5.5, base.getY() + 3.0, base.getZ() - 23.0));
+                });
+            }
+            if (tick == 740) shot(mc, "blocks_gallery");
+            if (tick == 742) mc.stop();
             if (tick > 721) return;
         }
         // орудие на вращателях Sable: горизонтальный вращатель, на нём вертикальный, ствол из досок с прицелом
@@ -340,6 +349,39 @@ public final class DevScreenshots {
         cam(level, w.offset(3, 2, 1), Direction.SOUTH, -40f, 25f);
         cam(level, w.offset(5, 3, 1).below(), Direction.DOWN, 30f, 35f);
         cam(level, w.offset(5, 0, 2), Direction.UP, -20f, -20f);
+    }
+
+    /** Блоки мода в ряд (для снимка текстур). */
+    private static void blockGallery(ServerLevel level) {
+        BlockPos w = base.offset(-12, 0, -32);
+        var air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+        for (int dx = -1; dx < 14; dx++) for (int dy = 0; dy < 5; dy++) for (int dz = 0; dz < 5; dz++) level.setBlock(w.offset(dx, dy, dz), air, 3);
+        for (int dx = -1; dx < 14; dx++) for (int dy = 0; dy < 5; dy++) level.setBlock(w.offset(dx, dy, -1), block("minecraft:smooth_stone").defaultBlockState(), 3);
+        var S = Direction.SOUTH;
+        level.setBlock(w.offset(0, 0, 0), FcsRegistry.FIRE_CONTROL.get().defaultBlockState().setValue(FireControlBlock.FACING, S), 3);
+        level.setBlock(w.offset(0, 1, 0), FcsRegistry.FIRE_CONTROL.get().defaultBlockState().setValue(FireControlBlock.FACING, S)
+                .setValue(FireControlBlock.ENGAGED, true), 3);
+        level.setBlock(w.offset(2, 0, 0), FcsRegistry.MEMORY.get().defaultBlockState().trySetValue(BlockStateProperties.HORIZONTAL_FACING, S)
+                .trySetValue(dev.radarfcs.block.MemoryBlock.POWERED, true), 3);
+        level.setBlock(w.offset(2, 1, 0), FcsRegistry.MEMORY.get().defaultBlockState().trySetValue(BlockStateProperties.HORIZONTAL_FACING, S), 3);
+        level.setBlock(w.offset(4, 0, 0), FcsRegistry.CAMERA_MONITOR.get().defaultBlockState().setValue(dev.radarfcs.block.CameraMonitorBlock.FACING, S), 3);
+        level.setBlock(w.offset(4, 1, 0), FcsRegistry.IFF_TRANSPONDER.get().defaultBlockState().setValue(IffTransponderBlock.CHANNEL, DyeColor.LIME), 3);
+        level.setBlock(w.offset(6, 0, 0), FcsRegistry.YAW_CONTROLLER.get().defaultBlockState()
+                .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.UP), 3);
+        level.setBlock(w.offset(6, 1, 0), FcsRegistry.PITCH_CONTROLLER.get().defaultBlockState()
+                .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.EAST), 3);
+        level.setBlock(w.offset(8, 0, 0), FcsRegistry.GUN_DRIVE.get().defaultBlockState()
+                .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.UP), 3);
+        level.setBlock(w.offset(8, 1, 0), FcsRegistry.GUN_DRIVE.get().defaultBlockState()
+                .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.UP).setValue(dev.radarfcs.block.GunDriveBlock.PITCH, true), 3);
+        level.setBlock(w.offset(10, 0, 0), FcsRegistry.GUN_ROTATOR.get().defaultBlockState()
+                .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.UP), 3);
+        level.setBlock(w.offset(10, 1, 0), FcsRegistry.SIGHT.get().defaultBlockState().setValue(dev.radarfcs.block.SightBlock.FACING, S), 3);
+        level.setBlock(w.offset(12, 0, 0), FcsRegistry.SIGHT.get().defaultBlockState().setValue(dev.radarfcs.block.SightBlock.FACING, S)
+                .setValue(dev.radarfcs.block.SightBlock.FIRING, true), 3);
+        level.setBlock(w.offset(12, 1, 0), FcsRegistry.RADAR_MONITOR.get().defaultBlockState().setValue(dev.radarfcs.block.RadarMonitorBlock.FACING, Direction.EAST), 3);
+        level.setBlock(w.offset(0, 2, 0), FcsRegistry.RADAR_LINK.get().defaultBlockState().setValue(dev.radarfcs.block.RadarLinkBlock.FACING, Direction.UP), 3);
+        level.setBlock(w.offset(8, 2, 0), FcsRegistry.GUN_LINK.get().defaultBlockState().setValue(dev.radarfcs.block.RadarLinkBlock.FACING, Direction.UP), 3);
     }
 
     private static void cam(ServerLevel level, BlockPos at, Direction facing, float yaw, float pitch) {

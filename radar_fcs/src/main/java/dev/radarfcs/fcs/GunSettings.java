@@ -39,13 +39,24 @@ public final class GunSettings {
     public final boolean autoAim, fire;
     public final String name;
     public final long stamp;
+    /**
+     * Основная пушка орудия - станок CBC, ствол которого наводится, если в орудии нет прицела (и чья баллистика
+     * считается); null - первый найденный станок.
+     */
+    @org.jetbrains.annotations.Nullable public final net.minecraft.core.BlockPos mainMount;
 
     public GunSettings(Type type, boolean autoAim, boolean fire, String name, long stamp) {
+        this(type, autoAim, fire, name, stamp, null);
+    }
+
+    public GunSettings(Type type, boolean autoAim, boolean fire, String name, long stamp,
+                       @org.jetbrains.annotations.Nullable net.minecraft.core.BlockPos mainMount) {
         this.type = type == null ? Type.CUSTOM : type;
         this.autoAim = autoAim;
         this.fire = fire;
         this.name = cleanName(name);
         this.stamp = stamp;
+        this.mainMount = mainMount == null ? null : mainMount.immutable();
     }
 
     public static String cleanName(String n) {
@@ -55,7 +66,7 @@ public final class GunSettings {
     }
 
     public GunSettings withStamp(long st) {
-        return new GunSettings(type, autoAim, fire, name, st);
+        return new GunSettings(type, autoAim, fire, name, st, mainMount);
     }
 
     /** Модель полёта орудия без станка CBC (у кастома - почти мгновенный «луч»). */
@@ -78,6 +89,7 @@ public final class GunSettings {
         t.putBoolean("Fire", fire);
         if (!name.isEmpty()) t.putString("Name", name);
         t.putLong("Stamp", stamp);
+        if (mainMount != null) t.putLong("Main", mainMount.asLong());
         return t;
     }
 
@@ -90,6 +102,6 @@ public final class GunSettings {
             type = Type.CUSTOM;
         }
         return new GunSettings(type, !t.contains("AutoAim") || t.getBoolean("AutoAim"), !t.contains("Fire") || t.getBoolean("Fire"),
-                t.getString("Name"), t.getLong("Stamp"));
+                t.getString("Name"), t.getLong("Stamp"), t.contains("Main") ? net.minecraft.core.BlockPos.of(t.getLong("Main")) : null);
     }
 }

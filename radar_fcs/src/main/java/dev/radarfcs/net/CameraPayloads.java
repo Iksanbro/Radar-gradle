@@ -111,6 +111,19 @@ public final class CameraPayloads {
         }
     }
 
+    /** Клиент -> сервер: какими орудиями управляет камера (пустой список - всеми). */
+    public record Guns(BlockPos monitor, BlockPos camera, List<Long> keys) implements CustomPacketPayload {
+        public static final Type<Guns> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(FcsMod.MODID, "camera_guns"));
+        public static final StreamCodec<ByteBuf, Guns> CODEC = StreamCodec.composite(
+                BlockPos.STREAM_CODEC, Guns::monitor, BlockPos.STREAM_CODEC, Guns::camera,
+                ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list(256)), Guns::keys, Guns::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
     /** Клиент -> сервер: имя камеры. */
     public record Rename(BlockPos monitor, BlockPos camera, String name) implements CustomPacketPayload {
         public static final Type<Rename> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(FcsMod.MODID, "camera_rename"));
@@ -135,6 +148,14 @@ public final class CameraPayloads {
                     && sp.level().getBlockEntity(p.camera()) instanceof CameraBlockEntity cam) cam.stopControl(sp.getUUID());
         }));
         r.playToServer(Rename.TYPE, Rename.CODEC, CameraPayloads::handleRename);
+        r.playToServer(Guns.TYPE, Guns.CODEC, (p, ctx) -> ctx.enqueueWork(() -> {
+            if (!(ctx.player() instanceof ServerPlayer sp) || sp.isSpectator() || !sp.mayBuild() || !nearMonitor(sp, p.monitor())) return;
+            ServerLevel level = sp.serverLevel();
+            if (!level.isLoaded(p.camera()) || !(level.getBlockEntity(p.camera()) instanceof CameraBlockEntity cam)) return;
+            if (!LinkRegistry.linked(level, p.monitor(), p.camera())) return;
+            cam.setGuns(p.keys());
+            openList(sp, p.monitor());
+        }));
         r.playToClient(Kick.TYPE, Kick.CODEC, (p, ctx) -> ctx.enqueueWork(() -> dev.radarfcs.client.CameraClient.kick(p.camera())));
     }
 
@@ -161,10 +182,26 @@ public final class CameraPayloads {
             c.putString("r", cam.name());
             java.util.UUID who = cam.controller(now);
             c.putBoolean("b", who != null && !who.equals(sp.getUUID()));
+            c.putLongArray("g", cam.guns().stream().mapToLong(Long::longValue).toArray());
             list.add(c);
         }
         CompoundTag t = new CompoundTag();
         t.put("c", list);
+        // орудия вычислителей сети монитора - для выбора, какими управляет каждая камера
+        java.util.Map<Long, String> guns = new java.util.LinkedHashMap<>();
+        for (BlockPos p : LinkRegistry.linkedTo(level, monitor)) {
+            if (level.isLoaded(p) && level.getBlockEntity(p) instanceof dev.radarfcs.block.FireControlBlockEntity fcs) {
+                fcs.gunLabels(level).forEach(guns::putIfAbsent);
+            }
+        }
+        ListTag gl = new ListTag();
+        guns.forEach((k, n) -> {
+            CompoundTag g = new CompoundTag();
+            g.putLong("k", k);
+            g.putString("n", n);
+            gl.add(g);
+        });
+        t.put("guns", gl);
         PacketDistributor.sendToPlayer(sp, new Open(monitor, t));
     }
 
