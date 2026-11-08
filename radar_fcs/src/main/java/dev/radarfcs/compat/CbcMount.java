@@ -12,6 +12,10 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import com.simibubi.create.content.contraptions.AssemblyException;
+import com.simibubi.create.foundation.blockEntity.SmartBlockEntity;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import rbasamoyai.createbigcannons.cannon_control.ControlPitchContraption;
 import rbasamoyai.createbigcannons.cannon_control.cannon_mount.CannonMountBlock;
 import rbasamoyai.createbigcannons.cannon_control.cannon_mount.CannonMountBlockEntity;
 import rbasamoyai.createbigcannons.cannon_control.cannon_mount.CannonMountInterfaceBlockEntity;
@@ -23,7 +27,8 @@ import rbasamoyai.createbigcannons.cannon_control.contraption.PitchOrientedContr
 
 /**
  * Станок Create Big Cannons. Работает с любыми пушками на этом станке, включая CBC Advanced Technologies
- * (их контрапшены наследуют AbstractMountedCannonContraption).
+ * (их контрапшены наследуют AbstractMountedCannonContraption), и компактными станками CBC: Firepower Components
+ * (`FpcMount`, только при загруженном моде).
  *
  * Конвенции CBC (проверено по исходникам): cannonYaw совпадает с yaw Minecraft (0 = юг, 90 = запад),
  * cannonPitch > 0 поднимает ствол для любой стороны установки. Фактическое направление ствола
@@ -39,18 +44,74 @@ public final class CbcMount {
         UNSUPPORTED
     }
 
-    private final CannonMountBlockEntity be;
-
-    private CbcMount(CannonMountBlockEntity be) {
-        this.be = be;
+    /**
+     * Что нужно от станка: у CBC и у компактных станков CBC: Firepower Components одинаковые смысл углов и сигналов,
+     * но это разные классы без общего предка (кроме интерфейса контроллера CBC).
+     */
+    interface Ops {
+        @Nullable PitchOrientedContraptionEntity contraption();
+        boolean running();
+        /** Текущие углы станка (cannonYaw, cannonPitch). */
+        double yaw();
+        double pitch();
+        /** Записать углы станка и сразу перенести их на контрапшен; true - контрапшен повёрнут самим станком. */
+        boolean setAngles(float yaw, float pitch);
+        void setDriveLock(double limit);
+        void redstone(boolean asm, boolean prevAsm, boolean fire, boolean prevFire, int power);
+        void disassemble();
+        @Nullable AssemblyException lastException();
+        BooleanProperty firePowered();
+        BooleanProperty assemblyPowered();
+        /** Тип станка для отчётов (пусто - обычный станок CBC). */
+        default String prefix() { return ""; }
     }
 
+    /** Станок Create Big Cannons. */
+    private record CbcOps(CannonMountBlockEntity be) implements Ops {
+        public PitchOrientedContraptionEntity contraption() { return be.getContraption(); }
+        public boolean running() { return be.isRunning(); }
+        public double yaw() { return be.getYawOffset(0.0F); }
+        public double pitch() { return be.getDisplayPitch(); }
+        public boolean setAngles(float yaw, float pitch) {
+            be.setYaw(yaw);
+            be.setPitch(pitch);
+            return false;
+        }
+        public void setDriveLock(double limit) {
+            if (be.getYawInterface() instanceof CannonMountInterfaceBlockEntity y) y.setSequencedAngleLimit(limit);
+            if (be.getPitchInterface() instanceof CannonMountInterfaceBlockEntity p) p.setSequencedAngleLimit(limit);
+        }
+        public void redstone(boolean asm, boolean prevAsm, boolean fire, boolean prevFire, int power) {
+            be.onRedstoneUpdate(asm, prevAsm, fire, prevFire, power);
+        }
+        public void disassemble() { be.disassemble(); }
+        public AssemblyException lastException() { return be.getLastAssemblyException(); }
+        public BooleanProperty firePowered() { return CannonMountBlock.FIRE_POWERED; }
+        public BooleanProperty assemblyPowered() { return CannonMountBlock.ASSEMBLY_POWERED; }
+    }
+
+    private final SmartBlockEntity be;
+    private final ControlPitchContraption ctrl;
+    private final Ops ops;
+
+    private CbcMount(SmartBlockEntity be, Ops ops) {
+        this.be = be;
+        this.ctrl = (ControlPitchContraption) be;
+        this.ops = ops;
+    }
+
+    /** Станок CBC или компактный станок CBC: Firepower Components (обычный и для автопушек), иначе null. */
     @Nullable
     public static CbcMount of(BlockEntity be) {
-        return be instanceof CannonMountBlockEntity m ? new CbcMount(m) : null;
+        if (be instanceof CannonMountBlockEntity m) return new CbcMount(m, new CbcOps(m));
+        if (Mods.FIREPOWER && be instanceof SmartBlockEntity sb && be instanceof ControlPitchContraption) {
+            Ops ops = FpcMount.ops(be);
+            if (ops != null) return new CbcMount(sb, ops);
+        }
+        return null;
     }
 
-    public CannonMountBlockEntity blockEntity() { return be; }
+    public BlockEntity blockEntity() { return be; }
 
     public BlockPos pos() { return be.getBlockPos(); }
 
@@ -61,7 +122,7 @@ public final class CbcMount {
 
     @Nullable
     public PitchOrientedContraptionEntity entity() {
-        PitchOrientedContraptionEntity e = be.getContraption();
+        PitchOrientedContraptionEntity e = ops.contraption();
         return e != null && e.isAlive() ? e : null;
     }
 
@@ -72,7 +133,7 @@ public final class CbcMount {
     }
 
     public boolean isAssembled() {
-        return be.isRunning() && cannon() != null;
+        return ops.running() && cannon() != null;
     }
 
     public Kind kind() {
@@ -91,12 +152,13 @@ public final class CbcMount {
         AbstractMountedCannonContraption c = cannon();
         if (c == null) return "-";
         String n = c.getClass().getSimpleName().replace("Mounted", "").replace("Contraption", "");
-        return n.isEmpty() ? c.getClass().getSimpleName() : n;
+        if (n.isEmpty()) n = c.getClass().getSimpleName();
+        return ops.prefix() + n;
     }
 
     public boolean canControl() {
         AbstractMountedCannonContraption c = cannon();
-        return c != null && c.canBeTurnedByController(be) && c.canBeFiredOnController(be);
+        return c != null && c.canBeTurnedByController(ctrl) && c.canBeFiredOnController(ctrl);
     }
 
     public double maxElevation() {
@@ -110,19 +172,17 @@ public final class CbcMount {
     }
 
     /** Текущий yaw станка (cannonYaw). */
-    public double yaw() { return be.getYawOffset(0.0F); }
+    public double yaw() { return ops.yaw(); }
 
     /** Текущий pitch станка (cannonPitch). */
-    public double pitch() { return be.getDisplayPitch(); }
+    public double pitch() { return ops.pitch(); }
 
     /**
      * Блокировка валов: пока СУО управляет, вращение от валов не действует
      * (тот же механизм, что у CC:CBC и у CBC sequenced gearshift).
      */
     public void setDriveLock(boolean locked) {
-        double limit = locked ? 0.0 : -1.0;
-        if (be.getYawInterface() instanceof CannonMountInterfaceBlockEntity y) y.setSequencedAngleLimit(limit);
-        if (be.getPitchInterface() instanceof CannonMountInterfaceBlockEntity p) p.setSequencedAngleLimit(limit);
+        ops.setDriveLock(locked ? 0.0 : -1.0);
     }
 
     /** Скорость поворота от валов, градусов/тик (по формуле CBC). */
@@ -134,11 +194,10 @@ public final class CbcMount {
     public void setAngles(double yaw, double pitch) {
         double lo = -maxDepression(), hi = maxElevation();
         float y = (float) yaw, p = (float) Math.max(lo, Math.min(hi, pitch));
-        be.setYaw(y);
-        be.setPitch(p);
+        if (ops.setAngles(y, p)) return;
         PitchOrientedContraptionEntity e = entity();
         AbstractMountedCannonContraption c = cannon();
-        if (e != null && c != null && c.canBeTurnedByController(be)) {
+        if (e != null && c != null && c.canBeTurnedByController(ctrl)) {
             Direction dir = e.getInitialOrientation();
             boolean flag = (dir.getAxisDirection() == Direction.AxisDirection.POSITIVE) == (dir.getAxis() == Direction.Axis.X);
             e.pitch = p * (flag ? 1.0F : -1.0F);
@@ -200,37 +259,37 @@ public final class CbcMount {
 
     /** Собрать пушку так же, как редстоун-сигнал сборки, и сразу вернуть состояние сигнала. */
     public boolean assemble() {
-        if (be.isRunning()) return true;
+        if (ops.running()) return true;
         Level level = be.getLevel();
         if (level == null) return false;
         BlockState state = be.getBlockState();
-        boolean fire = state.getValue(CannonMountBlock.FIRE_POWERED);
-        be.onRedstoneUpdate(true, false, fire, fire, fire ? 15 : 0);
+        boolean fire = state.hasProperty(ops.firePowered()) && state.getValue(ops.firePowered());
+        ops.redstone(true, false, fire, fire, fire ? 15 : 0);
         BlockState now = be.getBlockState();
-        if (now.hasProperty(CannonMountBlock.ASSEMBLY_POWERED) && now.getValue(CannonMountBlock.ASSEMBLY_POWERED)) {
+        if (now.hasProperty(ops.assemblyPowered()) && now.getValue(ops.assemblyPowered())) {
             // без настоящего редстоуна следующее обновление соседей разобрало бы пушку
-            level.setBlock(be.getBlockPos(), now.setValue(CannonMountBlock.ASSEMBLY_POWERED, false), 3);
+            level.setBlock(be.getBlockPos(), now.setValue(ops.assemblyPowered(), false), 3);
         }
-        return be.isRunning();
+        return ops.running();
     }
 
     /** Разобрать пушку, как снятие сигнала сборки (ствол встаёт в исходное положение и становится блоками). */
     public void disassemble() {
-        if (!be.isRunning() && be.getContraption() == null) return;
-        be.disassemble();
+        if (!ops.running() && ops.contraption() == null) return;
+        ops.disassemble();
         be.sendData();
     }
 
     /** Почему CBC не смог собрать пушку (для отчёта), или null. */
     @Nullable
     public String assemblyError() {
-        var ex = be.getLastAssemblyException();
+        var ex = ops.lastException();
         return ex == null ? null : ex.component.getString();
     }
 
     public boolean firePowered() {
         BlockState s = be.getBlockState();
-        return s.hasProperty(CannonMountBlock.FIRE_POWERED) && s.getValue(CannonMountBlock.FIRE_POWERED);
+        return s.hasProperty(ops.firePowered()) && s.getValue(ops.firePowered());
     }
 
     /**
@@ -239,10 +298,10 @@ public final class CbcMount {
      */
     public void setFire(boolean on, int power) {
         BlockState state = be.getBlockState();
-        if (!state.hasProperty(CannonMountBlock.FIRE_POWERED)) return;
-        boolean asm = state.getValue(CannonMountBlock.ASSEMBLY_POWERED);
-        boolean prev = state.getValue(CannonMountBlock.FIRE_POWERED);
-        be.onRedstoneUpdate(asm, asm, on, prev, on ? Math.max(1, Math.min(15, power)) : 0);
+        if (!state.hasProperty(ops.firePowered()) || !state.hasProperty(ops.assemblyPowered())) return;
+        boolean asm = state.getValue(ops.assemblyPowered());
+        boolean prev = state.getValue(ops.firePowered());
+        ops.redstone(asm, asm, on, prev, on ? Math.max(1, Math.min(15, power)) : 0);
     }
 
     /** Рядом с этим станком стоят автоконтроллеры Create Radars - пушка уже управляется ими. */

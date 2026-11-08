@@ -11,5 +11,8 @@ public final class Mods {
     /** Sable (физические под-уровни): нужен вращателям орудий. */
     public static final boolean SABLE = ModList.get().isLoaded("sable");
 
+    /** CBC: Firepower Components: компактные станки (обычный и для автопушек). */
+    public static final boolean FIREPOWER = ModList.get().isLoaded("cbc_firepower_components");
+
     private Mods() {}
 }

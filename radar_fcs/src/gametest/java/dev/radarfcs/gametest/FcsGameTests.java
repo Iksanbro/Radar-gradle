@@ -234,7 +234,7 @@ public class FcsGameTests {
     }
 
     /** Соединить соседние блоки пушки вдоль dir (как при установке игроком). */
-    private static void connect(GameTestHelper h, BlockPos fromRel, Direction dir, int count) {
+    static void connect(GameTestHelper h, BlockPos fromRel, Direction dir, int count) {
         for (int i = 0; i + 1 < count; i++) {
             BlockPos a = h.absolutePos(fromRel.relative(dir, i)), b = h.absolutePos(fromRel.relative(dir, i + 1));
             if (h.getLevel().getBlockEntity(a) instanceof ICannonBlockEntity<?> ca

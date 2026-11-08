@@ -55,6 +55,7 @@ dependencies {
     modCompile "maven.modrinth:create-big-cannons:${cbc_version}"
     // Create Radars - необязательная интеграция (компиляция против минимального API)
     modCompile "maven.modrinth:create-radars:${radars_compile_version}"
+    modCompile "maven.modrinth:cbc-firepower-components:${fpc_version}"
     // Sable: вращатели орудий (под-уровни, шарниры); код с API Sable загружается только при установленном Sable
     modCompile "maven.modrinth:sable:${sable_version}"
     embeddedSources "maven.modrinth:sable:${sable_version}"
@@ -74,6 +75,7 @@ dependencies {
         devMods "maven.modrinth:create-aeronautics:${aeronautics_version}"
         if (!project.hasProperty('fcsNoCbcAt')) devMods "maven.modrinth:create-big-cannons-advanced-technologies:${cbcat_version}"
         devMods "maven.modrinth:createaddition:${createaddition_version}"
+        if (!project.hasProperty('fcsNoFpc')) devMods "maven.modrinth:cbc-firepower-components:${fpc_version}"
     }
 }
 
