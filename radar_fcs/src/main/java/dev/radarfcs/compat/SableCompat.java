@@ -205,7 +205,7 @@ public final class SableCompat {
     }
 
     /** Попадание луча в постройку Sable: точка в мире, скорость этой точки (блоков/тик), id постройки. */
-    public record ShipHit(Vec3 point, Vec3 velocity, UUID ship) {}
+    public record ShipHit(Vec3 point, Vec3 velocity, UUID ship, net.minecraft.core.BlockPos block) {}
 
     /**
      * Луч from-to по блокам построек Sable (кораблей, поворотных частей): луч переводится в координаты каждой постройки
@@ -239,7 +239,7 @@ public final class SableCompat {
                 if (d < bestD) {
                     bestD = d;
                     Vec3 v = velocity ? pointVelocity(level, s, bh.getLocation()) : Vec3.ZERO;
-                    best = new ShipHit(w, v, s.getUniqueId());
+                    best = new ShipHit(w, v, s.getUniqueId(), bh.getBlockPos().immutable());
                 }
             }
         } catch (Throwable t) {

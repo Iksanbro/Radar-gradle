@@ -127,6 +127,24 @@ public final class FcsControl {
         Vec3 pivotLocal = d != null ? d.localPivot() : Vec3.atCenterOf(tu.sight);
         Vec3 pivotW = SableCompat.toWorld(level, pivotLocal);
         Vec pivot = new Vec(pivotW.x, pivotW.y, pivotW.z);
+        // камера смотрит на само орудие: точка взгляда поворачивалась бы вместе с ним (орудие «гонялось» бы за ней) -
+        // орудие стоит, ЛКМ по-прежнему стреляет
+        if (manual != null && aimsAtItself(level, m, d, tu, chain, drives, manual.hit())) {
+            if (chain != null) {
+                for (GunRotatorBlockEntity r : chain) {
+                    double ang = r.angle();
+                    if (!Double.isNaN(ang)) r.setWant(ang);
+                }
+            }
+            if (drives != null) for (GunDriveBlockEntity dr : drives) dr.command(0);
+            m.targetId = null;
+            m.targetName = null;
+            m.aimError = Double.NaN;
+            if (d != null) syncIfNeeded(d, m, now);
+            manualTrigger(level, m, d, sight, tu, manual.fire(), pivotW, null, 0, now);
+            m.status = Status.CAMERA_SELF;
+            return;
+        }
         Vec platformVel = Vec.ZERO;
         if (ship != null && FcsConfig.INHERIT_PLATFORM_VELOCITY.get()) {
             Vec3 pv = SableCompat.pointVelocity(level, ship, pivotLocal);
@@ -533,6 +551,59 @@ public final class FcsControl {
         }
         m.triggerOn = on;
         if (on) m.lastFire = now;
+    }
+
+    /**
+     * Взгляд камеры упёрся в само орудие: в блок станка, прицела, вращателя, привода или линк/контроллер на них, в
+     * поворотную часть орудия (постройку Sable его вращателя или подшипника с приводом) или в пушку станка.
+     */
+    static boolean aimsAtItself(ServerLevel level, MountState m, @Nullable CbcMount d, @Nullable Turret tu,
+                                @Nullable List<GunRotatorBlockEntity> chain, @Nullable List<GunDriveBlockEntity> drives,
+                                ManualAim.Hit hit) {
+        if (hit == null || hit == ManualAim.Hit.NONE) return false;
+        Set<net.minecraft.core.BlockPos> parts = new HashSet<>();
+        parts.add(m.pos);
+        if (d != null) parts.add(d.pos());
+        List<CbcMount> mounts = new ArrayList<>();
+        if (d != null) mounts.add(d);
+        if (tu != null) {
+            if (tu.sight != null) parts.add(tu.sight);
+            parts.addAll(tu.mounts);
+            parts.addAll(tu.rotators);
+            parts.addAll(tu.drives);
+            for (net.minecraft.core.BlockPos p : tu.mounts) {
+                if (d != null && p.equals(d.pos())) continue;
+                CbcMount o = level.isLoaded(p) ? CbcMount.of(level.getBlockEntity(p)) : null;
+                if (o != null) mounts.add(o);
+            }
+        }
+        if (hit.block() != null) {
+            net.minecraft.core.BlockPos b = hit.block();
+            if (parts.contains(b)) return true;
+            if (level.isLoaded(b)) {
+                var be = level.getBlockEntity(b);
+                if (be instanceof dev.radarfcs.block.RadarLinkBlockEntity l && parts.contains(l.attached())) return true;
+                if (be instanceof AimControllerBlockEntity c) {
+                    CbcMount cm = c.mount();
+                    if (cm != null && parts.contains(cm.pos())) return true;
+                }
+            }
+        }
+        if (hit.entity() >= 0) {
+            for (CbcMount mm : mounts) {
+                var e = mm.entity();
+                if (e != null && e.getId() == hit.entity()) return true;
+            }
+        }
+        if (hit.ship() != null) {
+            if (chain != null) for (GunRotatorBlockEntity r : chain) if (hit.ship().equals(r.subLevel())) return true;
+            // приводы крутят постройку, на которой стоит орудие (подшипник-шарнир): она - поворотная часть
+            if (drives != null && !drives.isEmpty()) {
+                net.minecraft.core.BlockPos key = tu != null && tu.sight != null ? tu.sight : m.pos;
+                if (hit.ship().equals(SableCompat.containingId(level, key))) return true;
+            }
+        }
+        return false;
     }
 
     /** id цели ручного наведения с камеры. */

@@ -341,6 +341,7 @@
   "radar_fcs.camera_gui.empty": "There are no cameras in this monitor's radar network. Place a camera and connect it to the monitor with radar links.",
   "radar_fcs.camera_gui.hint": "Camera name - Enter saves. \"Guns\" - which guns the camera controls (all by default); while you look through it, their auto-aim is paused.",
   "radar_fcs.status.camera": "manual aiming from a camera",
+  "radar_fcs.status.camera_self": "camera is looking at the gun itself: holding still",
   "radar_fcs.link.kind.camera": "camera",
   "radar_fcs.link.kind.camera_monitor": "camera monitor",
   "block.radar_fcs.gun_rotator": "Gun Rotator",

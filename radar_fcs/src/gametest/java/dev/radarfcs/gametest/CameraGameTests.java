@@ -288,4 +288,72 @@ public class CameraGameTests {
             h.succeed();
         });
     }
+
+    /**
+     * Камера смотрит на само орудие (станок своей пушки): пушка не поворачивается (раньше она «гонялась» за точкой
+     * взгляда, которая уезжала вместе с ней), статус CAMERA_SELF. Взгляд в сторону - пушка снова наводится.
+     */
+    @GameTest(template = ARENA, batch = "camera", timeoutTicks = 300)
+    public static void cameraLookingAtOwnGunHolds(GameTestHelper h) {
+        floor(h);
+        BlockPos mount = new BlockPos(10, 1, 32), fcsPos = new BlockPos(6, 1, 28), camPos = new BlockPos(15, 3, 27);
+        autocannon(h, mount, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcs(h, fcsPos);
+        h.setBlock(camPos, FcsRegistry.CAMERA.get().defaultBlockState().setValue(CameraBlock.FACING, Direction.WEST));
+        FcsGameTests.CREATED.add(h.absolutePos(camPos));
+        link(h, camPos, Direction.UP, fcsPos);
+        UUID who = UUID.randomUUID();
+        Vec3 self = h.absoluteVec(new Vec3(10.5, 1.5, 32.5));                    // станок своей пушки
+        Vec3 away = h.absoluteVec(new Vec3(30.5, 0.9, 20.5));                    // земля в стороне
+        AtomicInteger phase = new AtomicInteger(), since = new AtomicInteger();
+        double[] yaw0 = {Double.NaN};
+        List<String> log = new ArrayList<>();
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            if (!(h.getLevel().getBlockEntity(h.absolutePos(camPos)) instanceof CameraBlockEntity cam)) return;
+            MountState ms = be.mountStates().isEmpty() ? null : be.mountStates().get(0);
+            if (ms == null || ms.mount == null || !ms.mount.isAssembled()) return;
+            Vec3 d = (phase.get() < 2 ? self : away).subtract(cam.eye());
+            float yaw = (float) Math.toDegrees(Math.atan2(-d.x, d.z));
+            float pitch = (float) -Math.toDegrees(Math.atan2(d.y, Math.hypot(d.x, d.z)));
+            cam.controlForTest(who, yaw, pitch, false);
+            switch (phase.get()) {
+                case 0 -> {
+                    since.set(t);
+                    phase.set(1);
+                }
+                case 1 -> {                                                   // взгляд на свой станок
+                    if (t == since.get() + 5) yaw0[0] = ms.mount.yaw();
+                    if (t > since.get() + 5 && Math.abs(ms.mount.yaw() - yaw0[0]) > 0.01) {
+                        h.fail("gun turned while the camera looks at it: " + yaw0[0] + " -> " + ms.mount.yaw() + ", status " + ms.status);
+                    }
+                    if (t == since.get() + 45) {
+                        if (ms.status != Status.CAMERA_SELF) h.fail("status " + ms.status + ", expected CAMERA_SELF");
+                        log.add("held " + yaw0[0] + " for 40 ticks, status " + ms.status);
+                        since.set(t);
+                        phase.set(2);
+                    }
+                }
+                case 2 -> {                                                   // взгляд в сторону - наводится
+                    if (Math.abs(net.minecraft.util.Mth.wrapDegrees(ms.mount.yaw() - yaw0[0])) > 20 && ms.status != Status.CAMERA_SELF) {
+                        log.add("looked away: turned to " + String.format(java.util.Locale.ROOT, "%.1f", ms.mount.yaw())
+                                + " after " + (t - since.get()) + " ticks, status " + ms.status);
+                        phase.set(3);
+                    } else if (t > since.get() + 80) {
+                        h.fail("gun did not follow the camera after looking away: yaw " + ms.mount.yaw() + ", status " + ms.status);
+                    }
+                }
+                default -> { }
+            }
+        });
+        h.succeedWhen(() -> {
+            if (phase.get() < 3) throw new GameTestAssertException("phase " + phase.get());
+            cleanupCamera(h, camPos, who);
+            FcsMod.LOG.info("[radar_fcs test] camera_self: {}", log);
+        });
+    }
+
+    private static void cleanupCamera(GameTestHelper h, BlockPos camPos, UUID who) {
+        if (h.getLevel().getBlockEntity(h.absolutePos(camPos)) instanceof CameraBlockEntity cam) cam.stopControl(who);
+    }
 }

@@ -71,6 +71,8 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     @Nullable private Vec3 aimPoint;
     /** Скорость точки взгляда (корабль Sable, сущность), блоков/тик: пушки берут упреждение. */
     private Vec3 aimVelocity = Vec3.ZERO;
+    /** Во что упёрся взгляд (блок, постройка, сущность) - чтобы орудие не наводилось само на себя. */
+    private ManualAim.Hit aimHit = ManualAim.Hit.NONE;
 
     public CameraBlockEntity(BlockPos pos, BlockState state) {
         super(FcsRegistry.CAMERA_BE.get(), pos, state);
@@ -209,7 +211,7 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     public ManualAim manualAim(long now) {
         if (controller(now) == null || aimPoint == null) return null;
         return new ManualAim(new Vec(aimPoint.x, aimPoint.y, aimPoint.z), fire, displayName().getString(),
-                new Vec(aimVelocity.x, aimVelocity.y, aimVelocity.z), guns, lastControl);
+                new Vec(aimVelocity.x, aimVelocity.y, aimVelocity.z), guns, lastControl, aimHit);
     }
 
     @Nullable
@@ -230,12 +232,15 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
         BlockHitResult bh = blocks.clip(new ClipContext(eye, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE,
                 CollisionContext.empty()));
         Vec3 stop = bh.getType() == HitResult.Type.MISS ? end : bh.getLocation();
+        ManualAim.Hit hit = bh.getType() == HitResult.Type.MISS ? ManualAim.Hit.NONE : new ManualAim.Hit(bh.getBlockPos().immutable(), null, -1);
         Vec3 vel = Vec3.ZERO;
         SableCompat.ShipHit ship = SableCompat.clipShips(sl, eye, stop, SableCompat.containingId(sl, worldPosition), blocks, true);
         if (ship != null) {
             stop = ship.point();
             vel = ship.velocity();
+            hit = new ManualAim.Hit(ship.block(), ship.ship(), -1);
         }
+        aimHit = hit;
         EntityHitResult eh = ProjectileUtil.getEntityHitResult(sl, viewer, eye, stop, new AABB(eye, stop).inflate(1.0),
                 e -> e != viewer && !e.isSpectator() && e.isPickable(), 0.3f);
         if (eh != null) {
@@ -243,6 +248,7 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
             // скорость сущности - по её перемещению за прошлый тик (на земле - без вертикали)
             Vec3 d = e.position().subtract(e.xo, e.yo, e.zo);
             aimVelocity = e.onGround() ? new Vec3(d.x, 0, d.z) : d;
+            aimHit = new ManualAim.Hit(null, SableCompat.trackingShipId(e), e.getId());
             return e.getBoundingBox().getCenter();
         }
         aimVelocity = vel;
