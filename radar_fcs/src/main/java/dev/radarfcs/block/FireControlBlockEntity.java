@@ -145,6 +145,10 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                 if (now % 100 == 0) {
                     shotsAt.keySet().removeIf(id -> sensor.get(id) == null);
                     dropped.removeIf(id -> sensor.get(id) == null);
+                    for (MountState m : mounts.values()) {
+                        m.shotsAt.keySet().removeIf(id -> sensor.get(id) == null);
+                        m.dropped.removeIf(id -> sensor.get(id) == null);
+                    }
                 }
             }
             List<MountState> order = new ArrayList<>(mounts.size());
@@ -549,6 +553,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         settings = next;
         effective = null;
         dropped.clear();
+        for (MountState m : mounts.values()) m.dropped.clear();
         setChanged();
         if (level != null) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         if (p != null) p.displayClientMessage(Component.translatable("radar_fcs.msg.settings_saved").withStyle(ChatFormatting.GREEN), true);
@@ -594,10 +599,21 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         return s;
     }
 
-    /** Выстрел пушки этого вычислителя по цели: учёт для сброса после N выстрелов. */
-    public void onShotAt(String targetId) {
-        int n = shotsAt.merge(targetId, 1, Integer::sum);
-        if (settings.dropAfterShots > 0 && n >= settings.dropAfterShots) dropped.add(targetId);
+    /**
+     * Выстрел орудия этого вычислителя по цели: учёт для сброса после N выстрелов. Счёт у каждого орудия свой: орудие
+     * после N своих выстрелов цель больше не берёт; цель сброшена для вычислителя, когда её сбросили все орудия.
+     * Раньше счёт был общий - при нескольких пушках каждая успевала выстрелить один раз.
+     */
+    public void onShotAt(MountState gun, String targetId) {
+        shotsAt.merge(targetId, 1, Integer::sum);
+        int n = gun.shotsAt.merge(targetId, 1, Integer::sum);
+        if (settings.dropAfterShots <= 0 || n < settings.dropAfterShots) return;
+        gun.dropped.add(targetId);
+        for (MountState m : mounts.values()) {
+            if (m.turret != null && m.turret.leader != null && !m.pos.equals(m.turret.leader)) continue;   // станки орудия - за ведущего
+            if (!m.dropped.contains(targetId)) return;
+        }
+        dropped.add(targetId);
     }
 
     public boolean isDropped(String targetId) {

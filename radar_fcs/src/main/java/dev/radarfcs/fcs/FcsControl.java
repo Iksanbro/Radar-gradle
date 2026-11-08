@@ -192,7 +192,7 @@ public final class FcsControl {
             cands = List.of(pt);
         } else {
             List<Track> pool = new ArrayList<>(active);
-            pool.removeIf(t -> fcs.isDropped(t.id));
+            pool.removeIf(t -> fcs.isDropped(t.id) || gunDropped(fcs, m, t.id));
             // свои цели пушки: разрешённые типы и уровни (назначенная вручную и белый список - в обход типов)
             EngageSettings ms = fcs.effectiveSettings().forMount(m.pos.asLong());
             pool.removeIf(t -> !t.id.equals(designated) && !TargetLists.matches(ms.whitelist, t)
@@ -486,7 +486,12 @@ public final class FcsControl {
         m.lastCountedShot = now;
         if (m.targetId != null) {
             if (m.targetId.equals(m.pick.currentId)) m.pick.shotsAtCurrent += n;
-            for (int i = 0; i < n; i++) fcs.onShotAt(m.targetId);
+            // сброс после N выстрелов - у каждого орудия свой счёт (станки орудия считаются за ведущего)
+            MountState gun = m.turret != null && m.turret.leader != null && fcs.mountState(m.turret.leader) != null
+                    ? fcs.mountState(m.turret.leader) : m;
+            if (gun != m && gun.lastSharedShot == now) return;      // залп станков орудия в одном тике - один выстрел
+            gun.lastSharedShot = now;
+            fcs.onShotAt(gun, m.targetId);
         }
     }
 
@@ -604,6 +609,12 @@ public final class FcsControl {
             }
         }
         return false;
+    }
+
+    /** Орудие уже сделало по цели N выстрелов (сброс после N выстрелов). */
+    private static boolean gunDropped(FireControlBlockEntity fcs, MountState m, String id) {
+        MountState gun = m.turret != null && m.turret.leader != null ? fcs.mountState(m.turret.leader) : m;
+        return (gun != null ? gun : m).dropped.contains(id);
     }
 
     /** id цели ручного наведения с камеры. */

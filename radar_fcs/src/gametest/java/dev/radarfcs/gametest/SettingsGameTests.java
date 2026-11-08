@@ -357,6 +357,36 @@ public class SettingsGameTests {
         });
     }
 
+    @BeforeBatch(batch = "set_drop2") public static void b5x(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "set_drop2") public static void a5x(ServerLevel l) { FcsGameTests.cleanup(l); }
+
+    /**
+     * Сброс после 5 выстрелов при двух пушках: у каждой свой счёт - каждая делает свои 5 выстрелов, потом цель сброшена.
+     * Раньше счёт был общий, и при нескольких пушках каждая успевала выстрелить 1-2 раза.
+     */
+    @GameTest(template = ARENA, batch = "set_drop2", timeoutTicks = 400)
+    public static void dropAfterShotsPerGun(GameTestHelper h) {
+        floor(h);
+        BlockPos m2 = new BlockPos(10, 1, 40);
+        autocannon(h, MOUNT, Direction.EAST, 4, 64);
+        autocannon(h, m2, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcs(h, FCS);
+        configure(be, s -> s.dropAfterShots = 5);
+        Mob husk = tough(movingTarget(h, EntityType.HUSK, new Vec3(40.5, 1, 24.5), 0.15, 16));
+        java.util.Map<BlockPos, Integer> shots = new java.util.HashMap<>();
+        h.onEachTick(() -> {
+            for (MountState m : be.mountStates()) shots.put(m.pos, m.shotsFired);
+        });
+        logEvery(h, be, "set_drop2", 40);
+        h.runAtTickTime(360, () -> {
+            FcsMod.LOG.info("[radar_fcs test] set_drop2: shots per gun {}, dropped {}", shots.values(), be.isDropped(husk.getUUID().toString()));
+            if (shots.size() != 2) h.fail("expected 2 guns, got " + shots);
+            for (int n : shots.values()) if (n != 5) h.fail("each gun must fire exactly 5 rounds: " + shots.values());
+            if (!be.isDropped(husk.getUUID().toString())) h.fail("target is not dropped");
+            h.succeed();
+        });
+    }
+
     /** Приоритет «наиболее дальняя»: пушка держит дальнюю цель, ближнюю не трогает. */
     @GameTest(template = ARENA, batch = "set_priority", timeoutTicks = 400)
     public static void farthestPriorityPicksFarTarget(GameTestHelper h) {

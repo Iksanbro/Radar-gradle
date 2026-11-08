@@ -163,9 +163,21 @@ public final class MountState implements ShotObserver.Listener {
     @Nullable public UUID fcsOwner;
     public String fcsTeam = "";
 
+    /** Тик последнего засчитанного выстрела: несколько снарядов одного тика (картечь, спаренные стволы) - один выстрел. */
+    private long lastShotTick = Long.MIN_VALUE;
+    /** Выстрелы этого орудия по целям (для сброса после N выстрелов) и цели, которые оно уже сбросило. */
+    public final java.util.Map<String, Integer> shotsAt = new java.util.HashMap<>();
+    public final java.util.Set<String> dropped = new java.util.HashSet<>();
+    /** Тик последнего выстрела, засчитанного этому орудию от его станков. */
+    public long lastSharedShot = Long.MIN_VALUE / 2;
+
     @Override
     public void onShotCounted(Entity projectile) {
-        pendingShots++;
+        long t = projectile.level().getGameTime();
+        if (t != lastShotTick) {
+            lastShotTick = t;
+            pendingShots++;
+        }
         shotsFired++;
         if (fcsPos != null) ProjectileTracking.markFired(projectile, fcsPos, fcsOwner, fcsTeam);
     }

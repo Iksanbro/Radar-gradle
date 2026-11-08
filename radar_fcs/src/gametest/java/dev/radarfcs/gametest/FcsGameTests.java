@@ -385,7 +385,7 @@ public class FcsGameTests {
      * Большая пушка со скорострельным затвором: затвор позади оси, на оси ствол с картриджем, дальше
      * нарезные стволы CBC-AT (снаряд в первом). Картридж - полный (сила 4).
      */
-    private static boolean qfRifledCannon(GameTestHelper h, BlockPos mount, Direction dir, String material, int rifled) {
+    static boolean qfRifledCannon(GameTestHelper h, BlockPos mount, Direction dir, String material, int rifled) {
         Block rifledBlock = block("cbc_at:" + material + "_rifled_barrel");
         if (rifledBlock == Blocks.AIR) return false;
         h.setBlock(mount, block("createbigcannons:cannon_mount").defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, dir));
