@@ -304,6 +304,18 @@
    тика от одной пушки (картечь, спаренные стволы) - один выстрел (`MountState.onShotCounted`, `lastShotTick`).
    Тест `SettingsGameTests.dropAfterShotsPerGun` (две автопушки, по 5 выстрелов каждая).
 
+33. (2.1) «Обучающие видео (как в Create) для аппаратуры» - сцены Ponder: `client/ponder/FcsPonderPlugin`
+   (регистрация - `PonderIndex.addPlugin` из конструктора `FcsMod` только на клиенте, как у Create; тег
+   `radar_fcs:fire_control` со всеми блоками) и `client/ponder/FcsScenes` (8 сцен: battery, aim_controllers, network,
+   radar_monitor, transponder, camera, turret, gun_drive; `CreateSceneBuilder` - скорости валов). Схемы -
+   `assets/radar_fcs/ponder/*.nbt`, генератор `devtools/ponder_schematics.py` (структура NBT, свойства блоков - только
+   нужные). Тексты - `radar_fcs.ponder.<сцена>.header/text_N` в файлах перевода, N - порядок вызова `say()` в сцене;
+   генератор `devtools/ponder_lang.py` (ru и en, проверяет число `say()` в каждой сцене). **Камера Ponder смотрит с
+   северо-запада** - видны грани на север и запад: лицевые стороны блоков в схемах - на север. `SableCompat` не
+   спрашивает Sable про миры-модели (`virtual`: уровни `net.createmod.*` - Ponder, схематики), иначе ошибка его API
+   выключила бы совместимость на всю игру. Проверка: dev-клиент `-PfcsScreenshot -PfcsPonderOnly`
+   (`DevScreenshots.ponderTour`: окно Ponder каждой сцены, перемотка `seekToTime`, кадры `ponder_<сцена>_1..3`).
+
 ## 2. Окружение и сборка
 | Что | Значение |
 |---|---|

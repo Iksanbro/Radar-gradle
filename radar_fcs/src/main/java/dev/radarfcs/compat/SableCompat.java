@@ -52,11 +52,19 @@ public final class SableCompat {
         broken = true;
     }
 
+    /**
+     * Мир-модель (сцены Ponder, схематики Create - уровни из net.createmod): у Sable в нём ничего нет, а ошибка его
+     * API выключила бы совместимость на всю игру - такие уровни не спрашиваем.
+     */
+    private static boolean virtual(Level level) {
+        return level == null || level.getClass().getName().startsWith("net.createmod.");
+    }
+
     /** Корабль, в плоте которого находится блок, или null (блок в обычном мире). */
     @Nullable
     public static SubLevelAccess containing(Level level, BlockPos pos) {
         SableCompanion api = api();
-        if (api == null) return null;
+        if (api == null || virtual(level)) return null;
         try {
             return api.getContaining(level, (net.minecraft.core.Vec3i) pos);
         } catch (Throwable t) {
@@ -89,7 +97,7 @@ public final class SableCompat {
     /** Мировая позиция точки (если точка в плоте корабля - через позу корабля). */
     public static Vec3 toWorld(Level level, Vec3 pos) {
         SableCompanion api = api();
-        if (api == null) return pos;
+        if (api == null || virtual(level)) return pos;
         try {
             return api.projectOutOfSubLevel(level, (net.minecraft.core.Position) pos);
         } catch (Throwable t) {
@@ -185,7 +193,7 @@ public final class SableCompat {
     public static List<Ship> shipsIn(Level level, AABB area) {
         List<Ship> out = new ArrayList<>();
         SableCompanion api = api();
-        if (api == null) return out;
+        if (api == null || virtual(level)) return out;
         try {
             for (SubLevelAccess s : api.getAllIntersecting(level, new BoundingBox3d(area))) {
                 if (s != null) out.add(describe(level, s));
@@ -218,7 +226,7 @@ public final class SableCompat {
     public static ShipHit clipShips(Level level, Vec3 from, Vec3 to, @Nullable UUID ignore, net.minecraft.world.level.BlockGetter blocks,
                                     boolean velocity) {
         SableCompanion api = api();
-        if (api == null) return null;
+        if (api == null || virtual(level)) return null;
         ShipHit best = null;
         double bestD = Double.POSITIVE_INFINITY;
         try {

@@ -54,6 +54,10 @@ public final class DevScreenshots {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null || mc.getSingleplayerServer() == null) return;
         tick++;
+        if (Boolean.getBoolean("radar_fcs.screenshot.ponder")) {
+            ponderTour(mc);
+            return;
+        }
         var server = mc.getSingleplayerServer();
         // каждый запуск - на новом месте плоского мира, чтобы сцены прошлых запусков не попадали в кадр
         if (tick == 2) server.execute(() -> {
@@ -571,6 +575,59 @@ public final class DevScreenshots {
     }
 
     private static BlockPos radarBearing;
+
+    /** Сцены Ponder: по предмету каждой сцены - окно Ponder, перемотка и три кадра (-PfcsPonderOnly). */
+    private static final String[][] PONDER = {
+            {"fire_control_computer", "battery"}, {"yaw_controller", "aim_controllers"}, {"radar_link", "network"},
+            {"radar_monitor", "radar_monitor"}, {"iff_transponder", "transponder"}, {"camera", "camera"},
+            {"gun_rotator", "turret"}, {"gun_drive", "gun_drive"}};
+
+    private static void ponderTour(Minecraft mc) {
+        int start = 60, step = 50;
+        int i = (tick - start) / step, t = (tick - start) % step;
+        if (tick < start) return;
+        if (i >= PONDER.length) {
+            if (t == 2) mc.stop();
+            return;
+        }
+        String item = PONDER[i][0], name = PONDER[i][1];
+        try {
+            if (t == 0) {
+                mc.setScreen(net.createmod.ponder.foundation.ui.PonderUI.of(new net.minecraft.world.item.ItemStack(
+                        BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath(FcsMod.MODID, item)))));
+            }
+            if (!(mc.screen instanceof net.createmod.ponder.foundation.ui.PonderUI ui)) {
+                if (t == 5) FcsMod.LOG.warn("[radar_fcs dev] ponder {}: no PonderUI ({})", name, mc.screen);
+                return;
+            }
+            var scene = ponderScene(ui);
+            if (t == 5 && scene != null) FcsMod.LOG.info("[radar_fcs dev] ponder {}: '{}' {} ticks", name, scene.getTitle(), scene.getTotalTime());
+            int total = scene != null ? scene.getTotalTime() : 600;
+            if (t == 6) ui.seekToTime(Math.min(total - 5, 130));
+            if (t == 16) shot(mc, "ponder_" + name + "_1");
+            if (t == 18) ui.seekToTime(total * 55 / 100);
+            if (t == 28) shot(mc, "ponder_" + name + "_2");
+            if (t == 30) ui.seekToTime(total - 40);
+            if (t == 40) shot(mc, "ponder_" + name + "_3");
+        } catch (Throwable e) {
+            FcsMod.LOG.error("[radar_fcs dev] ponder {} failed", name, e);
+        }
+    }
+
+    @org.jetbrains.annotations.Nullable
+    private static net.createmod.ponder.foundation.PonderScene ponderScene(net.createmod.ponder.foundation.ui.PonderUI ui) {
+        try {
+            var f = net.createmod.ponder.foundation.ui.PonderUI.class.getDeclaredField("scenes");
+            f.setAccessible(true);
+            var idx = net.createmod.ponder.foundation.ui.PonderUI.class.getDeclaredField("index");
+            idx.setAccessible(true);
+            java.util.List<?> list = (java.util.List<?>) f.get(ui);
+            Object o = list.get(idx.getInt(ui));
+            return (net.createmod.ponder.foundation.PonderScene) o;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return null;
+        }
+    }
 
     private static void shot(Minecraft mc, String name) {
         Screenshot.grab(mc.gameDirectory, name + ".png", mc.getMainRenderTarget(),
