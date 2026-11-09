@@ -160,6 +160,26 @@ public final class CameraClient {
         PacketDistributor.sendToServer(new CameraPayloads.Control(camera, yaw, pitch, fire));
     }
 
+    /**
+     * Камера на постройке Sable: глаз - каждый кадр по позе, в которой постройка рисуется (между тиками). По тикам
+     * вид отставал от постройки и дёргался, когда орудие с камерой поворачивалось.
+     */
+    @SubscribeEvent
+    public static void frame(net.neoforged.neoforge.client.event.RenderFrameEvent.Pre event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (!active() || view == null || mc.level == null || !mc.level.isLoaded(camera)) return;
+        if (!(mc.level.getBlockEntity(camera) instanceof CameraBlockEntity cbe)) return;
+        if (dev.radarfcs.compat.SableCompat.containingId(mc.level, camera) == null) return;
+        float pt = event.getPartialTick().getGameTimeDeltaPartialTick(true);
+        Vec3 e = dev.radarfcs.compat.SableCompat.toWorldRender(mc.level, camera, cbe.pivot(), pt);
+        // xo = x: камера Minecraft берёт ровно эту точку при любой доле тика
+        view.setPos(e.x, e.y, e.z);
+        view.xo = view.xOld = e.x;
+        view.yo = view.yOld = e.y;
+        view.zo = view.zOld = e.z;
+        eye = e;
+    }
+
     /** Взгляд камеры - поворот игрока с точностью до кадра (мышь), а не по тикам. */
     @SubscribeEvent
     public static void angles(ViewportEvent.ComputeCameraAngles event) {

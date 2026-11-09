@@ -106,6 +106,21 @@ public final class SableCompat {
         }
     }
 
+    /**
+     * Клиент: мировая точка в позе, в которой постройка Sable рисуется в этом кадре (между тиками), - чтобы вид камеры
+     * на движущейся постройке не дёргался относительно неё. Точка не в постройке - как есть.
+     */
+    public static Vec3 toWorldRender(Level level, BlockPos pos, Vec3 local, float partialTick) {
+        SableCompanion api = api();
+        if (api == null || virtual(level) || !level.isClientSide) return local;
+        try {
+            dev.ryanhcode.sable.companion.ClientSubLevelAccess c = api.getContainingClient((net.minecraft.core.Vec3i) pos);
+            return c == null ? local : c.renderPose(partialTick).transformPosition(local);
+        } catch (Throwable t) {
+            return toWorld(level, local);                                  // на клиенте совместимость не выключаем
+        }
+    }
+
     /** Направление из плот-координат корабля в мировые. */
     public static Vec3 dirToWorld(@Nullable SubLevelAccess ship, Vec3 dir) {
         if (ship == null) return dir;

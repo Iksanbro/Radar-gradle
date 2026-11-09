@@ -132,6 +132,7 @@ neoForge {
                 if (project.hasProperty('fcsCameraOnly')) systemProperty 'radar_fcs.screenshot.camera', 'true'
                 if (project.hasProperty('fcsSwivelOnly')) systemProperty 'radar_fcs.screenshot.swivel', 'true'
                 if (project.hasProperty('fcsPonderOnly')) systemProperty 'radar_fcs.screenshot.ponder', 'true'
+                if (project.hasProperty('fcsCamGun')) { systemProperty 'radar_fcs.screenshot.swivel', 'true'; systemProperty 'radar_fcs.screenshot.camgun', 'true' }
                 programArguments.addAll('--quickPlaySingleplayer', project.findProperty('fcsWorld') ?: 'fcs_test',
                         '--width', '1280', '--height', '720')
             }

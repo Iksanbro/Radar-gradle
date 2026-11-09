@@ -170,6 +170,8 @@ public final class MountState implements ShotObserver.Listener {
     public final java.util.Set<String> dropped = new java.util.HashSet<>();
     /** Тик последнего выстрела, засчитанного этому орудию от его станков. */
     public long lastSharedShot = Long.MIN_VALUE / 2;
+    /** Камера смотрела на само орудие: оно стоит до этого тика. */
+    public long selfHoldUntil = Long.MIN_VALUE / 2;
 
     @Override
     public void onShotCounted(Entity projectile) {

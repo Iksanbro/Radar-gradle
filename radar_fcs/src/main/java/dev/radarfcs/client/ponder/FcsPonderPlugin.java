@@ -33,8 +33,11 @@ public final class FcsPonderPlugin implements PonderPlugin {
 
     @Override
     public void registerScenes(PonderSceneRegistrationHelper<ResourceLocation> helper) {
+        // своё орудие на Sable - на подшипниках-шарнирах Create Aeronautics (Simulated), если он установлен
+        boolean swivel = net.neoforged.fml.ModList.get().isLoaded("simulated");
         helper.forComponents(id(FcsRegistry.FIRE_CONTROL.get()))
                 .addStoryBoard("battery", FcsScenes::battery, TAG)
+                .addStoryBoard("computer", FcsScenes::computerSettings, TAG)
                 .addStoryBoard("network", FcsScenes::network, TAG);
         helper.forComponents(id(FcsRegistry.RADAR_LINK_ITEM.get()))
                 .addStoryBoard("network", FcsScenes::network, TAG)
@@ -49,13 +52,12 @@ public final class FcsPonderPlugin implements PonderPlugin {
                 .addStoryBoard("transponder", FcsScenes::transponder, TAG);
         helper.forComponents(id(FcsRegistry.CAMERA_ITEM.get()), id(FcsRegistry.CAMERA_MONITOR.get()))
                 .addStoryBoard("camera", FcsScenes::camera, TAG);
-        helper.forComponents(id(FcsRegistry.GUN_ROTATOR.get()), id(FcsRegistry.SIGHT.get()))
-                .addStoryBoard("turret", FcsScenes::turret, TAG);
-        helper.forComponents(id(FcsRegistry.GUN_LINK_ITEM.get()))
-                .addStoryBoard("turret", FcsScenes::turret, TAG)
-                .addStoryBoard("gun_drive", FcsScenes::gunDrive, TAG);
-        helper.forComponents(id(FcsRegistry.GUN_DRIVE.get()))
-                .addStoryBoard("gun_drive", FcsScenes::gunDrive, TAG);
+        var gun = helper.forComponents(id(FcsRegistry.SIGHT.get()), id(FcsRegistry.GUN_LINK_ITEM.get()), id(FcsRegistry.GUN_DRIVE.get()));
+        if (swivel) gun.addStoryBoard("swivel_turret", FcsScenes::swivelTurret, TAG);
+        gun.addStoryBoard("gun_drive", FcsScenes::gunDrive, TAG);
+        var rotator = helper.forComponents(id(FcsRegistry.GUN_ROTATOR.get()));
+        if (swivel) rotator.addStoryBoard("swivel_turret", FcsScenes::swivelTurret, TAG);
+        rotator.addStoryBoard("gun_rotator", FcsScenes::gunRotator, TAG);
     }
 
     @Override

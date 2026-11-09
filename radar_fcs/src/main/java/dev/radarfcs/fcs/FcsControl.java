@@ -129,7 +129,10 @@ public final class FcsControl {
         Vec pivot = new Vec(pivotW.x, pivotW.y, pivotW.z);
         // камера смотрит на само орудие: точка взгляда поворачивалась бы вместе с ним (орудие «гонялось» бы за ней) -
         // орудие стоит, ЛКМ по-прежнему стреляет
-        if (manual != null && aimsAtItself(level, m, d, tu, chain, drives, manual.hit())) {
+        // удержание полсекунды: орудие, чуть повернувшись, не переключается туда-обратно на границе своей постройки
+        boolean self = manual != null && aimsAtItself(level, m, d, tu, chain, drives, manual, pivotW);
+        if (self) m.selfHoldUntil = now + SELF_HOLD_TICKS;
+        if (manual != null && (self || now < m.selfHoldUntil)) {
             if (chain != null) {
                 for (GunRotatorBlockEntity r : chain) {
                     double ang = r.angle();
@@ -562,10 +565,18 @@ public final class FcsControl {
      * Взгляд камеры упёрся в само орудие: в блок станка, прицела, вращателя, привода или линк/контроллер на них, в
      * поворотную часть орудия (постройку Sable его вращателя или подшипника с приводом) или в пушку станка.
      */
+    /** Сколько тиков орудие стоит после взгляда камеры на само себя (дольше, пока взгляд на нём). */
+    static final int SELF_HOLD_TICKS = 10;
+    /** Точка взгляда ближе этого к оси орудия - тоже «на себя»: наводиться на свою ось бессмысленно. */
+    static final double SELF_RADIUS = 4.0;
+
     static boolean aimsAtItself(ServerLevel level, MountState m, @Nullable CbcMount d, @Nullable Turret tu,
                                 @Nullable List<GunRotatorBlockEntity> chain, @Nullable List<GunDriveBlockEntity> drives,
-                                ManualAim.Hit hit) {
+                                ManualAim manual, Vec3 pivotW) {
+        ManualAim.Hit hit = manual.hit();
         if (hit == null || hit == ManualAim.Hit.NONE) return false;
+        Vec look = manual.point();
+        if (look.sub(new Vec(pivotW.x, pivotW.y, pivotW.z)).length() < SELF_RADIUS) return true;
         Set<net.minecraft.core.BlockPos> parts = new HashSet<>();
         parts.add(m.pos);
         if (d != null) parts.add(d.pos());
@@ -600,13 +611,25 @@ public final class FcsControl {
                 if (e != null && e.getId() == hit.entity()) return true;
             }
         }
-        if (hit.ship() != null) {
+        if (hit.ship() != null && tu != null) {
             if (chain != null) for (GunRotatorBlockEntity r : chain) if (hit.ship().equals(r.subLevel())) return true;
-            // приводы крутят постройку, на которой стоит орудие (подшипник-шарнир): она - поворотная часть
-            if (drives != null && !drives.isEmpty()) {
-                net.minecraft.core.BlockPos key = tu != null && tu.sight != null ? tu.sight : m.pos;
-                if (hit.ship().equals(SableCompat.containingId(level, key))) return true;
+            for (GunRotatorBlockEntity r : tu.rotatorEntities(level)) if (hit.ship().equals(r.subLevel())) return true;
+            // постройки, на которых стоят части орудия (прицел, станки, приводы наклона, вращатели), - поворотные;
+            // постройка под приводом курса - основание (корабль с орудием), на неё смотреть можно
+            Set<UUID> base = new HashSet<>();
+            if (drives != null) for (GunDriveBlockEntity dr : drives) {
+                if (!dr.pitch()) base.add(SableCompat.containingId(level, dr.getBlockPos()));
             }
+            Set<UUID> moving = new HashSet<>();
+            List<net.minecraft.core.BlockPos> partPos = new ArrayList<>(tu.mounts);
+            if (tu.sight != null) partPos.add(tu.sight);
+            if (drives != null) for (GunDriveBlockEntity dr : drives) if (dr.pitch()) partPos.add(dr.getBlockPos());
+            partPos.addAll(tu.rotators);
+            for (net.minecraft.core.BlockPos q : partPos) {
+                UUID id = SableCompat.containingId(level, q);
+                if (id != null && !base.contains(id)) moving.add(id);
+            }
+            if (moving.contains(hit.ship())) return true;
         }
         return false;
     }

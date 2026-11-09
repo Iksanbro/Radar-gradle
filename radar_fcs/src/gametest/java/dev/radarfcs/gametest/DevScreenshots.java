@@ -288,6 +288,10 @@ public final class DevScreenshots {
                 new Vec3(base.getX() - 8.5, base.getY() + 8.5, base.getZ() + 34.5)));
         if (tick == 1110) server.execute(() -> assembleSwivel(server));
         if (tick == 1130) server.execute(() -> placeLink(server.overworld(), base.offset(-12, 1, 24), Direction.SOUTH, base));
+        if (Boolean.getBoolean("radar_fcs.screenshot.camgun") && tick >= 1150 && tick < 1450) {
+            final int t = tick;
+            server.execute(() -> camGun(server, t));
+        }
         if (tick >= 1140 && tick <= 1500 && tick % 10 == 0) server.execute(() -> logTurret(server));
         if (tick == 1400) shot(mc, "swivel_aim");
         if (tick == 1502) mc.stop();
@@ -450,6 +454,59 @@ public final class DevScreenshots {
         level.addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(level,
                 new net.minecraft.world.phys.AABB(m.getX() - 2, m.getY(), m.getZ() - 1, m.getX() + 6, m.getY() + 4, m.getZ() + 3)));
         swivelBearing = b;
+        if (Boolean.getBoolean("radar_fcs.screenshot.camgun")) {
+            // камера на поворотной части орудия (уезжает вместе с ним в постройку Sable)
+            BlockPos c = m.west(2);
+            level.setBlock(c, block("create:andesite_casing").defaultBlockState(), 3);
+            level.setBlock(c.above(), FcsRegistry.CAMERA.get().defaultBlockState()
+                    .setValue(dev.radarfcs.block.CameraBlock.FACING, Direction.UP), 3);
+            if (level.getBlockEntity(c.above()) instanceof dev.radarfcs.block.CameraBlockEntity cam) cam.setNetwork(SCENE_NET);
+        }
+    }
+
+    private static final java.util.UUID CAM_WHO = java.util.UUID.randomUUID();
+
+    /** Камера на орудии: смотрит на цель (phase 0), затем на ствол своего же орудия (phase 1); лог по тикам. */
+    private static void camGun(net.minecraft.server.MinecraftServer server, int t) {
+        ServerLevel level = server.overworld();
+        dev.radarfcs.block.CameraBlockEntity cam = null;
+        for (BlockPos p : dev.radarfcs.link.LinkRegistry.members(level, SCENE_NET)) {
+            if (level.getBlockEntity(p) instanceof dev.radarfcs.block.CameraBlockEntity c && SableCompat.containingId(level, p) != null) cam = c;
+        }
+        if (cam == null) {
+            if (t % 20 == 0) FcsMod.LOG.info("[radar_fcs dev] camgun t={} no camera in the network", t);
+            return;
+        }
+        dev.radarfcs.fcs.MountState ms = null;
+        if (level.getBlockEntity(base) instanceof dev.radarfcs.block.FireControlBlockEntity fcs)
+            for (var x : fcs.mountStates()) if (x.turret != null) ms = x;
+        Vec3 eye = cam.eye();
+        Vec3 target;
+        Vec3 pivotW = null, barrelW = null;
+        if (ms != null && ms.mount != null && ms.mount.localBarrelDirection() != null) {
+            pivotW = SableCompat.toWorld(level, ms.mount.localPivot());
+            barrelW = SableCompat.dirToWorld(SableCompat.containing(level, ms.pos), ms.mount.localBarrelDirection());
+        }
+        if (t < 1300 || pivotW == null) target = husk != null ? husk.getBoundingBox().getCenter() : eye.add(10, 0, 0);
+        else target = pivotW.add(barrelW.scale(3));                      // ствол своего орудия
+        Vec3 d = target.subtract(eye);
+        float yaw = (float) Math.toDegrees(Math.atan2(-d.x, d.z));
+        float pitch = (float) -Math.toDegrees(Math.atan2(d.y, Math.hypot(d.x, d.z)));
+        cam.controlForTest(CAM_WHO, yaw, pitch, false);
+        if (t % 2 == 0) {
+            var ma = cam.manualAim(level.getGameTime());
+            String drives = "";
+            if (ms != null && ms.turret != null) for (BlockPos dp : ms.turret.drives)
+                if (level.getBlockEntity(dp) instanceof dev.radarfcs.block.GunDriveBlockEntity g)
+                    drives += String.format(java.util.Locale.ROOT, " drive%s %.2f", g.pitch() ? "P" : "Y", g.output());
+            FcsMod.LOG.info("[radar_fcs dev] camgun t={} phase {} eye {} aim {} hit {} status {} barrel {}{}", t, t < 1300 ? "target" : "self",
+                    fmt(eye), cam.aimPoint() == null ? null : fmt(cam.aimPoint()), ma == null ? null : ma.hit(),
+                    ms == null ? null : ms.status, barrelW == null ? null : fmt(barrelW), drives);
+        }
+    }
+
+    private static String fmt(Vec3 v) {
+        return String.format(java.util.Locale.ROOT, "(%.2f, %.2f, %.2f)", v.x, v.y, v.z);
     }
 
     private static BlockPos swivelBearing;
@@ -578,12 +635,13 @@ public final class DevScreenshots {
 
     /** Сцены Ponder: по предмету каждой сцены - окно Ponder, перемотка и три кадра (-PfcsPonderOnly). */
     private static final String[][] PONDER = {
-            {"fire_control_computer", "battery"}, {"yaw_controller", "aim_controllers"}, {"radar_link", "network"},
-            {"radar_monitor", "radar_monitor"}, {"iff_transponder", "transponder"}, {"camera", "camera"},
-            {"gun_rotator", "turret"}, {"gun_drive", "gun_drive"}};
+            {"fire_control_computer", "battery", "0"}, {"fire_control_computer", "computer_settings", "1"},
+            {"yaw_controller", "aim_controllers", "0"}, {"radar_link", "network", "0"},
+            {"radar_monitor", "radar_monitor", "0"}, {"iff_transponder", "transponder", "0"}, {"camera", "camera", "0"},
+            {"sight", "swivel_turret", "0"}, {"gun_rotator", "gun_rotator", "1"}, {"gun_drive", "gun_drive", "1"}};
 
     private static void ponderTour(Minecraft mc) {
-        int start = 60, step = 50;
+        int start = 60, step = 70;
         int i = (tick - start) / step, t = (tick - start) % step;
         if (tick < start) return;
         if (i >= PONDER.length) {
@@ -591,6 +649,7 @@ public final class DevScreenshots {
             return;
         }
         String item = PONDER[i][0], name = PONDER[i][1];
+        int scrolls = Integer.parseInt(PONDER[i][2]);
         try {
             if (t == 0) {
                 mc.setScreen(net.createmod.ponder.foundation.ui.PonderUI.of(new net.minecraft.world.item.ItemStack(
@@ -600,15 +659,20 @@ public final class DevScreenshots {
                 if (t == 5) FcsMod.LOG.warn("[radar_fcs dev] ponder {}: no PonderUI ({})", name, mc.screen);
                 return;
             }
+            if (t >= 3 && t < 3 + scrolls) {
+                var m = net.createmod.ponder.foundation.ui.PonderUI.class.getDeclaredMethod("scroll", boolean.class);
+                m.setAccessible(true);
+                m.invoke(ui, true);
+            }
             var scene = ponderScene(ui);
-            if (t == 5 && scene != null) FcsMod.LOG.info("[radar_fcs dev] ponder {}: '{}' {} ticks", name, scene.getTitle(), scene.getTotalTime());
+            if (t == 20 && scene != null) FcsMod.LOG.info("[radar_fcs dev] ponder {}: '{}' {} ticks", name, scene.getTitle(), scene.getTotalTime());
             int total = scene != null ? scene.getTotalTime() : 600;
-            if (t == 6) ui.seekToTime(Math.min(total - 5, 130));
-            if (t == 16) shot(mc, "ponder_" + name + "_1");
-            if (t == 18) ui.seekToTime(total * 55 / 100);
-            if (t == 28) shot(mc, "ponder_" + name + "_2");
-            if (t == 30) ui.seekToTime(total - 40);
-            if (t == 40) shot(mc, "ponder_" + name + "_3");
+            if (t == 21) ui.seekToTime(Math.min(total - 5, 130));
+            if (t == 31) shot(mc, "ponder_" + name + "_1");
+            if (t == 33) ui.seekToTime(total * 55 / 100);
+            if (t == 43) shot(mc, "ponder_" + name + "_2");
+            if (t == 45) ui.seekToTime(total - 40);
+            if (t == 55) shot(mc, "ponder_" + name + "_3");
         } catch (Throwable e) {
             FcsMod.LOG.error("[radar_fcs dev] ponder {} failed", name, e);
         }

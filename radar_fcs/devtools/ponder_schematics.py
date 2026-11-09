@@ -186,6 +186,40 @@ def camera():
     s.save('camera')
 
 
+def computer():
+    s = Schematic(5, 3, 5).plate()
+    s.set(2, 1, 2, FCS + 'fire_control_computer', facing='north')
+    link(s, 2, 2, 2, 'up')
+    s.save('computer')
+
+
+def swivel_turret():
+    """Своё орудие на подшипниках-шарнирах Create Aeronautics (Simulated): курс - подшипник выходом вверх, наклон -
+    подшипник выходом на север на его поворотной части; приводы через шестерни, ствол из блоков и прицел."""
+    s = Schematic(7, 7, 7).plate()
+    motor(s, 1, 0, 3, 'up')
+    s.set(1, 1, 3, FCS + 'gun_drive', facing='up', pitch='false')
+    link(s, 0, 1, 3, 'west', gun=True)
+    link(s, 1, 1, 2, 'north')
+    s.set(1, 2, 3, 'create:cogwheel', axis='y')
+    s.set(2, 2, 3, 'create:cogwheel', axis='y')
+    s.set(3, 2, 3, 'simulated:swivel_bearing', facing='up')
+    for x, z in ((3, 3), (2, 3), (2, 4), (3, 4)):
+        s.set(x, 3, z, 'create:andesite_casing')
+    s.set(3, 4, 3, 'create:andesite_casing')
+    s.set(3, 4, 2, 'simulated:swivel_bearing', facing='north')
+    s.set(2, 4, 2, 'create:cogwheel', axis='z')
+    s.set(2, 4, 3, FCS + 'gun_drive', facing='north', pitch='true')
+    motor(s, 2, 4, 4, 'north')
+    link(s, 2, 5, 3, 'up', gun=True)
+    s.set(3, 4, 1, 'create:andesite_casing')
+    for x in (4, 5, 6):
+        s.set(x, 4, 1, 'createbigcannons:cast_iron_autocannon_barrel', facing='east')
+    s.set(4, 5, 1, FCS + 'sight', facing='east')
+    link(s, 4, 6, 1, 'up', gun=True)
+    s.save('swivel_turret')
+
+
 def turret():
     s = Schematic(5, 6, 5).plate()
     motor(s, 2, 0, 2, 'up')
@@ -197,7 +231,7 @@ def turret():
     s.set(4, 2, 2, 'create:andesite_casing')
     s.set(3, 3, 2, FCS + 'sight', facing='east')
     link(s, 3, 4, 2, 'up', gun=True)
-    s.save('turret')
+    s.save('gun_rotator')
 
 
 def gun_drive():
@@ -215,6 +249,6 @@ def gun_drive():
 
 
 if __name__ == '__main__':
-    for f in (battery, aim_controllers, network, radar_monitor, transponder, camera, turret, gun_drive):
+    for f in (battery, computer, aim_controllers, network, radar_monitor, transponder, camera, swivel_turret, turret, gun_drive):
         f()
     sys.exit(0)
