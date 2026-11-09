@@ -353,6 +353,105 @@ public class CameraGameTests {
         });
     }
 
+    /**
+     * Камера на самом орудии (на его поворотной постройке Sable A с прицелом) смотрит на соседнюю постройку B того же
+     * орудия: луч проходит сквозь своё орудие (точка взгляда - далеко за B), орудие не стоит в CAMERA_SELF и не
+     * «гоняется» за точкой на себе. Камера на земле, смотрящая на B, - орудие стоит (CAMERA_SELF).
+     */
+    @GameTest(template = ARENA, batch = "camera", timeoutTicks = 300)
+    public static void cameraOnGunLooksThroughOwnGun(GameTestHelper h) {
+        if (!net.neoforged.fml.ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        BlockPos fcsPos = new BlockPos(6, 1, 28);
+        FireControlBlockEntity be = FcsGameTests.fcsBare(h, fcsPos);
+        UUID radarNet = UUID.randomUUID(), gunNet = UUID.randomUUID();
+        FcsGameTests.placeLink(h, fcsPos, Direction.UP, radarNet);
+        // привод курса на земле (основание): орудийный и радарный линки
+        BlockPos drive = new BlockPos(18, 1, 30);
+        h.setBlock(drive, FcsRegistry.GUN_DRIVE.get().defaultBlockState()
+                .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.UP));
+        FcsGameTests.CREATED.add(h.absolutePos(drive));
+        TurretGameTests.gunLink(h, drive, Direction.WEST, gunNet);
+        FcsGameTests.placeLink(h, drive, Direction.NORTH, radarNet);
+        // постройка A: прицел (с орудийным линком) и камера на орудии
+        for (int x = 20; x <= 21; x++) for (int z = 30; z <= 31; z++) h.setBlock(new BlockPos(x, 2, z), net.minecraft.world.level.block.Blocks.IRON_BLOCK.defaultBlockState());
+        h.setBlock(new BlockPos(20, 3, 30), FcsRegistry.SIGHT.get().defaultBlockState().setValue(dev.radarfcs.block.SightBlock.FACING, Direction.EAST));
+        TurretGameTests.gunLink(h, new BlockPos(20, 3, 30), Direction.UP, gunNet);
+        BlockPos camRel = new BlockPos(21, 3, 31);
+        h.setBlock(camRel, FcsRegistry.CAMERA.get().defaultBlockState().setValue(CameraBlock.FACING, Direction.UP));
+        if (h.getLevel().getBlockEntity(h.absolutePos(camRel)) instanceof CameraBlockEntity c) c.setNetwork(radarNet);
+        // постройка B вплотную к A: другая поворотная часть того же орудия (стенка перед камерой)
+        for (int x = 22; x <= 23; x++) for (int y = 2; y <= 4; y++) for (int z = 30; z <= 31; z++)
+            h.setBlock(new BlockPos(x, y, z), net.minecraft.world.level.block.Blocks.IRON_BLOCK.defaultBlockState());
+        Object a = SableTestSupport.staticSub(h, new BlockPos(20, 2, 30), new BlockPos(21, 4, 31));
+        Object b = SableTestSupport.staticSub(h, new BlockPos(22, 2, 30), new BlockPos(23, 4, 31));
+        UUID bId = SableTestSupport.subId(b);
+        // камера на земле - для второй половины
+        BlockPos groundCam = new BlockPos(14, 3, 34);
+        h.setBlock(groundCam, FcsRegistry.CAMERA.get().defaultBlockState().setValue(CameraBlock.FACING, Direction.UP));
+        FcsGameTests.CREATED.add(h.absolutePos(groundCam));
+        if (h.getLevel().getBlockEntity(h.absolutePos(groundCam)) instanceof CameraBlockEntity c) c.setNetwork(radarNet);
+        UUID who = UUID.randomUUID();
+        AtomicInteger phase = new AtomicInteger(), since = new AtomicInteger();
+        List<String> log = new ArrayList<>();
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            if (t < 25) return;
+            CameraBlockEntity onGun = null;
+            for (BlockPos p : dev.radarfcs.link.LinkRegistry.members(h.getLevel(), radarNet)) {
+                if (h.getLevel().getBlockEntity(p) instanceof CameraBlockEntity c && dev.radarfcs.compat.SableCompat.containingId(h.getLevel(), p) != null) onGun = c;
+            }
+            MountState ms = be.mountStates().isEmpty() ? null : be.mountStates().get(0);
+            Vec3 bCenter = SableTestSupport.box(b).getCenter();
+            switch (phase.get()) {
+                case 0 -> {                                                   // камера на орудии смотрит в B
+                    if (onGun == null) {
+                        if (t > 120) h.fail("camera on the gun is not in the network");
+                        return;
+                    }
+                    Vec3 d = bCenter.subtract(onGun.eye());
+                    onGun.controlForTest(who, (float) Math.toDegrees(Math.atan2(-d.x, d.z)),
+                            (float) -Math.toDegrees(Math.atan2(d.y, Math.hypot(d.x, d.z))), false);
+                    if (since.get() == 0) since.set(t);
+                    if (t - since.get() < 20) return;
+                    Vec3 aim = onGun.aimPoint();
+                    var ma = onGun.manualAim(h.getLevel().getGameTime());
+                    if (ms == null || aim == null || ma == null) h.fail("no turret state or aim: " + ms + " " + aim);
+                    double dist = aim.distanceTo(onGun.eye());
+                    if (ms.status == Status.CAMERA_SELF) h.fail("gun froze: the camera on it looks at its own part");
+                    if (bId.equals(ma.hit().ship()) || dist < 6) h.fail("ray stopped on the gun's own structure: dist "
+                            + String.format(java.util.Locale.ROOT, "%.1f", dist) + " hit " + ma.hit());
+                    log.add("camera on the gun looks through its gun: aim " + String.format(java.util.Locale.ROOT, "%.1f", dist)
+                            + " blocks away, status " + ms.status);
+                    onGun.stopControl(who);
+                    since.set(t);
+                    phase.set(1);
+                }
+                case 1 -> {                                                   // камера на земле смотрит на B
+                    if (!(h.getLevel().getBlockEntity(h.absolutePos(groundCam)) instanceof CameraBlockEntity g)) return;
+                    Vec3 d = bCenter.subtract(g.eye());
+                    g.controlForTest(who, (float) Math.toDegrees(Math.atan2(-d.x, d.z)),
+                            (float) -Math.toDegrees(Math.atan2(d.y, Math.hypot(d.x, d.z))), false);
+                    if (t - since.get() < 20) return;
+                    if (ms == null || ms.status != Status.CAMERA_SELF) h.fail("ground camera looks at the gun: status "
+                            + (ms == null ? null : ms.status) + ", hit " + (g.manualAim(h.getLevel().getGameTime()) == null ? null
+                            : g.manualAim(h.getLevel().getGameTime()).hit()));
+                    log.add("ground camera at the gun: status " + ms.status);
+                    g.stopControl(who);
+                    phase.set(2);
+                }
+                default -> { }
+            }
+        });
+        h.succeedWhen(() -> {
+            if (phase.get() < 2) throw new GameTestAssertException("phase " + phase.get());
+            FcsMod.LOG.info("[radar_fcs test] camera_on_gun: {} (sub-level A {})", log, SableTestSupport.subId(a));
+        });
+    }
+
     private static void cleanupCamera(GameTestHelper h, BlockPos camPos, UUID who) {
         if (h.getLevel().getBlockEntity(h.absolutePos(camPos)) instanceof CameraBlockEntity cam) cam.stopControl(who);
     }

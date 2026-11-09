@@ -86,6 +86,29 @@ final class SableTestSupport {
         return sub;
     }
 
+    /** Неподвижная постройка Sable из уже поставленных блоков minRel..maxRel (держится на месте каждый тик). */
+    static Object staticSub(GameTestHelper h, BlockPos minRel, BlockPos maxRel) {
+        BlockPos min = h.absolutePos(minRel), max = h.absolutePos(maxRel);
+        ServerSubLevel sub = SubLevelAssemblyHelper.assembleBlocks(h.getLevel(), min, BlockPos.betweenClosed(min, max),
+                new BoundingBox3i(min.getX(), min.getY(), min.getZ(), max.getX(), max.getY(), max.getZ()));
+        org.joml.Vector3d p0 = new org.joml.Vector3d(sub.logicalPose().position());
+        org.joml.Quaterniond q0 = new org.joml.Quaterniond(sub.logicalPose().orientation());
+        h.onEachTick(() -> {
+            if (sub.isRemoved()) return;
+            RigidBodyHandle body = RigidBodyHandle.of(sub);
+            if (body == null || !body.isValid()) return;
+            body.teleport(p0, q0);
+            org.joml.Vector3d v = body.getLinearVelocity(new org.joml.Vector3d());
+            org.joml.Vector3d w = body.getAngularVelocity(new org.joml.Vector3d());
+            body.addLinearAndAngularVelocity(v.negate(), w.negate());
+        });
+        return sub;
+    }
+
+    static java.util.UUID subId(Object handle) {
+        return ((ServerSubLevel) handle).getUniqueId();
+    }
+
     /** Имя транспондера следующего корабля (для теста имён). */
     static final ThreadLocal<String> NAME = new ThreadLocal<>();
 

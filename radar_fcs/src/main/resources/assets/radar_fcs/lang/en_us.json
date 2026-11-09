@@ -497,7 +497,7 @@
   "radar_fcs.ponder.gun_rotator.text_4": "Gun Links join the sight and rotators into one gun; a Radar Link on any part connects it to the computer",
   "radar_fcs.ponder.gun_rotator.text_5": "The rotator holds its angle itself. With Create Aeronautics you can also build on Swivel Bearings with Gun Drives - see the \"custom gun on Swivel Bearings\" scene",
   "radar_fcs.ponder.gun_drive.header": "Gun Drive and gun settings",
-  "radar_fcs.ponder.gun_drive.text_1": "The Gun Drive works like a gearbox: input behind, output in front (-100% to 100% of input). The computer sets the output. Here it turns the yaw shaft of the mount instead of an aim controller",
+  "radar_fcs.ponder.gun_drive.text_1": "The Gun Drive works like a gearbox: input behind, output in front (-100%% to 100%% of input). The computer sets the output. Here it turns the yaw shaft of the mount instead of an aim controller",
   "radar_fcs.ponder.gun_drive.text_2": "Right-click with an empty hand to switch the drive between yaw (↔) and pitch (↕)",
   "radar_fcs.ponder.gun_drive.text_3": "The output can drive a bearing, gears or a mount shaft. The computer learns the ratio and direction by itself",
   "radar_fcs.ponder.gun_drive.text_4": "Gun Links join drives, mounts and sights into one gun",

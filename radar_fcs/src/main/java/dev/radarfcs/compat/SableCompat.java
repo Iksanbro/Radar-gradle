@@ -227,6 +227,40 @@ public final class SableCompat {
         return null;
     }
 
+    /**
+     * Постройки одного орудия: те, в плотах которых стоят его части, и соседние с ними (габариты касаются, rounds
+     * раз) - поворотная платформа без частей мода между подшипниками тоже попадает. exclude - основание (корабль
+     * или постройка под приводом курса): его и всё, что достаётся только через него, не берём.
+     */
+    public static java.util.Set<UUID> cluster(Level level, java.util.Collection<BlockPos> parts, java.util.Set<UUID> exclude, int rounds) {
+        java.util.Map<UUID, SubLevelAccess> found = new java.util.HashMap<>();
+        SableCompanion api = api();
+        if (api == null || virtual(level)) return java.util.Set.of();
+        try {
+            for (BlockPos p : parts) {
+                SubLevelAccess s = containing(level, p);
+                if (s != null && !exclude.contains(s.getUniqueId())) found.put(s.getUniqueId(), s);
+            }
+            java.util.List<SubLevelAccess> frontier = new ArrayList<>(found.values());
+            for (int r = 0; r < rounds && !frontier.isEmpty(); r++) {
+                java.util.List<SubLevelAccess> next = new ArrayList<>();
+                for (SubLevelAccess s : frontier) {
+                    BoundingBox3dc b = s.boundingBox();
+                    AABB box = new AABB(b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ()).inflate(1.0);
+                    for (SubLevelAccess o : api.getAllIntersecting(level, new BoundingBox3d(box))) {
+                        if (o == null || exclude.contains(o.getUniqueId()) || found.containsKey(o.getUniqueId())) continue;
+                        found.put(o.getUniqueId(), o);
+                        next.add(o);
+                    }
+                }
+                frontier = next;
+            }
+        } catch (Throwable t) {
+            fail(t);
+        }
+        return found.keySet();
+    }
+
     /** Попадание луча в постройку Sable: точка в мире, скорость этой точки (блоков/тик), id постройки. */
     public record ShipHit(Vec3 point, Vec3 velocity, UUID ship, net.minecraft.core.BlockPos block) {}
 
@@ -238,7 +272,7 @@ public final class SableCompat {
      * @param velocity считать ли скорость точки (на клиенте не нужна)
      */
     @Nullable
-    public static ShipHit clipShips(Level level, Vec3 from, Vec3 to, @Nullable UUID ignore, net.minecraft.world.level.BlockGetter blocks,
+    public static ShipHit clipShips(Level level, Vec3 from, Vec3 to, java.util.function.Predicate<UUID> ignore, net.minecraft.world.level.BlockGetter blocks,
                                     boolean velocity) {
         SableCompanion api = api();
         if (api == null || virtual(level)) return null;
@@ -247,7 +281,7 @@ public final class SableCompat {
         try {
             AABB area = new AABB(from, to).inflate(1);
             for (SubLevelAccess s : api.getAllIntersecting(level, new BoundingBox3d(area))) {
-                if (s == null || s.getUniqueId().equals(ignore)) continue;
+                if (s == null || ignore.test(s.getUniqueId())) continue;
                 BoundingBox3dc b = s.boundingBox();
                 AABB box = new AABB(b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ()).inflate(0.5);
                 if (!box.contains(from) && box.clip(from, to).isEmpty()) continue;

@@ -354,9 +354,10 @@ def main():
             data[f'radar_fcs.ponder.tag.{tag}'] = title[i]
             data[f'radar_fcs.ponder.tag.{tag}.description'] = desc[i]
         for name, (header, texts) in SCENES.items():
-            data[f'radar_fcs.ponder.{name}.header'] = header[i]
+            data[f'radar_fcs.ponder.{name}.header'] = header[i].replace('%', '%%')
             for n, t in enumerate(texts, 1):
-                data[f'radar_fcs.ponder.{name}.text_{n}'] = t[i]
+                # Ponder пропускает текст через String.format: одиночный % давал «Format error»
+                data[f'radar_fcs.ponder.{name}.text_{n}'] = t[i].replace('%', '%%')
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
             f.write('\n')

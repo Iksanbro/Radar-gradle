@@ -254,7 +254,7 @@ public final class CameraClient {
         // постройки Sable (корабли) на луче - тоже точка взгляда
         var ship = dev.radarfcs.compat.SableCompat.clipShips(mc.level, eye.add(dir.scale(0.9)),
                 stop != null ? stop : eye.add(dir.scale(CameraBlockEntity.RANGE)),
-                dev.radarfcs.compat.SableCompat.containingId(mc.level, camera), mc.level, false);
+                id -> id.equals(dev.radarfcs.compat.SableCompat.containingId(mc.level, camera)), mc.level, false);
         if (ship != null) stop = ship.point();
         String dist = stop == null ? "-" : String.format(java.util.Locale.ROOT, "%.0f", stop.distanceTo(eye));
         g.drawString(mc.font, Component.literal(name).withStyle(ChatFormatting.AQUA), 10, 10, 0xFFFFFF);

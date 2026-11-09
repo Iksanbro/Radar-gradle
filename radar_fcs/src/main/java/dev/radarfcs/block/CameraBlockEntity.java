@@ -73,6 +73,17 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     private Vec3 aimVelocity = Vec3.ZERO;
     /** Во что упёрся взгляд (блок, постройка, сущность) - чтобы орудие не наводилось само на себя. */
     private ManualAim.Hit aimHit = ManualAim.Hit.NONE;
+    /**
+     * Камера стоит на поворотной части орудия, которым управляет: постройки этого орудия луч пропускает (смотрит сквозь
+     * своё орудие), иначе точка взгляда ехала бы вместе с орудием и оно гонялось бы за ней. Задаёт вычислитель.
+     */
+    private java.util.Set<UUID> ignoredShips = java.util.Set.of();
+    private long ignoredUntil = Long.MIN_VALUE / 2;
+
+    public void ignoreGun(java.util.Set<UUID> ships, long now) {
+        ignoredShips = ships;
+        ignoredUntil = now + 10;
+    }
 
     public CameraBlockEntity(BlockPos pos, BlockState state) {
         super(FcsRegistry.CAMERA_BE.get(), pos, state);
@@ -211,7 +222,7 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     public ManualAim manualAim(long now) {
         if (controller(now) == null || aimPoint == null) return null;
         return new ManualAim(new Vec(aimPoint.x, aimPoint.y, aimPoint.z), fire, displayName().getString(),
-                new Vec(aimVelocity.x, aimVelocity.y, aimVelocity.z), guns, lastControl, aimHit);
+                new Vec(aimVelocity.x, aimVelocity.y, aimVelocity.z), guns, lastControl, aimHit, worldPosition);
     }
 
     @Nullable
@@ -234,7 +245,10 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
         Vec3 stop = bh.getType() == HitResult.Type.MISS ? end : bh.getLocation();
         ManualAim.Hit hit = bh.getType() == HitResult.Type.MISS ? ManualAim.Hit.NONE : new ManualAim.Hit(bh.getBlockPos().immutable(), null, -1);
         Vec3 vel = Vec3.ZERO;
-        SableCompat.ShipHit ship = SableCompat.clipShips(sl, eye, stop, SableCompat.containingId(sl, worldPosition), blocks, true);
+        UUID own = SableCompat.containingId(sl, worldPosition);
+        java.util.Set<UUID> gun = sl.getGameTime() <= ignoredUntil ? ignoredShips : java.util.Set.of();
+        java.util.function.Predicate<UUID> skip = id -> id.equals(own) || gun.contains(id);
+        SableCompat.ShipHit ship = SableCompat.clipShips(sl, eye, stop, skip, blocks, true);
         if (ship != null) {
             stop = ship.point();
             vel = ship.velocity();
@@ -242,7 +256,7 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
         }
         aimHit = hit;
         EntityHitResult eh = ProjectileUtil.getEntityHitResult(sl, viewer, eye, stop, new AABB(eye, stop).inflate(1.0),
-                e -> e != viewer && !e.isSpectator() && e.isPickable(), 0.3f);
+                e -> e != viewer && !e.isSpectator() && e.isPickable() && (gun.isEmpty() || !gun.contains(SableCompat.trackingShipId(e))), 0.3f);
         if (eh != null) {
             Entity e = eh.getEntity();
             // скорость сущности - по её перемещению за прошлый тик (на земле - без вертикали)

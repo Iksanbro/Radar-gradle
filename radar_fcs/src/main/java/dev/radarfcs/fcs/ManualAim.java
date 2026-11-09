@@ -7,9 +7,9 @@ import dev.radarfcs.core.Vec;
  * пушек вычислителя приостановлено: все пушки наводятся на эту точку и стреляют только по команде.
  */
 public record ManualAim(Vec point, boolean fire, String camera, Vec velocity, java.util.Set<Long> guns, long stamp,
-                        Hit hit) {
+                        Hit hit, @org.jetbrains.annotations.Nullable net.minecraft.core.BlockPos cameraPos) {
     public ManualAim(Vec point, boolean fire, String camera) {
-        this(point, fire, camera, Vec.ZERO, java.util.Set.of(), 0, Hit.NONE);
+        this(point, fire, camera, Vec.ZERO, java.util.Set.of(), 0, Hit.NONE, null);
     }
 
     /**
