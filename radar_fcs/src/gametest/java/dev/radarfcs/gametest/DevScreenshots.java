@@ -272,6 +272,13 @@ public final class DevScreenshots {
             assembleRotator(server, base.offset(-8, 2, 10));        // вертикальный (ось север-юг) - сначала
             assembleRotator(server, base.offset(-9, 0, 10));         // горизонтальный (ось вверх)
         });
+        if (Boolean.getBoolean("radar_fcs.screenshot.camview")) {
+            if (tick == 738) tick = 866;
+            if (tick >= 890) {
+                camView(mc, server);
+                return;
+            }
+        }
         // переход через ±180°: поворот на 170°, затем на -170° - кратчайшим путём через 180
         if (tick == 740) server.execute(() -> setRotator(server, base.offset(-9, 0, 10), 170));
         if (tick == 790) server.execute(() -> setRotator(server, base.offset(-9, 0, 10), -170));
@@ -341,6 +348,15 @@ public final class DevScreenshots {
         gunLink(level, sight, Direction.UP);
         gunLink(level, p, Direction.EAST);
         gunLink(level, y, Direction.WEST);
+        if (Boolean.getBoolean("radar_fcs.screenshot.camview")) {
+            // камера на конце ствола - на части, которая поворачивается по двум осям (уедет в её под-уровень)
+            BlockPos c = p.north().east(3).above();
+            level.setBlock(c, FcsRegistry.CAMERA.get().defaultBlockState().setValue(dev.radarfcs.block.CameraBlock.FACING, Direction.UP), 3);
+            if (level.getBlockEntity(c) instanceof dev.radarfcs.block.CameraBlockEntity cam) {
+                cam.setName("На орудии");
+                cam.setNetwork(SCENE_NET);
+            }
+        }
         // клей: площадка + вертикальный вращатель с мотором и линком; ствол с прицелом и линком - отдельно
         level.addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(level,
                 new net.minecraft.world.phys.AABB(plat.getX(), plat.getY(), p.getZ(), plat.getX() + 3, p.getY() + 1, p.south().getZ() + 1)));
@@ -465,6 +481,179 @@ public final class DevScreenshots {
     }
 
     private static final java.util.UUID CAM_WHO = java.util.UUID.randomUUID();
+
+    // ---- вид из камеры на орудии настоящим клиентом (-PfcsCamView): зависания кадров и потеря управления
+    private static volatile BlockPos cvCamera;
+    private static volatile float cvYaw, cvPitch;
+    private static volatile boolean cvHasLook;
+    private static volatile String cvPhase = "";
+    private static volatile long cvFrameStart = System.nanoTime();
+    private static volatile Thread cvRenderThread;
+    private static volatile long cvMaxFrameNs;
+    private static boolean cvWatchdog;
+    /** Серверное время прошлого опроса и наибольший разрыв между опросами (клиент стоял - сервер шёл). */
+    private static long cvLastGameTime = -1, cvMaxServerGap;
+    private static volatile double cvClientDistance = Double.NaN;
+
+    @SubscribeEvent
+    public static void cvFrame(net.neoforged.neoforge.client.event.RenderFrameEvent.Pre event) {
+        if (!Boolean.getBoolean("radar_fcs.screenshot.camview")) return;
+        long now = System.nanoTime(), dt = now - cvFrameStart;
+        if (dt > cvMaxFrameNs) cvMaxFrameNs = dt;
+        cvFrameStart = now;
+        cvRenderThread = Thread.currentThread();
+    }
+
+    /** Сторож: кадр дольше 400 мс - стек потока отрисовки в лог (и стек сервера, если стоит он). */
+    private static void cvStartWatchdog(net.minecraft.server.MinecraftServer server) {
+        if (cvWatchdog) return;
+        cvWatchdog = true;
+        Thread t = new Thread(() -> {
+            int dumps = 0, lastServerTicks = -1;
+            long lastDump = 0, serverSince = System.nanoTime();
+            while (dumps < 14) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                long now = System.nanoTime();
+                int st = server.getTickCount();
+                if (st != lastServerTicks) {
+                    lastServerTicks = st;
+                    serverSince = now;
+                }
+                long stall = (now - cvFrameStart) / 1_000_000, sStall = (now - serverSince) / 1_000_000;
+                if (now - lastDump < 1_500_000_000L) continue;
+                Thread r = cvRenderThread;
+                if (stall > 400 && r != null) {
+                    lastDump = now;
+                    dumps++;
+                    FcsMod.LOG.warn("[radar_fcs dev] camview FRAME STALL {} ms (phase {}): {}", stall, cvPhase, cvStack(r));
+                } else if (sStall > 400) {
+                    lastDump = now;
+                    dumps++;
+                    FcsMod.LOG.warn("[radar_fcs dev] camview SERVER STALL {} ms (phase {}): {}", sStall, cvPhase, cvStack(server.getRunningThread()));
+                }
+            }
+        }, "fcs-camview-watchdog");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private static String cvStack(Thread t) {
+        StringBuilder sb = new StringBuilder();
+        StackTraceElement[] st = t.getStackTrace();
+        for (int i = 0; i < Math.min(st.length, 28); i++) sb.append("\n    at ").append(st[i]);
+        return sb.toString();
+    }
+
+    private static dev.radarfcs.block.CameraBlockEntity cvFindCamera(ServerLevel level) {
+        for (BlockPos p : dev.radarfcs.link.LinkRegistry.members(level, SCENE_NET)) {
+            if (level.getBlockEntity(p) instanceof dev.radarfcs.block.CameraBlockEntity c && SableCompat.containingId(level, p) != null) return c;
+        }
+        return null;
+    }
+
+    /** Тики 890+: войти в камеру на орудии пакетами клиента и смотреть на цель, на части орудия и снова на цель. */
+    private static void camView(Minecraft mc, net.minecraft.server.MinecraftServer server) {
+        final int t = tick;
+        BlockPos monitor = base.offset(-1, 0, 6);
+        if (t == 890) server.execute(() -> look(server, monitor.getCenter(), new Vec3(base.getX() - 1.5, base.getY() + 1.62, base.getZ() + 8.5)));
+        if (t == 892) cvStartWatchdog(server);
+        if (t >= 892 && t < 1130) server.execute(() -> {
+            ServerLevel level = server.overworld();
+            dev.radarfcs.block.CameraBlockEntity cam = cvFindCamera(level);
+            if (cam == null) {
+                if (t % 20 == 0) FcsMod.LOG.info("[radar_fcs dev] camview t={} no camera on the gun in the network", t);
+                return;
+            }
+            cvCamera = cam.getBlockPos();
+            dev.radarfcs.fcs.MountState ms = null;
+            dev.radarfcs.block.SightBlockEntity sight = null;
+            if (level.getBlockEntity(base) instanceof dev.radarfcs.block.FireControlBlockEntity fcs)
+                for (var x : fcs.mountStates()) if (x.turret != null) {
+                    ms = x;
+                    sight = x.turret.sightEntity(level);
+                }
+            Vec3 eye = cam.eye();
+            Vec3 target;
+            String phase;
+            Vec3 huskC = husk != null ? husk.getBoundingBox().getCenter() : eye.add(30, 0, 0);
+            if (t < 960) {
+                phase = "target";
+                target = huskC;
+            } else if (t < 1010) {
+                phase = "platform";                                    // внешняя постройка орудия (вертикальный вращатель)
+                target = null;
+                for (var r : findRotators(server)) {
+                    if (r.facing() != Direction.UP) target = SableCompat.toWorld(level, Vec3.atCenterOf(r.getBlockPos()));
+                }
+                if (target == null) target = eye.add(-3, -2, 1);
+            } else if (t < 1060) {
+                phase = "barrel";                                      // своя постройка: прицел рядом с камерой
+                target = sight != null ? sight.worldCenter() : eye.add(-2, -0.5, 0);
+            } else {
+                phase = "target2";
+                target = huskC;
+            }
+            boolean hold = (phase.equals("platform") || phase.equals("barrel")) && phase.equals(cvPhase);
+            cvPhase = phase;
+            if (!hold) {
+                Vec3 d = target.subtract(eye);
+                cvYaw = (float) Math.toDegrees(Math.atan2(-d.x, d.z));
+                cvPitch = (float) -Math.toDegrees(Math.atan2(d.y, Math.hypot(d.x, d.z)));
+            }
+            cvHasLook = true;
+            long gt = level.getGameTime();
+            if (cvLastGameTime >= 0) cvMaxServerGap = Math.max(cvMaxServerGap, gt - cvLastGameTime);
+            cvLastGameTime = gt;
+            if (t % 5 == 0) {
+                long now = level.getGameTime();
+                var ma = cam.manualAim(now);
+                String err = "-";
+                if (sight != null && cam.aimPoint() != null) {
+                    Vec3 want = cam.aimPoint().subtract(sight.worldCenter()).normalize();
+                    err = String.format(java.util.Locale.ROOT, "%.1f", Math.toDegrees(Math.acos(Math.max(-1, Math.min(1, sight.worldDirection().dot(want))))));
+                }
+                FcsMod.LOG.info("[radar_fcs dev] camview t={} phase {} controller {} aim {} hit {} status {} sightErr {} maxFrame {} ms"
+                                + " serverGap {} dist server {} client {}",
+                        t, phase, cam.controller(now) != null, cam.aimPoint() == null ? null : fmt(cam.aimPoint()),
+                        ma == null ? null : ma.hit(), ms == null ? null : ms.status, err, cvMaxFrameNs / 1_000_000, cvMaxServerGap,
+                        cam.aimPoint() == null ? "-" : String.format(java.util.Locale.ROOT, "%.1f", cam.aimPoint().distanceTo(eye)),
+                        String.format(java.util.Locale.ROOT, "%.1f", cvClientDistance));
+                cvMaxFrameNs = 0;
+                cvMaxServerGap = 0;
+            }
+        });
+        BlockPos cam = cvCamera;
+        if (t == 905 && cam != null) {
+            net.neoforged.neoforge.network.PacketDistributor.sendToServer(new dev.radarfcs.net.CameraPayloads.View(monitor, cam));
+            FcsMod.LOG.info("[radar_fcs dev] camview: View sent for camera {}", cam);
+        }
+        if (t == 912) FcsMod.LOG.info("[radar_fcs dev] camview: client view active {}", dev.radarfcs.client.CameraClient.active());
+        if (t > 908 && t < 1130 && cvHasLook && mc.player != null && dev.radarfcs.client.CameraClient.active()) {
+            mc.player.setYRot(cvYaw);
+            mc.player.setXRot(cvPitch);
+        }
+        cvClientDistance = dev.radarfcs.client.CameraClient.lookDistance();
+        // пауза клиента на 1.5 с (как лаг): сервер за это время снимает управление по тайм-ауту - после паузы оно
+        // должно продолжиться само, без перезахода в камеру
+        if (t == 1085) {
+            FcsMod.LOG.info("[radar_fcs dev] camview: client stalls for 1500 ms");
+            try {
+                Thread.sleep(1500);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (t == 950) shot(mc, "camview_target");
+        if (t == 1000) shot(mc, "camview_platform");
+        if (t == 1050) shot(mc, "camview_barrel");
+        if (t == 1120) shot(mc, "camview_target2");
+        if (t == 1130) FcsMod.LOG.info("[radar_fcs dev] camview: done, client view active {}", dev.radarfcs.client.CameraClient.active());
+        if (t == 1134) mc.stop();
+    }
 
     /** Камера на орудии: смотрит на цель (phase 0), затем на ствол своего же орудия (phase 1); лог по тикам. */
     private static void camGun(net.minecraft.server.MinecraftServer server, int t) {

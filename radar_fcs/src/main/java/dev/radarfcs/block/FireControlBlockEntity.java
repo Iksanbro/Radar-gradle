@@ -331,7 +331,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                     BlockPos key = p.immutable();
                     found.add(key);
                     MountState m = mounts.computeIfAbsent(key, MountState::new);
-                    m.mount = CbcMount.of(be);
+                    m.bind(CbcMount.of(be));
                     m.turret = null;
                 }
                 case RADAR -> radars.add(be);
@@ -427,7 +427,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             for (BlockPos g : guns) {
                 found.add(g);
                 MountState m = mounts.computeIfAbsent(g, MountState::new);
-                m.mount = CbcMount.of(level.getBlockEntity(g));
+                m.bind(CbcMount.of(level.getBlockEntity(g)));
                 m.turret = t;
             }
         }

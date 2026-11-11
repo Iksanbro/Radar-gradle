@@ -452,6 +452,208 @@ public class CameraGameTests {
         });
     }
 
+    /**
+     * Пауза в командах камеры (клиент завис, лаг сети) не отнимает управление насовсем. Пока команд нет дольше
+     * TIMEOUT, камера свободна и пушки на автоприцеле; первая же команда того же игрока управление продолжает -
+     * раньше она молча отбрасывалась, и пушки не слушались камеру до перезахода в неё. Если за время паузы камеру
+     * занял другой игрок, прежнему отказ.
+     */
+    @GameTest(template = ARENA, batch = "camera", timeoutTicks = 300)
+    public static void cameraControlResumesAfterPause(GameTestHelper h) {
+        floor(h);
+        BlockPos mount = new BlockPos(10, 1, 32), fcsPos = new BlockPos(6, 1, 28), camPos = new BlockPos(8, 3, 30);
+        autocannon(h, mount, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcs(h, fcsPos);
+        SettingsGameTests.configure(be, s -> s.dropStatic = false);
+        h.setBlock(camPos, FcsRegistry.CAMERA.get().defaultBlockState().setValue(CameraBlock.FACING, Direction.EAST));
+        FcsGameTests.CREATED.add(h.absolutePos(camPos));
+        link(h, camPos, Direction.UP, fcsPos);
+        Mob far = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(42.5, 1, 36.5), 0, 0));
+        UUID a = UUID.randomUUID(), b = UUID.randomUUID();
+        BlockPos monitor = h.absolutePos(fcsPos);                         // место монитора для проверки не важно
+        AtomicInteger phase = new AtomicInteger(), since = new AtomicInteger();
+        List<String> log = new ArrayList<>();
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            if (!(h.getLevel().getBlockEntity(h.absolutePos(camPos)) instanceof CameraBlockEntity cam)) return;
+            long now = h.getLevel().getGameTime();
+            Vec3 d = far.getBoundingBox().getCenter().subtract(cam.eye());
+            float yaw = (float) Math.toDegrees(Math.atan2(-d.x, d.z));
+            float pitch = (float) -Math.toDegrees(Math.atan2(d.y, Math.hypot(d.x, d.z)));
+            // как обработчик пакета Control: команда принимается, только если игрок может продолжать управление
+            Runnable command = () -> {
+                if (cam.acceptsControl(a)) cam.control(null, yaw, pitch, false);
+            };
+            switch (phase.get()) {
+                case 0 -> {
+                    if (t < 20) return;                                       // пушка собралась
+                    if (!cam.startControl(a, monitor, now)) h.fail("camera refused the first controller");
+                    since.set(t);
+                    phase.set(1);
+                }
+                case 1 -> {                                                   // обычное управление
+                    command.run();
+                    if (t < since.get() + 15) return;
+                    if (!a.equals(cam.controller(now)) || be.currentManualAim() == null) h.fail("camera is not controlled: " + cam.controller(now));
+                    if (cam.startControl(b, monitor, now)) h.fail("another player took the camera while it was controlled");
+                    log.add("controlled, manual aim present, busy for others");
+                    since.set(t);
+                    phase.set(2);
+                }
+                case 2 -> {                                                   // пауза: команд нет 30 тиков
+                    if (t < since.get() + 30) return;
+                    if (cam.controller(now) != null) h.fail("camera still reports a controller after a 30 tick pause");
+                    if (be.currentManualAim() != null) h.fail("manual aim is still active during the pause");
+                    if (!cam.acceptsControl(a)) h.fail("the paused controller is rejected: control would be lost until re-entering");
+                    log.add("pause 30 ticks: camera free, guns on auto");
+                    since.set(t);
+                    phase.set(3);
+                }
+                case 3 -> {                                                   // команды снова идут - управление продолжается
+                    command.run();
+                    if (t < since.get() + 5) return;
+                    MountState ms = be.mountStates().isEmpty() ? null : be.mountStates().get(0);
+                    if (!a.equals(cam.controller(now)) || be.currentManualAim() == null) h.fail("control did not resume after the pause");
+                    if (ms == null || ms.status != Status.CAMERA) h.fail("gun does not follow the camera after the pause: " + (ms == null ? null : ms.status));
+                    log.add("resumed without re-entering, status " + ms.status);
+                    since.set(t);
+                    phase.set(4);
+                }
+                case 4 -> {                                                   // снова пауза, камеру занимает другой игрок
+                    if (t < since.get() + 20) return;
+                    if (!cam.startControl(b, monitor, now)) h.fail("a free camera refused another player");
+                    if (cam.acceptsControl(a)) h.fail("the old controller is still accepted after another player took the camera");
+                    if (!cam.acceptsControl(b)) h.fail("the new controller is rejected");
+                    cam.stopControl(b);
+                    log.add("another player took the free camera, the old one is refused");
+                    phase.set(5);
+                }
+                default -> { }
+            }
+        });
+        h.succeedWhen(() -> {
+            if (phase.get() < 5) throw new GameTestAssertException("phase " + phase.get());
+            FcsMod.LOG.info("[radar_fcs test] camera_resume: {}", log);
+        });
+    }
+
+    /**
+     * Луч взгляда через постройку Sable не должен попадать в переписанный Sable {@code Level.clip} в координатах плота:
+     * тот переводит в мир только конец луча, лежащий в плоте, и луч становится длиной в миллионы блоков (у клиента
+     * кадр считался секундами, сервер завис бы на загрузке чанков). {@code clipShips} обязан отработать быстро и дать
+     * точку на постройке, даже если ему передали сам уровень; лучи со смешанными координатами - отказ, а не трассировка.
+     */
+    @GameTest(template = ARENA, batch = "camera", timeoutTicks = 200)
+    public static void shipRayNeverGoesThroughSableClip(GameTestHelper h) {
+        if (!net.neoforged.fml.ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        for (int x = 30; x <= 32; x++) for (int y = 3; y <= 5; y++) for (int z = 30; z <= 32; z++)
+            h.setBlock(new BlockPos(x, y, z), net.minecraft.world.level.block.Blocks.IRON_BLOCK.defaultBlockState());
+        Object sub = SableTestSupport.staticSub(h, new BlockPos(30, 3, 30), new BlockPos(32, 5, 32));
+        UUID id = SableTestSupport.subId(sub);
+        h.runAtTickTime(10, () -> {
+            var level = h.getLevel();
+            var box = SableTestSupport.box(sub);
+            Vec3 c = box.getCenter();
+            // взгляд с 4 блоков от постройки на RANGE блоков вперёд - как у камеры рядом с частью орудия
+            Vec3 from = new Vec3(box.minX - 4, c.y, c.z), to = from.add(CameraBlockEntity.RANGE, 0, 0);
+            long t0 = System.nanoTime();
+            var hit = dev.radarfcs.compat.SableCompat.clipShips(level, from, to, x -> false, level, false);
+            long ms = (System.nanoTime() - t0) / 1_000_000;
+            if (ms > 2000) h.fail("ray through a Sable structure took " + ms + " ms");
+            if (hit == null || !id.equals(hit.ship())) h.fail("ray missed the structure: " + hit);
+            if (Math.abs(hit.point().x - box.minX) > 0.6 || hit.point().distanceTo(c) > 3) h.fail("hit point is not on the near face: " + hit.point() + " box " + box);
+            // блоки мира под лучом: точка - в мировых координатах, постройки в неё не входят
+            Vec3 down = dev.radarfcs.compat.SableCompat.clipWorld(level, new Vec3(c.x, c.y + 10, c.z), new Vec3(c.x, c.y - 20, c.z));
+            if (down == null || Math.abs(down.x - c.x) > 0.01 || down.y > box.minY) h.fail("world ray stopped on the structure or missed the floor: " + down);
+            // концы луча в разных системах координат (мир и плот) - не трассировать
+            Vec3 plot = Vec3.atCenterOf(new BlockPos(20_480_000, 100, 20_480_000));
+            t0 = System.nanoTime();
+            var bad = dev.radarfcs.compat.SableCompat.clipShips(level, from, plot, x -> false, level, false);
+            Vec3 badWorld = dev.radarfcs.compat.SableCompat.clipWorld(level, from, plot);
+            long ms2 = (System.nanoTime() - t0) / 1_000_000;
+            if (bad != null || badWorld != null || ms2 > 500) h.fail("a ray across coordinate systems was traced: " + bad + " " + badWorld + " in " + ms2 + " ms");
+            FcsMod.LOG.info("[radar_fcs test] ship_ray: hit {} in {} ms, mixed-coordinate ray refused in {} ms", hit.point(), ms, ms2);
+            h.succeed();
+        });
+    }
+
+    /**
+     * Лучи аппаратуры (взгляд камеры, проверка линии огня) не грузят чанки. Обычный {@code Level.getBlockState} на
+     * сервере догружает и генерирует чанк прямо в тике: дальняя точка наведения с камеры (небо, горизонт - траектория на
+     * сотни блоков) вешала сервер на секунды, и клиент на это время терял управление камерой.
+     */
+    @GameTest(template = ARENA, batch = "camera", timeoutTicks = 100)
+    public static void raysDoNotLoadChunks(GameTestHelper h) {
+        floor(h);
+        BlockPos camPos = new BlockPos(8, 3, 30);
+        h.setBlock(camPos, FcsRegistry.CAMERA.get().defaultBlockState().setValue(CameraBlock.FACING, Direction.EAST));
+        FcsGameTests.CREATED.add(h.absolutePos(camPos));
+        UUID who = UUID.randomUUID();
+        h.runAtTickTime(5, () -> {
+            ServerLevel level = h.getLevel();
+            var chunks = level.getChunkSource();
+            // луч целиком в 5000 блоках от площадок тестов: там ничего не загружено
+            BlockPos o = h.absolutePos(camPos).offset(5000, 0, 5000);
+            Vec3 from = new Vec3(o.getX() + 0.5, 200, o.getZ() + 0.5), to = from.add(600, -260, 150);
+            List<int[]> far = new ArrayList<>();
+            List<dev.radarfcs.core.Vec> path = new ArrayList<>();
+            for (int i = 0; i <= 40; i++) {
+                Vec3 q = from.lerp(to, i / 40.0);
+                far.add(new int[] {net.minecraft.util.Mth.floor(q.x) >> 4, net.minecraft.util.Mth.floor(q.z) >> 4});
+                path.add(new dev.radarfcs.core.Vec(q.x, q.y, q.z));
+            }
+            for (int[] c : far) {
+                if (chunks.getChunkNow(c[0], c[1]) != null) h.fail("chunk " + c[0] + ", " + c[1] + " far from the tests is loaded before the rays");
+            }
+            long t0 = System.nanoTime();
+            Vec3 hit = dev.radarfcs.compat.SableCompat.clipWorld(level, from, to);
+            boolean air = dev.radarfcs.compat.SableCompat.plain(level).getBlockState(BlockPos.containing(to)).isAir();
+            var target = dev.radarfcs.core.Track.point("far", "far", path.get(path.size() - 1), level.getGameTime());
+            var verdict = dev.radarfcs.fcs.FireSafety.check(level, path, List.of(), target, dev.radarfcs.core.IffRule.DEFAULT, java.util.Set.of());
+            long ms = (System.nanoTime() - t0) / 1_000_000;
+            if (hit != null || !air) h.fail("a chunk that is not loaded must read as empty: hit " + hit + ", air " + air);
+            if (verdict != dev.radarfcs.fcs.FireSafety.Verdict.CLEAR) h.fail("line of fire over unloaded chunks: " + verdict);
+            for (int[] c : far) {
+                if (chunks.getChunkNow(c[0], c[1]) != null || chunks.hasChunk(c[0], c[1])) h.fail("a ray loaded chunk " + c[0] + ", " + c[1]);
+            }
+            if (ms > 1000) h.fail("rays over unloaded chunks took " + ms + " ms");
+
+            // взгляд камеры во все стороны на всю дальность: чанки, не загруженные до взгляда, не загружены и после
+            if (!(level.getBlockEntity(h.absolutePos(camPos)) instanceof CameraBlockEntity cam)) {
+                h.fail("no camera");
+                return;
+            }
+            int unloaded = 0;
+            t0 = System.nanoTime();
+            for (float yaw : new float[] {-90, 90, 0, 180}) {
+                float pitch = -20;
+                Vec3 eye = cam.eye(), dir = Vec3.directionFromRotation(pitch, yaw);
+                List<int[]> before = new ArrayList<>();
+                for (int d = 0; d <= CameraBlockEntity.RANGE; d += 8) {
+                    Vec3 q = eye.add(dir.scale(d));
+                    int cx = net.minecraft.util.Mth.floor(q.x) >> 4, cz = net.minecraft.util.Mth.floor(q.z) >> 4;
+                    if (chunks.getChunkNow(cx, cz) == null && !chunks.hasChunk(cx, cz)) before.add(new int[] {cx, cz});
+                }
+                cam.controlForTest(who, yaw, pitch, false);
+                if (cam.aimPoint() == null) h.fail("no look point at yaw " + yaw);
+                for (int[] c : before) {
+                    if (chunks.getChunkNow(c[0], c[1]) != null || chunks.hasChunk(c[0], c[1])) h.fail("the camera look ray loaded chunk " + c[0] + ", " + c[1]);
+                }
+                unloaded += before.size();
+            }
+            long ms2 = (System.nanoTime() - t0) / 1_000_000;
+            if (unloaded == 0) h.fail("no unloaded chunks around the test: the camera part proves nothing");
+            if (ms2 > 1000) h.fail("camera look rays took " + ms2 + " ms");
+            FcsMod.LOG.info("[radar_fcs test] rays_no_chunk_load: far rays {} ms, camera rays {} ms over {} unloaded chunk samples", ms, ms2, unloaded);
+            cleanupCamera(h, camPos, who);
+            h.succeed();
+        });
+    }
+
     private static void cleanupCamera(GameTestHelper h, BlockPos camPos, UUID who) {
         if (h.getLevel().getBlockEntity(h.absolutePos(camPos)) instanceof CameraBlockEntity cam) cam.stopControl(who);
     }

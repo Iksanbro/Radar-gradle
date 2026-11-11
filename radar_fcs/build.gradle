@@ -133,6 +133,7 @@ neoForge {
                 if (project.hasProperty('fcsSwivelOnly')) systemProperty 'radar_fcs.screenshot.swivel', 'true'
                 if (project.hasProperty('fcsPonderOnly')) systemProperty 'radar_fcs.screenshot.ponder', 'true'
                 if (project.hasProperty('fcsCamGun')) { systemProperty 'radar_fcs.screenshot.swivel', 'true'; systemProperty 'radar_fcs.screenshot.camgun', 'true' }
+                if (project.hasProperty('fcsCamView')) { systemProperty 'radar_fcs.screenshot.turret', 'true'; systemProperty 'radar_fcs.screenshot.camview', 'true' }
                 programArguments.addAll('--quickPlaySingleplayer', project.findProperty('fcsWorld') ?: 'fcs_test',
                         '--width', '1280', '--height', '720')
             }
@@ -148,6 +149,8 @@ neoForge {
             sourceSet = sourceSets.gametest
             systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
             if (project.hasProperty('fcsProbe')) systemProperty 'radarfcs.probe', 'true'
+            // только тесты с этими подстроками в имени (класс.метод): -PfcsTests=mountinunloading,staletrigger
+            if (project.hasProperty('fcsTests')) systemProperty 'radar_fcs.tests', project.property('fcsTests')
         }
     }
 

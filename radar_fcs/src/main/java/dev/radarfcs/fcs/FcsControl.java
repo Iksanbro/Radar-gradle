@@ -134,7 +134,7 @@ public final class FcsControl {
         // на нём ехала бы вместе с ним, и орудие гонялось бы за ней
         if (manual != null && manual.cameraPos() != null && !gunShips.isEmpty()) {
             UUID camShip = SableCompat.containingId(level, manual.cameraPos());
-            if (camShip != null && gunShips.contains(camShip)
+            if (camShip != null && gunShips.contains(camShip) && level.isLoaded(manual.cameraPos())
                     && level.getBlockEntity(manual.cameraPos()) instanceof dev.radarfcs.block.CameraBlockEntity cam) {
                 cam.ignoreGun(gunShips, now);
             }
@@ -447,7 +447,12 @@ public final class FcsControl {
 
     /** Захват, сборка, блокировка валов и оценка заряжания станка; false - станок не готов (статус выставлен). */
     private static boolean prepareMount(ServerLevel level, FireControlBlockEntity fcs, MountState m, CbcMount d, long now, boolean lock) {
+        boolean fresh = !m.claimed;
         if (!claim(level, fcs, m, now)) return false;
+        // спуск мог остаться зажатым с прошлой загрузки (мир закрыли во время стрельбы: станок, выгружаясь вместе с
+        // вычислителем, уже не отпускается, а темп огня CBC хранит в самой пушке) - берём его на себя: первый же
+        // расчёт без огня его отпустит
+        if (fresh && d.firePowered()) m.triggerOn = true;
         if (!d.isAssembled()) {
             setTrigger(m, false);
             m.cmdYaw = Double.NaN;

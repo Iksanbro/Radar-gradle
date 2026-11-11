@@ -69,6 +69,7 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     private long clientViewTime = Long.MIN_VALUE / 2;
     private boolean fire;
     @Nullable private Vec3 aimPoint;
+    private long lastLookError = Long.MIN_VALUE / 2;
     /** Скорость точки взгляда (корабль Sable, сущность), блоков/тик: пушки берут упреждение. */
     private Vec3 aimVelocity = Vec3.ZERO;
     /** Во что упёрся взгляд (блок, постройка, сущность) - чтобы орудие не наводилось само на себя. */
@@ -81,8 +82,16 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     private long ignoredUntil = Long.MIN_VALUE / 2;
 
     public void ignoreGun(java.util.Set<UUID> ships, long now) {
-        ignoredShips = ships;
+        boolean changed = now > ignoredUntil || !ships.equals(ignoredShips);
+        ignoredShips = java.util.Set.copyOf(ships);
         ignoredUntil = now + 10;
+        if (changed) viewDirty = true;      // клиенту, смотрящему через камеру: его оверлей расстояния пропускает их так же
+    }
+
+    /** Постройки своего орудия, сквозь которые смотрит камера (на клиенте - что прислал сервер). */
+    public java.util.Set<UUID> ignoredShips() {
+        if (level != null && !level.isClientSide && level.getGameTime() > ignoredUntil) return java.util.Set.of();
+        return ignoredShips;
     }
 
     public CameraBlockEntity(BlockPos pos, BlockState state) {
@@ -164,10 +173,23 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
 
     /** Начать управление с монитора камер; false - камерой уже управляет другой игрок. */
     public boolean startControl(ServerPlayer p, BlockPos monitor) {
-        long now = p.serverLevel().getGameTime();
+        return startControl(p.getUUID(), monitor, p.serverLevel().getGameTime());
+    }
+
+    /**
+     * Может ли игрок продолжать управление: он его начал, и с тех пор камеру никто другой не занял. Пауза в пакетах
+     * (клиент завис, лаг сети) - не потеря управления: {@link #controller} на время паузы освобождает камеру для
+     * других и возвращает пушки автоприцелу, но следующий же пакет этого игрока управление продолжает. Раньше после
+     * паузы дольше {@link #TIMEOUT} пакеты молча отбрасывались - пушки не слушались камеру до перезахода в неё.
+     */
+    public boolean acceptsControl(UUID who) {
+        return who.equals(controller);
+    }
+
+    public boolean startControl(UUID who, BlockPos monitor, long now) {
         UUID c = controller(now);
-        if (c != null && !c.equals(p.getUUID())) return false;
-        controller = p.getUUID();
+        if (c != null && !c.equals(who)) return false;
+        controller = who;
         controlMonitor = monitor.immutable();
         lastControl = now;
         float[] v = view();                                        // с последнего положения
@@ -198,7 +220,21 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
             sl.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
         this.fire = fire;
-        aimPoint = lookPoint(sl, player);
+        Vec3 point;
+        try {
+            point = lookPoint(sl, player);
+        } catch (RuntimeException e) {
+            // сбой луча (чужой мод, постройка в переходном состоянии) не должен оставлять орудия со старой точкой:
+            // наводим по направлению взгляда, в журнал - не чаще раза в 10 секунд
+            if (sl.getGameTime() - lastLookError >= 200) {
+                lastLookError = sl.getGameTime();
+                dev.radarfcs.FcsMod.LOG.warn("[radar_fcs] camera look ray failed at {}: {}", worldPosition, e.toString());
+            }
+            aimHit = ManualAim.Hit.NONE;
+            aimVelocity = Vec3.ZERO;
+            point = eye().add(Vec3.directionFromRotation(viewPitch, viewYaw).scale(RANGE));
+        }
+        aimPoint = point;
     }
 
     /** Задать управление без игрока (игровые тесты). */
@@ -246,7 +282,7 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
         ManualAim.Hit hit = bh.getType() == HitResult.Type.MISS ? ManualAim.Hit.NONE : new ManualAim.Hit(bh.getBlockPos().immutable(), null, -1);
         Vec3 vel = Vec3.ZERO;
         UUID own = SableCompat.containingId(sl, worldPosition);
-        java.util.Set<UUID> gun = sl.getGameTime() <= ignoredUntil ? ignoredShips : java.util.Set.of();
+        java.util.Set<UUID> gun = ignoredShips();
         java.util.function.Predicate<UUID> skip = id -> id.equals(own) || gun.contains(id);
         SableCompat.ShipHit ship = SableCompat.clipShips(sl, eye, stop, skip, blocks, true);
         if (ship != null) {
@@ -256,7 +292,7 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
         }
         aimHit = hit;
         EntityHitResult eh = ProjectileUtil.getEntityHitResult(sl, viewer, eye, stop, new AABB(eye, stop).inflate(1.0),
-                e -> e != viewer && !e.isSpectator() && e.isPickable() && (gun.isEmpty() || !gun.contains(SableCompat.trackingShipId(e))), 0.3f);
+                e -> e != viewer && !e.isSpectator() && e.isPickable() && !onShips(e, gun), 0.3f);
         if (eh != null) {
             Entity e = eh.getEntity();
             // скорость сущности - по её перемещению за прошлый тик (на земле - без вертикали)
@@ -269,25 +305,33 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
         return stop;
     }
 
-    /** Мир для луча: незагруженные чанки - пустота (луч не грузит чанки). */
+    /** Сущность стоит или едет на одной из построек (у сущности вне построек id нет - неизменяемые наборы null не терпят). */
+    private static boolean onShips(Entity e, java.util.Set<UUID> ships) {
+        if (ships.isEmpty()) return false;
+        UUID id = SableCompat.trackingShipId(e);
+        return id != null && ships.contains(id);
+    }
+
+    /** Мир для луча: только готовые чанки (луч их не грузит и не ждёт), без надстройки Sable над трассировкой. */
     private static BlockGetter loadedOnly(ServerLevel sl, BlockPos self) {
+        BlockGetter ready = SableCompat.plain(sl);
         return new BlockGetter() {
             @Nullable
             @Override
             public BlockEntity getBlockEntity(BlockPos pos) {
-                return sl.isLoaded(pos) ? sl.getBlockEntity(pos) : null;
+                return ready.getBlockEntity(pos);
             }
 
             @Override
             public BlockState getBlockState(BlockPos pos) {
                 // луч начинается в центре своего блока - сама камера ему не помеха
                 if (pos.equals(self)) return Blocks.AIR.defaultBlockState();
-                return sl.isLoaded(pos) ? sl.getBlockState(pos) : Blocks.AIR.defaultBlockState();
+                return ready.getBlockState(pos);
             }
 
             @Override
             public FluidState getFluidState(BlockPos pos) {
-                return sl.isLoaded(pos) ? sl.getFluidState(pos) : Fluids.EMPTY.defaultFluidState();
+                return ready.getFluidState(pos);
             }
 
             @Override
@@ -438,6 +482,16 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
             viewPitch = tag.getFloat("ViewPitch");
         }
         if (level != null && level.isClientSide) {
+            // постройки своего орудия, сквозь которые смотрит камера (только в данных для клиента)
+            java.util.Set<UUID> ign = new java.util.HashSet<>();
+            for (net.minecraft.nbt.Tag t : tag.getList("Ign", net.minecraft.nbt.Tag.TAG_INT_ARRAY)) {
+                try {
+                    ign.add(net.minecraft.nbt.NbtUtils.loadUUID(t));
+                } catch (IllegalArgumentException ignored) {
+                    // чужие данные - пропустить
+                }
+            }
+            ignoredShips = java.util.Set.copyOf(ign);
             // плавный поворот от того, что видно сейчас
             float[] shown = clientViewTime == Long.MIN_VALUE / 2 ? view() : before;
             clientPrevYaw = shown[0];
@@ -450,6 +504,12 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
     public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
         CompoundTag tag = super.getUpdateTag(registries);
         saveAdditional(tag, registries);
+        java.util.Set<UUID> ign = ignoredShips();
+        if (!ign.isEmpty()) {
+            net.minecraft.nbt.ListTag l = new net.minecraft.nbt.ListTag();
+            for (UUID id : ign) l.add(net.minecraft.nbt.NbtUtils.createUUID(id));
+            tag.put("Ign", l);
+        }
         return tag;
     }
 

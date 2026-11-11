@@ -89,6 +89,20 @@ public final class MountState implements ShotObserver.Listener {
         this.pos = pos.immutable();
     }
 
+    /**
+     * Станок этого состояния (блок из мира, при каждом пересмотре аппаратуры). Блок сменился - чанк станка выгружался
+     * и загрузился снова, пока вычислитель не тикал: у нового блока валы не заблокированы и спуск не наш - захват
+     * заново (блокировка валов и спуск - как у только что найденного станка).
+     */
+    public void bind(@Nullable CbcMount found) {
+        if (mount != null && (found == null || found.blockEntity() != mount.blockEntity())) {
+            locked = false;
+            claimed = false;
+            triggerOn = false;
+        }
+        mount = found;
+    }
+
     /** Модель полёта: оценка по содержимому пушки + выученные поправки. */
     /** Последняя оценка с заряженной пушкой: пока пушка пуста (перезарядка), целимся по ней, а не по скорости «по умолчанию». */
     @Nullable private CbcBallistics.Estimate lastLoaded;

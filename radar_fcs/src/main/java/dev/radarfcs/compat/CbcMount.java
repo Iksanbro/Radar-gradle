@@ -115,9 +115,17 @@ public final class CbcMount {
 
     public BlockPos pos() { return be.getBlockPos(); }
 
+    /**
+     * Станок на месте, и его чанк загружен. Мир спрашиваем только про загруженный чанк: {@code getBlockEntity} у чанка,
+     * который уже выгружается (тикеты сняты, блоки ещё не убраны), возвращал его к жизни вместе с соседями. В игре чанк
+     * дальнего станка из-за этого не выгружался, пока тикает вычислитель; при остановке сервера выгрузка мира
+     * зацикливалась - «Сохранение мира» без конца (вычислитель, выгружаясь, отпускал станок из соседнего чанка).
+     */
     public boolean isValid() {
         Level l = be.getLevel();
-        return !be.isRemoved() && l != null && l.getBlockEntity(be.getBlockPos()) == be;
+        if (be.isRemoved() || l == null) return false;
+        net.minecraft.core.BlockPos p = be.getBlockPos();
+        return l.isLoaded(p) && l.getBlockEntity(p) == be;
     }
 
     @Nullable
@@ -309,7 +317,9 @@ public final class CbcMount {
         Level level = be.getLevel();
         if (level == null) return false;
         for (Direction d : Direction.values()) {
-            BlockState s = level.getBlockState(be.getBlockPos().relative(d));
+            net.minecraft.core.BlockPos p = be.getBlockPos().relative(d);
+            if (!level.isLoaded(p)) continue;                          // сосед за краем загруженного - не грузить его проверкой
+            BlockState s = level.getBlockState(p);
             ResourceLocation id = BuiltInRegistries.BLOCK.getKey(s.getBlock());
             if ("create_radar".equals(id.getNamespace()) && id.getPath().contains("controller")
                     && !id.getPath().contains("network")) return true;

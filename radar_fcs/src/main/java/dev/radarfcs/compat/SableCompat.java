@@ -227,6 +227,120 @@ public final class SableCompat {
         return null;
     }
 
+    /** Лучи длиннее этого не трассируем: такой луч - признак смешанных координат (мир и плот), а не взгляда. */
+    public static final double MAX_RAY = 1024;
+
+    /**
+     * Блоки уровня «как есть», без надстройки Sable. Sable переписывает {@code BlockGetter.clip}: у {@code Level} он
+     * добавляет к лучу постройки (точка попадания - в координатах плота!) и переводит в мир концы луча, лежащие в
+     * плоте, - каждый отдельно. Луч в координатах плота, у которого в плоте только один конец, превращается в луч на
+     * миллионы блоков (мир - плот), и трассировка зависает на секунды. Через эту обёртку (не {@code Level}) трассировка
+     * идёт только по блокам, как в ванили.
+     *
+     * <p>На сервере чанк берётся только готовый ({@code getChunkNow}; плоты Sable он тоже отдаёт): незагруженные и ещё
+     * загружающиеся чанки - пустота. Обычный {@code Level.getBlockState} на сервере чанк догружает или генерирует прямо
+     * в тике (луч на сотни блоков в сторону от игрока - зависание сервера на секунды).
+     */
+    public static net.minecraft.world.level.BlockGetter plain(Level level) {
+        if (level instanceof net.minecraft.server.level.ServerLevel sl) return new ReadyBlocks(sl);
+        return new net.minecraft.world.level.BlockGetter() {
+            @Nullable
+            @Override
+            public net.minecraft.world.level.block.entity.BlockEntity getBlockEntity(BlockPos pos) {
+                return level.getBlockEntity(pos);
+            }
+
+            @Override
+            public net.minecraft.world.level.block.state.BlockState getBlockState(BlockPos pos) {
+                return level.getBlockState(pos);
+            }
+
+            @Override
+            public net.minecraft.world.level.material.FluidState getFluidState(BlockPos pos) {
+                return level.getFluidState(pos);
+            }
+
+            @Override
+            public int getHeight() {
+                return level.getHeight();
+            }
+
+            @Override
+            public int getMinBuildHeight() {
+                return level.getMinBuildHeight();
+            }
+        };
+    }
+
+    /** Блоки серверного мира только из готовых чанков. На один луч - один экземпляр (помнит последний чанк). */
+    private static final class ReadyBlocks implements net.minecraft.world.level.BlockGetter {
+        private final net.minecraft.server.level.ServerLevel level;
+        private boolean cached;
+        private long cachedKey;
+        @Nullable
+        private net.minecraft.world.level.chunk.LevelChunk cachedChunk;
+
+        ReadyBlocks(net.minecraft.server.level.ServerLevel level) {
+            this.level = level;
+        }
+
+        @Nullable
+        private net.minecraft.world.level.chunk.LevelChunk chunk(BlockPos pos) {
+            if (level.isOutsideBuildHeight(pos)) return null;
+            int cx = pos.getX() >> 4, cz = pos.getZ() >> 4;
+            long key = net.minecraft.world.level.ChunkPos.asLong(cx, cz);
+            if (!cached || key != cachedKey) {
+                cachedChunk = level.getChunkSource().getChunkNow(cx, cz);
+                cachedKey = key;
+                cached = true;
+            }
+            return cachedChunk;
+        }
+
+        @Nullable
+        @Override
+        public net.minecraft.world.level.block.entity.BlockEntity getBlockEntity(BlockPos pos) {
+            net.minecraft.world.level.chunk.LevelChunk c = chunk(pos);
+            return c == null ? null : c.getBlockEntity(pos);
+        }
+
+        @Override
+        public net.minecraft.world.level.block.state.BlockState getBlockState(BlockPos pos) {
+            net.minecraft.world.level.chunk.LevelChunk c = chunk(pos);
+            return c == null ? net.minecraft.world.level.block.Blocks.AIR.defaultBlockState() : c.getBlockState(pos);
+        }
+
+        @Override
+        public net.minecraft.world.level.material.FluidState getFluidState(BlockPos pos) {
+            net.minecraft.world.level.chunk.LevelChunk c = chunk(pos);
+            return c == null ? net.minecraft.world.level.material.Fluids.EMPTY.defaultFluidState() : c.getFluidState(pos);
+        }
+
+        @Override
+        public int getHeight() {
+            return level.getHeight();
+        }
+
+        @Override
+        public int getMinBuildHeight() {
+            return level.getMinBuildHeight();
+        }
+    }
+
+    /**
+     * Луч from-to только по блокам самого мира (без построек Sable), точка попадания - в мировых координатах.
+     * null - промах или луч негодный (длиннее {@link #MAX_RAY}, NaN).
+     */
+    @Nullable
+    public static Vec3 clipWorld(Level level, Vec3 from, Vec3 to) {
+        double len = from.distanceTo(to);
+        if (!(len <= MAX_RAY)) return null;
+        net.minecraft.world.phys.BlockHitResult bh = plain(level).clip(new net.minecraft.world.level.ClipContext(from, to,
+                net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE,
+                net.minecraft.world.phys.shapes.CollisionContext.empty()));
+        return bh.getType() == net.minecraft.world.phys.HitResult.Type.MISS ? null : bh.getLocation();
+    }
+
     /**
      * Постройки одного орудия: те, в плотах которых стоят его части, и соседние с ними (габариты касаются, rounds
      * раз) - поворотная платформа без частей мода между подшипниками тоже попадает. exclude - основание (корабль
@@ -268,7 +382,8 @@ public final class SableCompat {
      * Луч from-to по блокам построек Sable (кораблей, поворотных частей): луч переводится в координаты каждой постройки
      * на пути (её плот) и проверяется по её блокам. Ближайшее попадание или null. ignore - своя постройка (камера на ней).
      *
-     * @param blocks   откуда брать блоки плота (на сервере - только загруженные чанки)
+     * @param blocks   откуда брать блоки плота (на сервере - только загруженные чанки). {@code Level} сюда передавать
+     *                 нельзя (см. {@link #plain}) - он заменяется обёрткой
      * @param velocity считать ли скорость точки (на клиенте не нужна)
      */
     @Nullable
@@ -276,6 +391,9 @@ public final class SableCompat {
                                     boolean velocity) {
         SableCompanion api = api();
         if (api == null || virtual(level)) return null;
+        double len = from.distanceTo(to);
+        if (!(len <= MAX_RAY)) return null;                              // NaN или концы в разных системах координат
+        if (blocks instanceof Level l) blocks = plain(l);                // иначе Sable «переведёт» луч плота в мир
         ShipHit best = null;
         double bestD = Double.POSITIVE_INFINITY;
         try {
@@ -287,6 +405,7 @@ public final class SableCompat {
                 if (!box.contains(from) && box.clip(from, to).isEmpty()) continue;
                 var pose = s.logicalPose();
                 Vec3 lf = pose.transformPositionInverse(from), lt = pose.transformPositionInverse(to);
+                if (!(lf.distanceTo(lt) <= len + 8)) continue;             // поза с масштабом или мусором - не трассируем
                 net.minecraft.world.phys.BlockHitResult bh = blocks.clip(new net.minecraft.world.level.ClipContext(lf, lt,
                         net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE,
                         net.minecraft.world.phys.shapes.CollisionContext.empty()));

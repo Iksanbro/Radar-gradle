@@ -245,10 +245,15 @@ public final class CameraPayloads {
             if (!(ctx.player() instanceof ServerPlayer sp) || sp.isSpectator()) return;
             ServerLevel level = sp.serverLevel();
             if (!level.isLoaded(p.camera()) || !(level.getBlockEntity(p.camera()) instanceof CameraBlockEntity cam)) return;
-            if (!sp.getUUID().equals(cam.controller(level.getGameTime()))) return;
+            // пауза в пакетах (клиент завис, лаг) управление не отнимает: отказ - только если камеру занял другой
+            if (!cam.acceptsControl(sp.getUUID())) {
+                PacketDistributor.sendToPlayer(sp, new Kick(p.camera()));      // вид этого клиента уже ничем не управляет
+                return;
+            }
             BlockPos monitor = cam.controlMonitor();
             if (monitor == null || !nearMonitor(sp, monitor) || !LinkRegistry.linked(level, monitor, p.camera())) {
                 cam.stopControl(sp.getUUID());
+                PacketDistributor.sendToPlayer(sp, new Kick(p.camera()));      // иначе клиент остался бы в «мёртвом» виде
                 return;
             }
             if (level.getBlockEntity(monitor) instanceof CameraMonitorBlockEntity mon && !mon.powered()) {

@@ -145,7 +145,8 @@ public final class ProjectileTracking {
             if (!loaded(level, from) || !loaded(level, to) || !loaded(level, from.add(to).scale(0.5))) return -1;
             var hit = level.clip(new ClipContext(from, to, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, e));
             if (hit.getType() != HitResult.Type.MISS) {
-                Vec3 h = hit.getLocation();
+                // level.clip с Sable видит и постройки, но точку на постройке отдаёт в координатах её плота
+                Vec3 h = dev.radarfcs.compat.SableCompat.toWorld(level, hit.getLocation());
                 pts.set(k + 1, new Vec(h.x, h.y, h.z));
                 return k + 1;
             }
@@ -153,8 +154,10 @@ public final class ProjectileTracking {
         return -1;
     }
 
+    /** Чанк точки готов (не «есть тикет»: чанк с тикетом, но ещё не загруженный, level.clip ждал бы прямо в тике). */
     private static boolean loaded(ServerLevel level, Vec3 p) {
         if (p.y < level.getMinBuildHeight() || p.y >= level.getMaxBuildHeight()) return true;
-        return level.hasChunkAt(BlockPos.containing(p));
+        BlockPos b = BlockPos.containing(p);
+        return level.getChunkSource().getChunkNow(b.getX() >> 4, b.getZ() >> 4) != null;
     }
 }

@@ -95,6 +95,32 @@ public final class DevAutostop {
         keepForcedTickets(event.getServer());
     }
 
+    /**
+     * {@code -PfcsTests=имя[,имя...]}: сервер игровых тестов запускает только тесты, в имени которых
+     * (класс.метод, строчными) есть одна из подстрок, - быстрая проверка одного теста без всего набора.
+     */
+    @SubscribeEvent
+    @SuppressWarnings("unchecked")
+    public static void onAboutToStart(net.neoforged.neoforge.event.server.ServerAboutToStartEvent event) {
+        String filter = System.getProperty("radar_fcs.tests", "").toLowerCase(java.util.Locale.ROOT);
+        if (filter.isBlank() || !(event.getServer() instanceof net.minecraft.gametest.framework.GameTestServer server)) return;
+        try {
+            var f = net.minecraft.gametest.framework.GameTestServer.class.getDeclaredField("testFunctions");
+            f.setAccessible(true);
+            var tests = (java.util.List<net.minecraft.gametest.framework.TestFunction>) f.get(server);
+            int all = tests.size();
+            String[] keys = filter.split(",");
+            tests.removeIf(t -> {
+                String name = t.testName().toLowerCase(java.util.Locale.ROOT);
+                for (String k : keys) if (!k.isBlank() && name.contains(k.trim())) return false;
+                return true;
+            });
+            FcsMod.LOG.info("[radar_fcs test] filter '{}': {} of {} tests", filter, tests.size(), all);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            FcsMod.LOG.warn("[radar_fcs test] test filter failed: {}", e.toString());
+        }
+    }
+
     @SubscribeEvent
     public static void onTick(ServerTickEvent.Post event) {
         if (event.getServer().getTickCount() % 100 == 0) watchTests(event.getServer());

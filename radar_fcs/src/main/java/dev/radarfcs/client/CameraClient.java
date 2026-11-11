@@ -10,9 +10,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Marker;
-import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -42,11 +40,18 @@ public final class CameraClient {
     private static float savedYaw, savedPitch;
     /** Shift отпущен после входа: только тогда Shift выводит из камеры. */
     private static boolean shiftReleased;
+    /** Расстояние до точки взгляда (считается раз в тик, не в каждом кадре); NaN - луч ни во что не упёрся. */
+    private static double lookDistance = Double.NaN;
 
     private CameraClient() {}
 
     public static boolean active() {
         return camera != null;
+    }
+
+    /** Расстояние до точки взгляда из оверлея (NaN - нет точки или вид не активен). */
+    public static double lookDistance() {
+        return active() ? lookDistance : Double.NaN;
     }
 
     /** Камера, через которую сейчас смотрит этот игрок, или null. */
@@ -80,6 +85,7 @@ public final class CameraClient {
         m.setYRot(p.yaw());
         m.setXRot(p.pitch());
         view = m;
+        lookDistance = Double.NaN;
         mc.setCameraEntity(m);
         shiftReleased = !mc.options.keyShift.isDown();
     }
@@ -158,6 +164,30 @@ public final class CameraClient {
         }
         boolean fire = mc.screen == null && mc.options.keyAttack.isDown();
         PacketDistributor.sendToServer(new CameraPayloads.Control(camera, yaw, pitch, fire));
+        lookDistance = lookDistance(mc);
+    }
+
+    /**
+     * Расстояние до точки взгляда - как её ищет сервер: блоки мира, затем постройки Sable, кроме своей и построек своего
+     * орудия (их присылает сервер). Трассировка - только через {@code SableCompat} (обёртка без надстройки Sable над
+     * {@code clip}): прямой {@code level.clip} с лучом в координатах плота вешал кадр на секунды.
+     */
+    private static double lookDistance(Minecraft mc) {
+        if (mc.player == null || mc.level == null || camera == null) return Double.NaN;
+        try {
+            Vec3 dir = Vec3.directionFromRotation(mc.player.getXRot(), mc.player.getYRot());
+            // луч - от края своего блока (глаз в центре камеры, сам блок не помеха)
+            Vec3 from = eye.add(dir.scale(0.9)), to = eye.add(dir.scale(CameraBlockEntity.RANGE));
+            Vec3 stop = dev.radarfcs.compat.SableCompat.clipWorld(mc.level, from, to);
+            java.util.UUID own = dev.radarfcs.compat.SableCompat.containingId(mc.level, camera);
+            java.util.Set<java.util.UUID> gun = mc.level.getBlockEntity(camera) instanceof CameraBlockEntity cbe ? cbe.ignoredShips() : java.util.Set.of();
+            var ship = dev.radarfcs.compat.SableCompat.clipShips(mc.level, from, stop != null ? stop : to,
+                    id -> id.equals(own) || gun.contains(id), dev.radarfcs.compat.SableCompat.plain(mc.level), false);
+            if (ship != null) stop = ship.point();
+            return stop == null ? Double.NaN : stop.distanceTo(eye);
+        } catch (RuntimeException e) {
+            return Double.NaN;                                           // оверлей не должен ронять или вешать вид
+        }
     }
 
     /**
@@ -246,17 +276,7 @@ public final class CameraClient {
         g.fill(cx, cy - 8, cx + 1, cy - 2, col);
         g.fill(cx, cy + 3, cx + 1, cy + 9, col);
         g.renderOutline(4, 4, w - 8, h - 8, 0x60FFFFFF);
-        Vec3 dir = Vec3.directionFromRotation(mc.player.getXRot(), mc.player.getYRot());
-        // луч - от края своего блока (глаз в центре камеры, сам блок не помеха)
-        BlockHitResult hit = mc.level.clip(new ClipContext(eye.add(dir.scale(0.9)), eye.add(dir.scale(CameraBlockEntity.RANGE)),
-                ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player));
-        Vec3 stop = hit.getType() == HitResult.Type.MISS ? null : hit.getLocation();
-        // постройки Sable (корабли) на луче - тоже точка взгляда
-        var ship = dev.radarfcs.compat.SableCompat.clipShips(mc.level, eye.add(dir.scale(0.9)),
-                stop != null ? stop : eye.add(dir.scale(CameraBlockEntity.RANGE)),
-                id -> id.equals(dev.radarfcs.compat.SableCompat.containingId(mc.level, camera)), mc.level, false);
-        if (ship != null) stop = ship.point();
-        String dist = stop == null ? "-" : String.format(java.util.Locale.ROOT, "%.0f", stop.distanceTo(eye));
+        String dist = Double.isNaN(lookDistance) ? "-" : String.format(java.util.Locale.ROOT, "%.0f", lookDistance);
         g.drawString(mc.font, Component.literal(name).withStyle(ChatFormatting.AQUA), 10, 10, 0xFFFFFF);
         g.drawString(mc.font, Component.translatable("radar_fcs.camera.distance", dist), 10, 22, 0xFFFFFF);
         Component hint = Component.translatable(fire ? "radar_fcs.camera.firing" : "radar_fcs.camera.hint");

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -88,6 +89,10 @@ public final class FireSafety {
      * Блоки на траектории до цели. Попадание в блок у самой цели (на ней или за ней) не считается помехой.
      * У цели с точным габаритом (мобы, игроки) «у самой цели» - в полублоке от габарита: блок перед ней
      * (край стены, за которой пролетает цель) - помеха.
+     *
+     * <p>Трассировка - только по блокам мира в готовых чанках: {@code level.clip} на сервере догружал и генерировал
+     * чанки вдоль траектории прямо в тике (дальняя точка наведения с камеры - зависание сервера), а с Sable ещё и
+     * отдавал точки на постройках в координатах плота.
      */
     private static boolean terrainBlocked(ServerLevel level, List<Vec> path, Track target) {
         Vec end = path.get(path.size() - 1);
@@ -102,9 +107,10 @@ public final class FireSafety {
         Vec a = firstLen > 1.5 ? start.addScaled(first, 1.5 / firstLen) : path.get(1);
         double travelled = Math.min(1.5, firstLen);
         int startIdx = firstLen > 1.5 ? 1 : 2;
+        BlockGetter world = SableCompat.plain(level);
         for (int i = startIdx; i <= path.size() - 1; i++) {
             Vec b = path.get(i);
-            BlockHitResult hit = level.clip(new ClipContext(mc(a), mc(b), ClipContext.Block.COLLIDER,
+            BlockHitResult hit = world.clip(new ClipContext(mc(a), mc(b), ClipContext.Block.COLLIDER,
                     ClipContext.Fluid.NONE, CollisionContext.empty()));
             if (hit.getType() == HitResult.Type.BLOCK) {
                 Vec h = new Vec(hit.getLocation().x, hit.getLocation().y, hit.getLocation().z);
