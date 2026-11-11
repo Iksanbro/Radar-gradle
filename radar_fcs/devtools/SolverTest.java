@@ -524,6 +524,45 @@ public class SolverTest {
         System.out.println("wheel steps: " + (ok ? "all checks passed" : "failed"));
     }
 
+    /** Пределы поворота: длинной дорогой в обход запретного сектора, у предела - ближайший к цели предел. */
+    static void angleLimits() {
+        boolean ok = true;
+        int F = AngleLimit.FREE;
+        // без пределов - как есть
+        ok &= AngleLimit.plan(0, 170, F, F).delta() == 170 && AngleLimit.plan(0, 170, F, F).reachable();
+        // вправо можно 270, влево 10: из 0 к -170 (влево 170) - запрещено коротко, идём вправо на 190
+        AngleLimit.Plan p = AngleLimit.plan(0, -170, 10, 270);
+        ok &= Math.abs(p.delta() - 190) < 1e-9 && p.reachable();
+        // в пределах - коротким путём
+        p = AngleLimit.plan(0, 45, 90, 90);
+        ok &= Math.abs(p.delta() - 45) < 1e-9 && p.reachable();
+        // сектор ±90: цель сзади-слева (-135) недостижима - к ближнему пределу (-90)
+        p = AngleLimit.plan(0, -135, 90, 90);
+        ok &= Math.abs(p.delta() + 90) < 1e-9 && !p.reachable();
+        // цель сзади-справа (+150) - к +90
+        p = AngleLimit.plan(30, 120, 90, 90);
+        ok &= Math.abs(p.delta() - 60) < 1e-9 && !p.reachable();
+        // уже повернули на 350 вправо (предел 360): к цели «на 20 правее» нельзя - обратно на 340
+        p = AngleLimit.plan(350, 20, 360, 360);
+        ok &= Math.abs(p.delta() + 340) < 1e-9 && p.reachable();
+        // предел только в одну сторону: влево 30, вправо без предела; цель -60 - обход вправо на 300
+        p = AngleLimit.plan(0, -60, 30, F);
+        ok &= Math.abs(p.delta() - 300) < 1e-9 && p.reachable();
+        // накопленный угол: переход через 180 не теряет оборот
+        double t = AngleLimit.unwrap(170, 190);
+        ok &= Math.abs(t - 190) < 1e-9 && Math.abs(AngleLimit.unwrap(190, -165) - 195) < 1e-9;
+        // наклон: вверх 30, вниз 5
+        p = AngleLimit.planLinear(0, 45, 5, 30);
+        ok &= Math.abs(p.delta() - 30) < 1e-9 && !p.reachable();
+        p = AngleLimit.planLinear(10, -12, 5, 30);
+        ok &= Math.abs(p.delta() + 12) < 1e-9 && p.reachable();
+        p = AngleLimit.planLinear(0, -20, 5, F);
+        ok &= Math.abs(p.delta() + 5) < 1e-9 && !p.reachable();
+        ok &= AngleLimit.clean(0) == 1 && AngleLimit.clean(400) == F && AngleLimit.free(F) && !AngleLimit.free(360);
+        if (!ok) failures++;
+        System.out.println("angle limits: " + (ok ? "all checks passed" : "failed"));
+    }
+
     public static void main(String[] a) {
         ballisticCase("big cannon 4 charges", new Truth(8, -0.05, 0.01, false, 0, 0, 1, 1, 600), 300, false, 97);
         ballisticCase("big cannon 2 charges", new Truth(4, -0.05, 0.01, false, 0, 0, 1, 1, 600), 200, false, 97);
@@ -541,6 +580,7 @@ public class SolverTest {
         interception();
         wheelSteps();
         mountTargets();
+        angleLimits();
         if (failures > 0) {
             System.out.println("FAILURES: " + failures);
             System.exit(1);

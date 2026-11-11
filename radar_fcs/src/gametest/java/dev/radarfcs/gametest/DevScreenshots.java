@@ -264,6 +264,11 @@ public final class DevScreenshots {
         if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.turret")) tick = 720;   // только башня
         if (tick == 400 && Boolean.getBoolean("radar_fcs.screenshot.camera")) tick = 690;   // только камера
         if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.swivel")) tick = 1100;  // только подшипник-шарнир
+        if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.limits")) tick = 2000;  // только пределы поворота
+        if (tick >= 2000) {
+            limitUi(mc, server);
+            return;
+        }
         if (tick == 722) server.execute(() -> turretScene(server));
         if (tick == 726) server.execute(() -> look(server, base.offset(-8, 2, 10).getCenter(),
                 new Vec3(base.getX() - 8.5, base.getY() + 5.5, base.getZ() + 19.5)));
@@ -802,6 +807,43 @@ public final class DevScreenshots {
         float yaw = (float) Math.toDegrees(Math.atan2(-d.x, d.z));
         float pitch = (float) -Math.toDegrees(Math.atan2(d.y, d.horizontalDistance()));
         p.teleportTo(server.overworld(), eye.x, eye.y - 1.62, eye.z, yaw, pitch);
+    }
+
+    /** Пределы поворота: значки на контроллере наводки и приводе орудия, доски-ползунки обоих. */
+    private static void limitUi(Minecraft mc, net.minecraft.server.MinecraftServer server) {
+        BlockPos ctrl = base.offset(-3, 5, -8), drive = ctrl.east(2);
+        if (tick == 2002) server.execute(() -> {
+            ServerLevel level = server.overworld();
+            level.setBlock(ctrl, FcsRegistry.YAW_CONTROLLER.get().defaultBlockState()
+                    .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.UP), 3);
+            level.setBlock(drive, FcsRegistry.GUN_DRIVE.get().defaultBlockState()
+                    .setValue(com.simibubi.create.content.kinetics.base.DirectionalKineticBlock.FACING, Direction.UP)
+                    .setValue(dev.radarfcs.block.GunDriveBlock.PITCH, true), 3);
+            if (level.getBlockEntity(ctrl) instanceof dev.radarfcs.block.AimControllerBlockEntity c) c.limits.set(90, 45);
+            if (level.getBlockEntity(drive) instanceof dev.radarfcs.block.GunDriveBlockEntity d) d.limits.set(60, dev.radarfcs.core.AngleLimit.FREE);
+            look(server, ctrl.getCenter().add(0, 0, 0.5), ctrl.getCenter().add(0.9, 0.35, 2.3));
+        });
+        if (tick == 2090) shot(mc, "limit_box");
+        if (tick == 2094) openBoard(mc, ctrl);
+        if (tick == 2100) shot(mc, "limit_board_yaw");
+        if (tick == 2102) openBoard(mc, drive);
+        if (tick == 2108) shot(mc, "limit_board_drive");
+        if (tick == 2110) mc.setScreen(null);
+        if (tick == 2114) mc.stop();
+    }
+
+    private static void openBoard(Minecraft mc, BlockPos pos) {
+        dev.radarfcs.block.AngleLimitBehaviour lim = mc.level == null ? null
+                : mc.level.getBlockEntity(pos) instanceof dev.radarfcs.block.AimControllerBlockEntity c ? c.limits
+                : mc.level.getBlockEntity(pos) instanceof dev.radarfcs.block.GunDriveBlockEntity d ? d.limits : null;
+        if (lim == null || mc.player == null) {
+            FcsMod.LOG.info("[radar_fcs dev] limits: nothing at {}", pos);
+            return;
+        }
+        FcsMod.LOG.info("[radar_fcs dev] limits client {}: {}", pos, lim.formatValue());
+        var hit = new net.minecraft.world.phys.BlockHitResult(pos.getCenter(), Direction.SOUTH, pos, false);
+        mc.setScreen(new com.simibubi.create.foundation.blockEntity.behaviour.ValueSettingsScreen(pos,
+                lim.createBoard(mc.player, hit), lim.getValueSettings(), s -> { }, lim.netId()));
     }
 
     /** Все линки сцены - в одной радарной сети, своей у каждого запуска (сцены прошлых запусков стоят в том же мире). */

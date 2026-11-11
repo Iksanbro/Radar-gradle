@@ -133,6 +133,8 @@ final class FcsScenes {
         sayAt(s, 100, face(u, 2, 2, 3, Direction.WEST), false);                                   // 5 нагрузка, станок не крутить валами
         s.world().setKineticSpeed(kin, 0);
         sayAt(s, 90, face(u, 2, 2, 3, Direction.WEST), true);                                     // 6 без вращения
+        s.overlay().showControls(face(u, 2, 1, 2, Direction.WEST), Pointing.LEFT, 60).rightClick();
+        sayAt(s, 130, face(u, 2, 1, 2, Direction.WEST), true);                                    // 7 пределы поворота
         s.markAsFinished();
     }
 
@@ -349,19 +351,21 @@ final class FcsScenes {
         s.world().configureCenterOfRotation(cannon, u.vector().centerOf(3, 4, 2));
         s.world().rotateSection(cannon, 0, 30, 0, 30);
         sayAt(s, 110, u.vector().topOf(4, 4, 2), true);                                           // 3 обучение
+        s.overlay().showControls(face(u, 3, 1, 2, Direction.WEST), Pointing.LEFT, 60).rightClick();
+        sayAt(s, 130, face(u, 3, 1, 2, Direction.WEST), true);                                    // 4 пределы поворота
         s.world().setKineticSpeed(yaw, 0);
         s.world().setKineticSpeed(pitch, 0);
         show(s, u.select().position(2, 2, 2), Direction.EAST, 3);
         show(s, u.select().position(2, 1, 2), Direction.EAST, 3);
         show(s, u.select().position(4, 2, 3), Direction.WEST, 10);
         Vec3 link = face(u, 2, 2, 2, Direction.UP);
-        sayAt(s, 100, link, true);                                                                // 4 орудийные линки
+        sayAt(s, 100, link, true);                                                                // 5 орудийные линки
         s.overlay().showControls(link, Pointing.DOWN, 50).rightClick().whileSneaking();
-        sayAt(s, 110, link, true);                                                                // 5 настройки: имя
-        sayAt(s, 150, link, false);                                                               // 6 тип
-        sayAt(s, 120, link, false);                                                               // 7 автоприцеливание и стрельба
-        sayAt(s, 120, link, false);                                                               // 8 основная пушка
-        sayAt(s, 100, face(u, 3, 2, 2, Direction.WEST), true);                                    // 9 огонь станком, радарный линк
+        sayAt(s, 110, link, true);                                                                // 6 настройки: имя
+        sayAt(s, 150, link, false);                                                               // 7 тип
+        sayAt(s, 120, link, false);                                                               // 8 автоприцеливание и стрельба
+        sayAt(s, 120, link, false);                                                               // 9 основная пушка
+        sayAt(s, 100, face(u, 3, 2, 2, Direction.WEST), true);                                    // 10 огонь станком, радарный линк
         s.markAsFinished();
     }
 }

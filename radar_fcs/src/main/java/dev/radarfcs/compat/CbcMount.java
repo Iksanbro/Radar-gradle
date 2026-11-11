@@ -182,6 +182,13 @@ public final class CbcMount {
     /** Текущий yaw станка (cannonYaw). */
     public double yaw() { return ops.yaw(); }
 
+    /** «Ноль» курса станка: сторона, куда CBC ставит пушку при сборке (HORIZONTAL_FACING станка); NaN - нет такой. */
+    public double baseYaw() {
+        BlockState s = be.getBlockState();
+        if (!s.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING)) return Double.NaN;
+        return s.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING).toYRot();
+    }
+
     /** Текущий pitch станка (cannonPitch). */
     public double pitch() { return ops.pitch(); }
 

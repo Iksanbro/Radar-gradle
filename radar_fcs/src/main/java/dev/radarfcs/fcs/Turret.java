@@ -1,5 +1,9 @@
 package dev.radarfcs.fcs;
 
+import dev.radarfcs.core.Aim;
+
+import dev.radarfcs.core.AngleLimit;
+
 import dev.radarfcs.block.GunDriveBlockEntity;
 import dev.radarfcs.block.GunRotatorBlockEntity;
 import dev.radarfcs.block.SightBlockEntity;
@@ -46,6 +50,8 @@ public final class Turret {
 
     // решение ведущего на этот тик - для остальных станков орудия
     public boolean fire;
+    /** Последний расчёт приводов: нужное направление за пределами поворота приводов (стоят у предела). */
+    public boolean outOfArc;
     public long fireTick = Long.MIN_VALUE / 2;
 
     public Turret(@Nullable BlockPos sight, BlockPos key) {
@@ -163,9 +169,26 @@ public final class Turret {
         // команда: сначала курс, затем наклон уже повёрнутого направления
         Vec3 s = after.normalize();
         double yaw = Math.toDegrees(signedAngle(s, d, up));
+        outOfArc = false;
+        // пределы курса (ползунок привода): не через запретный сектор, за пределом - стоять у предела
+        GunDriveBlockEntity yawLimit = limitedDrive(list, false);
+        if (yawLimit != null) {
+            double t = yawLimit.trackYaw(a);
+            AngleLimit.Plan p = AngleLimit.plan(t, yaw, yawLimit.limits.second(), yawLimit.limits.first());
+            yaw = p.delta();
+            if (!p.reachable()) outOfArc = true;
+        }
         Vec3 s2 = rotate(s, up, Math.toRadians(yaw));
         Vec3 k = s2.cross(up);
         double pitch = k.lengthSqr() < 1e-6 ? 0 : Math.toDegrees(signedAngle(s2, d, k.normalize()));
+        // пределы наклона - от горизонта основания
+        GunDriveBlockEntity pitchLimit = limitedDrive(list, true);
+        if (pitchLimit != null) {
+            double e = Math.toDegrees(Math.asin(Math.max(-1, Math.min(1, s2.dot(up)))));
+            AngleLimit.Plan p = AngleLimit.planLinear(e, pitch, pitchLimit.limits.second(), pitchLimit.limits.first());
+            pitch = p.delta();
+            if (!p.reachable()) outOfArc = true;
+        }
         boolean noPower = false;
         for (GunDriveBlockEntity dr : list) {
             double need = dr.pitch() ? pitch : yaw;
@@ -178,6 +201,38 @@ public final class Turret {
             dr.command(out);
         }
         return noPower;
+    }
+
+    /** Привод курса (pitch = false) или наклона с включёнными пределами, или null. */
+    @Nullable
+    private static GunDriveBlockEntity limitedDrive(List<GunDriveBlockEntity> list, boolean pitch) {
+        for (GunDriveBlockEntity dr : list) if (dr.pitch() == pitch && dr.limits != null && dr.limits.limited()) return dr;
+        return null;
+    }
+
+    /** Направление want в пределах поворота приводов (курс - от их нуля, наклон - от горизонта основания). */
+    public static boolean inArc(Level level, List<GunDriveBlockEntity> list, Vec3 want) {
+        if (list == null || list.isEmpty()) return true;
+        Vec3 d = want.normalize();
+        GunDriveBlockEntity y = limitedDrive(list, false);
+        if (y != null) {
+            double rel = y.yawOf(d), t = y.turned();
+            if (!Double.isNaN(rel) && !Double.isNaN(t)
+                    && !AngleLimit.plan(t, Aim.wrap180(rel - t), y.limits.second(), y.limits.first()).reachable()) return false;
+        }
+        GunDriveBlockEntity p = limitedDrive(list, true);
+        if (p != null) {
+            Vec3 up = new Vec3(0, 1, 0);
+            for (GunDriveBlockEntity dr : list) {
+                if (!dr.pitch()) {
+                    up = SableCompat.dirToWorld(SableCompat.containing(level, dr.getBlockPos()), up).normalize();
+                    break;
+                }
+            }
+            double e = Math.toDegrees(Math.asin(Math.max(-1, Math.min(1, d.dot(up)))));
+            if (!AngleLimit.planLinear(0, e, p.limits.second(), p.limits.first()).reachable()) return false;
+        }
+        return true;
     }
 
     /** За сколько тиков привод старается довернуть: меньше - быстрее, но с перерегулированием (отклик запаздывает на тик). */

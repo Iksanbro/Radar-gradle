@@ -12,6 +12,7 @@ import dev.radarfcs.compat.CbcMount;
 import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.compat.ShotObserver;
 import dev.radarfcs.core.Aim;
+import dev.radarfcs.core.AngleLimit;
 import dev.radarfcs.core.BallisticSolver;
 import dev.radarfcs.core.FlightModel;
 import dev.radarfcs.core.IffRule;
@@ -214,6 +215,16 @@ public final class FcsControl {
         Track target = null;
         TargetPath motion = null;
         double age = 0;
+        // пределы поворота (ползунки контроллеров наводки и приводов): цель за пределом - следующая по очереди;
+        // если все за пределом - первая (пушка стоит у предела, статус «вне сектора»)
+        final List<GunDriveBlockEntity> arcDrives = drives;
+        java.util.function.Predicate<Vec3> inArc = tu != null
+                ? dir -> Turret.inArc(level, arcDrives, dir)
+                : dir -> mountInArc(level, m, d, ship, dir);
+        BallisticSolver.Solution fbSol = null;
+        Track fbTarget = null;
+        TargetPath fbMotion = null;
+        double fbAge = 0;
         for (int i = 0; i < Math.min(3, cands.size()); i++) {
             Track t = cands.get(i);
             double horizon = FcsConfig.USE_ACCELERATION.get() && !t.grounded ? FcsConfig.ACCEL_HORIZON.get() : 0;
@@ -226,12 +237,28 @@ public final class FcsControl {
             // встреча снарядов проверяется непрерывно (отрезки обоих за тик), а не по положению цели на конец тика
             solver.discrete(discrete && t.kind != Track.Kind.PROJECTILE);
             sol = solver.solve(muzzle, mo, a + 1, model, FcsConfig.LEAD_ITERATIONS.get(), hint, FcsConfig.MAX_RANGE.get());
+            if (sol != null && !inArc.test(new Vec3(sol.direction().x(), sol.direction().y(), sol.direction().z()))) {
+                if (fbSol == null) {
+                    fbSol = sol;
+                    fbTarget = t;
+                    fbMotion = mo;
+                    fbAge = a;
+                }
+                sol = null;
+                continue;
+            }
             if (sol != null) {
                 target = t;
                 motion = mo;
                 age = a;
                 break;
             }
+        }
+        if (sol == null && fbSol != null) {
+            sol = fbSol;
+            target = fbTarget;
+            motion = fbMotion;
+            age = fbAge;
         }
         if (sol == null) {
             m.targetId = null;
@@ -263,6 +290,7 @@ public final class FcsControl {
             Turret.Drive drv = Turret.aim(chain, aimDir, wantW, FcsConfig.DEADBAND.get());
             noPower = drv.noPower();
             if (tu.drive(level, drives, aimDir, drv.after(), wantW, FcsConfig.DEADBAND.get(), now)) noPower = true;
+            if (!drives.isEmpty() && tu.outOfArc) outOfArc = true;
         } else {
             Vec3 wantL = SableCompat.dirToLocal(ship, wantW);
             Vec wl = new Vec(wantL.x, wantL.y, wantL.z);
@@ -271,13 +299,28 @@ public final class FcsControl {
             double lo = -d.maxDepression(), hi = d.maxElevation();
             outOfArc = wantPitch < lo - 0.5 || wantPitch > hi + 0.5;
             wantPitch = Aim.clamp(wantPitch, lo, hi);
+            AimControllerBlockEntity yc = AimControllerBlockEntity.find(level, d.pos(), false);
+            AimControllerBlockEntity pc = AimControllerBlockEntity.find(level, d.pos(), true);
+            // пределы наклона контроллера - от горизонта
+            if (pc != null && pc.limits.limited()) {
+                AngleLimit.Plan pp = AngleLimit.planLinear(0, wantPitch, pc.limits.second(), pc.limits.first());
+                if (!pp.reachable()) outOfArc = true;
+                wantPitch = pp.delta();
+            }
+            // пределы курса контроллера - от стороны станка, накопительно: путь в обход запретного сектора
+            double yawNeed = Aim.wrap180(wantYaw - m.cmdYaw);
+            double zeroYaw = d.baseYaw();
+            if (yc != null && yc.limits.limited() && !Double.isNaN(zeroYaw)) {
+                double t = yc.trackYaw(m.cmdYaw - zeroYaw);
+                AngleLimit.Plan yp = AngleLimit.plan(t, yawNeed, yc.limits.first(), yc.limits.second());
+                if (!yp.reachable()) outOfArc = true;
+                yawNeed = yp.delta();
+            }
 
             // скорость поворота: от контроллеров наводки (вращение на их валах, как у валов CBC) или без кинетики
             double slewYaw, slewPitch;
             if (FcsConfig.REQUIRE_ROTATION.get()) {
                 double k = FcsConfig.SHAFT_SPEED.get();
-                AimControllerBlockEntity yc = AimControllerBlockEntity.find(level, d.pos(), false);
-                AimControllerBlockEntity pc = AimControllerBlockEntity.find(level, d.pos(), true);
                 noController = yc == null || pc == null;
                 slewYaw = yc == null ? 0 : yc.degPerTick() * k;
                 slewPitch = pc == null ? 0 : pc.degPerTick() * k;
@@ -285,9 +328,9 @@ public final class FcsControl {
                 slewYaw = slewPitch = FcsConfig.SLEW.get();
             }
             double db = FcsConfig.DEADBAND.get();
-            noPower = (slewYaw <= 0 && Math.abs(Aim.wrap180(wantYaw - m.cmdYaw)) > db)
+            noPower = (slewYaw <= 0 && Math.abs(yawNeed) > db)
                     || (slewPitch <= 0 && Math.abs(wantPitch - m.cmdPitch) > db);
-            double ny = Aim.wrap180(Aim.stepAngle(m.cmdYaw, wantYaw, slewYaw, db));
+            double ny = Aim.wrap180(Aim.stepLinear(m.cmdYaw, m.cmdYaw + yawNeed, slewYaw, db));
             double np = Aim.stepLinear(m.cmdPitch, wantPitch, slewPitch, db);
             if (ny != m.cmdYaw || np != m.cmdPitch) {
                 m.cmdYaw = ny;
@@ -429,6 +472,29 @@ public final class FcsControl {
         if (manual != null && (m.status == Status.FIRE || m.status == Status.AIMING || m.status == Status.HOLD || m.status == Status.PAUSE)) {
             m.status = Status.CAMERA;
         }
+    }
+
+    /** Направление dir (мир) в пределах поворота контроллеров наводки станка (курс - от стороны станка, наклон - от горизонта). */
+    private static boolean mountInArc(ServerLevel level, MountState m, @Nullable CbcMount d, @Nullable SubLevelAccess ship, Vec3 dir) {
+        if (d == null) return true;
+        AimControllerBlockEntity yc = AimControllerBlockEntity.find(level, d.pos(), false);
+        AimControllerBlockEntity pc = AimControllerBlockEntity.find(level, d.pos(), true);
+        boolean yl = yc != null && yc.limits.limited(), pl = pc != null && pc.limits.limited();
+        if (!yl && !pl) return true;
+        Vec3 l = SableCompat.dirToLocal(ship, dir);
+        Vec wl = new Vec(l.x, l.y, l.z);
+        if (pl) {
+            double p = wl.pitchDeg() * (FcsConfig.INVERT_PITCH.get() ? -1 : 1);
+            if (!AngleLimit.planLinear(0, p, pc.limits.second(), pc.limits.first()).reachable()) return false;
+        }
+        double zero = d.baseYaw();
+        if (yl && !Double.isNaN(zero) && !Double.isNaN(m.cmdYaw)) {
+            double y = Aim.wrap180(wl.yawDeg() + FcsConfig.YAW_OFFSET.get());
+            double t = yc.turned();
+            if (Double.isNaN(t)) t = Aim.wrap180(m.cmdYaw - zero);
+            if (!AngleLimit.plan(t, Aim.wrap180(y - m.cmdYaw), yc.limits.first(), yc.limits.second()).reachable()) return false;
+        }
+        return true;
     }
 
     /** Захват пушки вычислителем (одна пушка - один вычислитель); false - ею управляет другой. */

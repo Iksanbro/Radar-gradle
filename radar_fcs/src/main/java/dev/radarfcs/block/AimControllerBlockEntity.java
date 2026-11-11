@@ -2,12 +2,17 @@ package dev.radarfcs.block;
 
 import com.simibubi.create.content.kinetics.base.DirectionalKineticBlock;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
+import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
+import dev.radarfcs.core.AngleLimit;
+import dev.radarfcs.core.Aim;
 import dev.radarfcs.compat.CbcMount;
 import java.util.List;
 import java.util.Locale;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -20,9 +25,36 @@ import org.jetbrains.annotations.Nullable;
  * станок по своей оси - как от валов CBC: 0.0375 град/тик на об/мин (256 об/мин = 9.6 град/тик).
  */
 public class AimControllerBlockEntity extends KineticBlockEntity {
+    /** Пределы поворота (ползунок на боковой грани): курс - влево/вправо от стороны станка, наклон - вверх/вниз от горизонта. */
+    public AngleLimitBehaviour limits;
+    /** Курс станка от его стороны (накопительно, + вправо), только у контроллера курса; NaN - ещё не считали. */
+    private double turned = Double.NaN;
 
     public AimControllerBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
+    }
+
+    @Override
+    public void addBehaviours(List<BlockEntityBehaviour> behaviours) {
+        super.addBehaviours(behaviours);
+        behaviours.add(limits = new AngleLimitBehaviour(this, this::isPitch, () -> { }));
+    }
+
+    /**
+     * Накопленный курс станка от его «нуля» (стороны, куда смотрит станок): rel - текущий курс минус ноль (любой,
+     * берётся ветка, ближайшая к прошлой - так видно, что станок обошёл полный круг).
+     */
+    public double trackYaw(double rel) {
+        double t = Double.isNaN(turned) ? Aim.wrap180(rel) : AngleLimit.unwrap(turned, rel);
+        if (t != turned) {
+            turned = t;
+            setChanged();
+        }
+        return t;
+    }
+
+    public double turned() {
+        return turned;
     }
 
     public boolean isPitch() {
@@ -76,7 +108,21 @@ public class AimControllerBlockEntity extends KineticBlockEntity {
             tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.controller.rate",
                     String.format(Locale.ROOT, "%.1f", degPerTick() * 20)).withStyle(ChatFormatting.AQUA)));
         }
+        if (limits.limited()) tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.angle_limit.goggles",
+                limits.formatValue()).withStyle(ChatFormatting.GRAY)));
         super.addToGoggleTooltip(tooltip, isPlayerSneaking);
         return true;
+    }
+
+    @Override
+    protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
+        super.write(tag, registries, clientPacket);
+        if (!clientPacket && !Double.isNaN(turned)) tag.putDouble("Turned", turned);
+    }
+
+    @Override
+    protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
+        super.read(tag, registries, clientPacket);
+        if (!clientPacket) turned = tag.contains("Turned") ? tag.getDouble("Turned") : Double.NaN;
     }
 }

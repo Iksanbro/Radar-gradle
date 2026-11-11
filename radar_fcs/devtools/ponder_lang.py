@@ -119,6 +119,12 @@ SCENES = {
          'показывают скорость поворота',
          'Without a controller ("no aim controller") or rotation the cannon neither aims nor fires. Engineer\'s Goggles show '
          'the turn speed'),
+        ('Предел поворота — ползунок на боковой грани контроллера (удерживать ПКМ), как у торсионной пружины: два ряда, по '
+         'одному на направление. Курс — влево и вправо от стороны станка, наклон — вверх и вниз от горизонта, 1–360°; '
+         'правый край — без предела. Цель за пределом пушка пропускает, а если других нет — стоит у предела («вне сектора»)',
+         'Rotation limit: a slider on the side of the controller (hold right-click), like the Torsion Spring: two rows, one '
+         'per direction. Yaw - left and right of the mount\'s facing, pitch - up and down from the horizon, 1-360°; the right '
+         'end means no limit. Targets beyond the limit are skipped; with no others the cannon waits at the limit ("out of arc")'),
     ]),
     'network': (('Радарная сеть и блок памяти', 'Radar networks and the Memory Block'), [
         ('Вычислитель, станки, радары, мониторы, камеры и части орудий соединяются только радарными линками — автоматического '
@@ -297,6 +303,12 @@ SCENES = {
          'Right-click with an empty hand to switch the drive between yaw (↔) and pitch (↕)'),
         ('Выход может крутить подшипник, шестерни или вал станка. Передаточное число и направление вычислитель выучивает сам',
          'The output can drive a bearing, gears or a mount shaft. The computer learns the ratio and direction by itself'),
+        ('Предел поворота — ползунок на боковой грани привода (удерживать ПКМ): по ряду на каждое направление, 1–360°, правый '
+         'край — без предела. Курс отсчитывается от направления орудия в момент, когда предел включили, наклон — от '
+         'горизонта. Через запретный сектор орудие не поворачивает — идёт в обход',
+         'Rotation limit: a slider on the side of the drive (hold right-click), one row per direction, 1-360°, the right end '
+         'means no limit. Yaw counts from where the gun pointed when the limit was enabled, pitch from the horizon. The gun '
+         'never turns through the forbidden arc - it goes the other way round'),
         ('Приводы, станки и прицелы связываются орудийными линками в одно орудие',
          'Gun Links join drives, mounts and sights into one gun'),
         ('Shift+ПКМ по орудийному линку — настройки орудия (общие для всех его линков). Имя — видно в отчёте вычислителя и в '
