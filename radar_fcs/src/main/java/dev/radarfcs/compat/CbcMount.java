@@ -182,8 +182,17 @@ public final class CbcMount {
     /** Текущий yaw станка (cannonYaw). */
     public double yaw() { return ops.yaw(); }
 
-    /** «Ноль» курса станка: сторона, куда CBC ставит пушку при сборке (HORIZONTAL_FACING станка); NaN - нет такой. */
+    /**
+     * «Ноль» курса станка - куда смотрела пушка при сборке: {@code initialOrientation} собранной пушки (так считают
+     * нейтраль и CBC, и компактные станки FPC; ствол бывает собран и против HORIZONTAL_FACING станка - у зеркально
+     * поставленных станков), без пушки - HORIZONTAL_FACING; NaN - не определить.
+     */
     public double baseYaw() {
+        AbstractMountedCannonContraption c = cannon();
+        if (c != null) {
+            Direction o = c.initialOrientation();
+            if (o != null && o.getAxis().isHorizontal()) return o.toYRot();
+        }
         BlockState s = be.getBlockState();
         if (!s.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING)) return Double.NaN;
         return s.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING).toYRot();

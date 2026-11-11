@@ -824,23 +824,24 @@ public final class DevScreenshots {
             look(server, ctrl.getCenter().add(0, 0, 0.5), ctrl.getCenter().add(0.9, 0.35, 2.3));
         });
         if (tick == 2090) shot(mc, "limit_box");
-        if (tick == 2094) openBoard(mc, ctrl);
+        if (tick == 2094) openBoard(mc, ctrl, true);
         if (tick == 2100) shot(mc, "limit_board_yaw");
-        if (tick == 2102) openBoard(mc, drive);
+        if (tick == 2102) openBoard(mc, drive, false);
         if (tick == 2108) shot(mc, "limit_board_drive");
         if (tick == 2110) mc.setScreen(null);
         if (tick == 2114) mc.stop();
     }
 
-    private static void openBoard(Minecraft mc, BlockPos pos) {
-        dev.radarfcs.block.AngleLimitBehaviour lim = mc.level == null ? null
+    private static void openBoard(Minecraft mc, BlockPos pos, boolean second) {
+        dev.radarfcs.block.AngleLimits all = mc.level == null ? null
                 : mc.level.getBlockEntity(pos) instanceof dev.radarfcs.block.AimControllerBlockEntity c ? c.limits
                 : mc.level.getBlockEntity(pos) instanceof dev.radarfcs.block.GunDriveBlockEntity d ? d.limits : null;
+        dev.radarfcs.block.AngleLimitBehaviour lim = all == null ? null : second ? all.secondBox : all.firstBox;
         if (lim == null || mc.player == null) {
             FcsMod.LOG.info("[radar_fcs dev] limits: nothing at {}", pos);
             return;
         }
-        FcsMod.LOG.info("[radar_fcs dev] limits client {}: {}", pos, lim.formatValue());
+        FcsMod.LOG.info("[radar_fcs dev] limits client {}: {}", pos, all.formatValue());
         var hit = new net.minecraft.world.phys.BlockHitResult(pos.getCenter(), Direction.SOUTH, pos, false);
         mc.setScreen(new com.simibubi.create.foundation.blockEntity.behaviour.ValueSettingsScreen(pos,
                 lim.createBoard(mc.player, hit), lim.getValueSettings(), s -> { }, lim.netId()));

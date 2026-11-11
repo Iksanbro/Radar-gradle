@@ -51,10 +51,15 @@ public class FirepowerGameTests {
      * VERTICAL_DIRECTION (ставим DOWN - пушка сверху). Контроллеры наводки - снизу и с другого бока.
      */
     static void compactAutocannon(GameTestHelper h, String mountId, BlockPos mount, Direction dir, int barrels, int rounds) {
-        BlockState st = block(mountId).defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, dir)
+        compactAutocannon(h, mountId, mount, dir, dir, barrels, rounds);
+    }
+
+    /** То же, но ствол пушки - по barrelDir (может смотреть против HORIZONTAL_FACING станка). */
+    static void compactAutocannon(GameTestHelper h, String mountId, BlockPos mount, Direction facing, Direction dir, int barrels, int rounds) {
+        BlockState st = block(mountId).defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, facing)
                 .setValue(CompactCannonMountBlock.VERTICAL_DIRECTION, Direction.DOWN);
         h.setBlock(mount, st);
-        powerMount(h, mount, dir, 256);
+        powerMount(h, mount, facing, 256);
         BlockPos pivot = mount.relative(((CompactCannonMountBlock) st.getBlock()).getCannonSide(st));
         String m = "cast_iron";
         h.setBlock(pivot.relative(dir, -1), block("createbigcannons:" + m + "_autocannon_breech").defaultBlockState()
@@ -111,6 +116,49 @@ public class FirepowerGameTests {
             if (!mount.typeName().startsWith("Compact")) throw new GameTestAssertException("type name " + mount.typeName());
             FcsMod.LOG.info("[radar_fcs test] {}: HIT, health {} -> {}, type {}, yaw {} -> {}, pitch {}", name, max,
                     husk.getHealth(), mount.typeName(), yaw0.get(), mount.yaw(), mount.pitch());
+        });
+    }
+
+    /**
+     * Пушка на компактном станке собрана стволом против HORIZONTAL_FACING станка (так бывает у зеркально поставленных
+     * станков с двух сторон постройки), у контроллера курса предел ±40°. Ноль пределов - куда смотрит ствол при сборке:
+     * цель перед стволом поражается, станок не выходит из ±40° от неё. Раньше ноль брался от HORIZONTAL_FACING - сектор
+     * оказывался за спиной пушки, и она разворачивалась на 180°.
+     */
+    @GameTest(template = ARENA, batch = "fpc", timeoutTicks = 600)
+    public static void compactMountReversedCannonLimit(GameTestHelper h) {
+        if (!Mods.FIREPOWER) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        BlockPos mountRel = new BlockPos(30, 1, 32);
+        compactAutocannon(h, "cbc_firepower_components:compact_cannon_mount", mountRel, Direction.EAST, Direction.WEST, 4, 64);
+        CbcMount mount = CbcMount.of(h.getLevel().getBlockEntity(h.absolutePos(mountRel)));
+        if (mount == null) throw new GameTestAssertException("compact mount is not recognized as a mount");
+        FireControlBlockEntity be = fcs(h, new BlockPos(34, 1, 26));
+        SettingsGameTests.configure(be, st -> st.dropStatic = false);
+        dev.radarfcs.block.AimControllerBlockEntity yc = dev.radarfcs.block.AimControllerBlockEntity.find(h.getLevel(), h.absolutePos(mountRel), false);
+        if (yc == null) throw new GameTestAssertException("no yaw controller");
+        yc.limits.set(40, 40);
+        Mob husk = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(8.5, 1, 36.5), 0, 0));
+        java.util.concurrent.atomic.AtomicInteger hits = FcsGameTests.countHits(h, husk);
+        double[] maxRel = {0};
+        h.onEachTick(() -> {
+            if (!mount.isAssembled()) return;
+            double rel = dev.radarfcs.core.Aim.wrap180(mount.yaw() - Direction.WEST.toYRot());
+            maxRel[0] = Math.max(maxRel[0], Math.abs(rel));
+            if (Math.abs(rel) > 40.5) h.fail("cannon left the sector around its barrel: " + rel + " (zero " + mount.baseYaw() + ")");
+            if (hits.get() >= 2) {
+                MountState m = be.mountStates().get(0);
+                FcsMod.LOG.info("[radar_fcs test] fpc_reversed: hits {}, zero {}, max |rel| {}, status {}", hits.get(), mount.baseYaw(),
+                        String.format(java.util.Locale.ROOT, "%.1f", maxRel[0]), m.status);
+                h.succeed();
+            } else if (h.getTick() > 400) {
+                MountState m = be.mountStates().isEmpty() ? null : be.mountStates().get(0);
+                h.fail("target in front of the reversed cannon not hit: zero " + mount.baseYaw() + ", yaw " + mount.yaw()
+                        + ", status " + (m == null ? null : m.status) + ", error " + mount.assemblyError());
+            }
         });
     }
 }

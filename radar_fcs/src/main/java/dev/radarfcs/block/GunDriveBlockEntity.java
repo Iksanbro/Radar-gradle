@@ -41,7 +41,7 @@ public class GunDriveBlockEntity extends SplitShaftBlockEntity implements IHaveG
      * Пределы поворота (ползунок на боковой грани): курс - влево/вправо от «нуля» (направления орудия в момент, когда
      * ограничение включили), наклон - вверх/вниз от горизонта основания.
      */
-    public AngleLimitBehaviour limits;
+    public AngleLimits limits;
     /** Ноль курса: угол направления орудия в осях основания (против часовой от юга), NaN - не задан. */
     private double zero = Double.NaN;
     /** Курс от нуля, накопительно (+ влево, против часовой сверху); NaN - не считали. */
@@ -54,7 +54,8 @@ public class GunDriveBlockEntity extends SplitShaftBlockEntity implements IHaveG
     @Override
     public void addBehaviours(List<BlockEntityBehaviour> behaviours) {
         super.addBehaviours(behaviours);
-        behaviours.add(limits = new AngleLimitBehaviour(this, this::pitch, this::limitsChanged));
+        limits = new AngleLimits(this, this::pitch, this::limitsChanged);
+        limits.addTo(behaviours);
     }
 
     /** Ограничение сняли совсем - ноль забывается; включат снова - ноль там, куда смотрит орудие в тот момент. */

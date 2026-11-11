@@ -311,7 +311,7 @@ public final class FcsControl {
             double yawNeed = Aim.wrap180(wantYaw - m.cmdYaw);
             double zeroYaw = d.baseYaw();
             if (yc != null && yc.limits.limited() && !Double.isNaN(zeroYaw)) {
-                double t = yc.trackYaw(m.cmdYaw - zeroYaw);
+                double t = yc.trackYaw(m.cmdYaw, zeroYaw);
                 AngleLimit.Plan yp = AngleLimit.plan(t, yawNeed, yc.limits.first(), yc.limits.second());
                 if (!yp.reachable()) outOfArc = true;
                 yawNeed = yp.delta();
@@ -490,7 +490,7 @@ public final class FcsControl {
         double zero = d.baseYaw();
         if (yl && !Double.isNaN(zero) && !Double.isNaN(m.cmdYaw)) {
             double y = Aim.wrap180(wl.yawDeg() + FcsConfig.YAW_OFFSET.get());
-            double t = yc.turned();
+            double t = yc.turned(zero);
             if (Double.isNaN(t)) t = Aim.wrap180(m.cmdYaw - zero);
             if (!AngleLimit.plan(t, Aim.wrap180(y - m.cmdYaw), yc.limits.first(), yc.limits.second()).reachable()) return false;
         }

@@ -26,9 +26,11 @@ import org.jetbrains.annotations.Nullable;
  */
 public class AimControllerBlockEntity extends KineticBlockEntity {
     /** Пределы поворота (ползунок на боковой грани): курс - влево/вправо от стороны станка, наклон - вверх/вниз от горизонта. */
-    public AngleLimitBehaviour limits;
-    /** Курс станка от его стороны (накопительно, + вправо), только у контроллера курса; NaN - ещё не считали. */
+    public AngleLimits limits;
+    /** Курс станка от его нуля (накопительно, + вправо), только у контроллера курса; NaN - ещё не считали. */
     private double turned = Double.NaN;
+    /** Ноль, от которого считан {@link #turned} (пушку пересобрали другим концом - ноль другой, счёт заново). */
+    private double turnedZero = Double.NaN;
 
     public AimControllerBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
@@ -37,24 +39,29 @@ public class AimControllerBlockEntity extends KineticBlockEntity {
     @Override
     public void addBehaviours(List<BlockEntityBehaviour> behaviours) {
         super.addBehaviours(behaviours);
-        behaviours.add(limits = new AngleLimitBehaviour(this, this::isPitch, () -> { }));
+        limits = new AngleLimits(this, this::isPitch, () -> { });
+        limits.addTo(behaviours);
     }
 
     /**
      * Накопленный курс станка от его «нуля» (стороны, куда смотрит станок): rel - текущий курс минус ноль (любой,
      * берётся ветка, ближайшая к прошлой - так видно, что станок обошёл полный круг).
      */
-    public double trackYaw(double rel) {
-        double t = Double.isNaN(turned) ? Aim.wrap180(rel) : AngleLimit.unwrap(turned, rel);
-        if (t != turned) {
+    public double trackYaw(double yaw, double zero) {
+        double rel = yaw - zero;
+        boolean fresh = Double.isNaN(turned) || Math.abs(Aim.wrap180(zero - turnedZero)) > 0.5;
+        double t = fresh ? Aim.wrap180(rel) : AngleLimit.unwrap(turned, rel);
+        if (t != turned || fresh) {
             turned = t;
+            turnedZero = zero;
             setChanged();
         }
         return t;
     }
 
-    public double turned() {
-        return turned;
+    /** Накопленный курс от этого нуля или NaN (не считали или ноль другой). */
+    public double turned(double zero) {
+        return Double.isNaN(turned) || Math.abs(Aim.wrap180(zero - turnedZero)) > 0.5 ? Double.NaN : turned;
     }
 
     public boolean isPitch() {
@@ -117,12 +124,19 @@ public class AimControllerBlockEntity extends KineticBlockEntity {
     @Override
     protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
         super.write(tag, registries, clientPacket);
-        if (!clientPacket && !Double.isNaN(turned)) tag.putDouble("Turned", turned);
+        if (!clientPacket && !Double.isNaN(turned)) {
+            tag.putDouble("Turned", turned);
+            tag.putDouble("TurnedZero", turnedZero);
+        }
     }
 
     @Override
     protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
         super.read(tag, registries, clientPacket);
-        if (!clientPacket) turned = tag.contains("Turned") ? tag.getDouble("Turned") : Double.NaN;
+        if (!clientPacket) {
+            // без нуля (2.3.0 считал от стороны станка) - счёт заново
+            turned = tag.contains("Turned") && tag.contains("TurnedZero") ? tag.getDouble("Turned") : Double.NaN;
+            turnedZero = tag.contains("TurnedZero") ? tag.getDouble("TurnedZero") : Double.NaN;
+        }
     }
 }
