@@ -19,7 +19,6 @@ public final class FcsConfig {
     public static final ModConfigSpec.BooleanValue TARGET_MOBS, TARGET_PLAYERS, TARGET_SHIPS,
             TARGET_CONTRAPTIONS, TARGET_PROJECTILES, TARGET_OTHER;
     // перехват снарядов
-    public static final ModConfigSpec.BooleanValue INTERCEPT_REQUIRES_MOD;
     public static final ModConfigSpec.ConfigValue<List<? extends String>> IGNORED_ENTITIES, IGNORED_CONTRAPTION_HINTS,
             FRIENDLY_PLAYERS, FRIENDLY_RADAR_IDS;
     // свой-чужой и безопасность
@@ -96,11 +95,6 @@ public final class FcsConfig {
                 .defineListAllowEmpty("friendlyRadarIds", List.of(), () -> "", o -> o instanceof String);
         b.pop();
 
-        b.comment("Перехват снарядов и ракет").push("interception");
-        INTERCEPT_REQUIRES_MOD = b.comment("Сбивать снаряды только с модом CBC Interception (cbcintercept): без него снаряды CBC",
-                        "пролетают друг сквозь друга и стрельба по ним - пустая трата боеприпасов. Мониторы показывают снаряды всегда")
-                .define("requireInterceptionMod", true);
-        b.pop();
 
         b.comment("Свой-чужой и безопасность стрельбы").push("iff");
         IFF_RADIUS = b.comment("Радиус нового транспондера «свой» (режим «радиус»), блоков")

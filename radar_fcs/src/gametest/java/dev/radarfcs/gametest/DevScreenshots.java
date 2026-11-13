@@ -176,6 +176,7 @@ public final class DevScreenshots {
             }
         }
         if (tick >= 475 && tick < 565 && (tick - 475) % 10 == 0) shot(mc, "fcs_settings_" + (tick - 475) / 10);
+        if (tick == 567 && Boolean.getBoolean("radar_fcs.screenshot.settings")) mc.stop();   // только экран вычислителя
         // радарный линк: настроенный на сеть сцены линк в руке, взгляд на линк станка - вся сеть подсвечена
         if (tick == 568) {
             if (mc.screen != null) mc.setScreen(null);

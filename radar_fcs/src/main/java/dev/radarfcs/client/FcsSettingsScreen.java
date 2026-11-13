@@ -65,7 +65,9 @@ public final class FcsSettingsScreen extends Screen {
         int x0 = left + 4;
         for (Tab t : tabs) {
             int w = t.ordinal() == tabs.length - 1 ? left + W - 4 - x0 - 2 : (int) Math.floor(tw[t.ordinal()] * k);
-            Button b = addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.tab." + t.name().toLowerCase(Locale.ROOT)),
+            MutableComponent tabName = Component.translatable("radar_fcs.gui.tab." + t.name().toLowerCase(Locale.ROOT));
+            if (t == Tab.INTERCEPT && !interceptAvailable()) tabName = tabName.withStyle(ChatFormatting.DARK_GRAY);
+            Button b = addRenderableWidget(Button.builder(tabName,
                     x -> { tab = t; rebuildWidgets(); }).bounds(x0, top + 4, w, 18).build());
             b.active = t != tab;
             x0 += w + 2;
@@ -76,7 +78,15 @@ public final class FcsSettingsScreen extends Screen {
             case TARGETS -> targetsTab(y);
             case LISTS -> listsTab(y);
             case IFF -> iffTab(y);
-            case INTERCEPT -> interceptTab(y);
+            case INTERCEPT -> {
+                int before = renderables.size();
+                interceptTab(y);
+                // без CBC Interception перехват не работает: настройки видны, но серые и не меняются (см. render)
+                interceptWidgets.clear();
+                for (int i = before; i < renderables.size(); i++) {
+                    if (renderables.get(i) instanceof net.minecraft.client.gui.components.AbstractWidget w) interceptWidgets.add(w);
+                }
+            }
             case MOUNTS -> mountsTab(y);
             case DROP -> dropTab(y);
             case PICK -> pickTab(y);
@@ -159,6 +169,10 @@ public final class FcsSettingsScreen extends Screen {
         cycle(left + 8, y, W - 16, () -> check(s.impactFirst, "radar_fcs.gui.impact_first"), () -> s.impactFirst = !s.impactFirst);
     }
 
+    /** Элементы вкладки «Перехват»: без мода перехвата они выключены. */
+    private final java.util.List<net.minecraft.client.gui.components.AbstractWidget> interceptWidgets = new java.util.ArrayList<>();
+    @org.jetbrains.annotations.Nullable private Boolean lastInterceptOn;
+
     /** Выбранная пушка на вкладке «Пушки» (номер в списке пушек вычислителя). */
     private int mountIndex;
     private static final int MOUNT_COL = 232, MOUNT_TOGGLE_W = 134;
@@ -204,9 +218,18 @@ public final class FcsSettingsScreen extends Screen {
             int x = left + 8 + (i % 2) * MOUNT_COL, yy = y + (i / 2) * ROW;
             String typeKey = "radar_fcs.gui.type_short." + c.name().toLowerCase(Locale.ROOT);
             if (own != null) {
+                int before = renderables.size();
                 cycle(x, yy, MOUNT_TOGGLE_W, () -> check(own.enabled[i], typeKey), () -> own.enabled[i] = !own.enabled[i]);
                 intNumber(x + MOUNT_TOGGLE_W + 2, yy, () -> own.level[i], v -> own.level[i] = v, 1, EngageSettings.MAX_LEVEL,
                         v -> Component.literal(Integer.toString(v)));
+                if (c.intercept() && !interceptAvailable()) {
+                    for (int k = before; k < renderables.size(); k++) {
+                        if (renderables.get(k) instanceof net.minecraft.client.gui.components.AbstractWidget w) {
+                            w.active = false;
+                            w.setTooltip(Tooltip.create(Component.translatable("radar_fcs.gui.intercept_requires_mod")));
+                        }
+                    }
+                }
             } else {
                 // общие настройки вычислителя - только показать
                 addRenderableWidget(Button.builder(check(s.enabled[i], typeKey), b -> { })
@@ -385,6 +408,11 @@ public final class FcsSettingsScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        // сводка с сервера (есть ли мод перехвата) может прийти позже, чем построен экран - проверяем каждый кадр
+        boolean interceptOn = interceptAvailable();
+        if (lastInterceptOn != null && lastInterceptOn != interceptOn) rebuildWidgets();       // серая вкладка, выключенные элементы
+        lastInterceptOn = interceptOn;
+        if (tab == Tab.INTERCEPT) for (var w : interceptWidgets) w.active = interceptOn;
         super.render(g, mouseX, mouseY, partialTick);
         int y = top + 36;
         switch (tab) {
@@ -428,16 +456,30 @@ public final class FcsSettingsScreen extends Screen {
                 hint(g, s.iffWhitelist ? "radar_fcs.gui.iff_hint_white" : "radar_fcs.gui.iff_hint_black", hy);
             }
             case INTERCEPT -> {
+                boolean on = interceptAvailable();
                 categoryHeader(g, top + 32);
                 y += HEADER + 2 * ROW;
-                label(g, "radar_fcs.gui.threat", y);
+                if (on) label(g, "radar_fcs.gui.threat", y);
+                else g.drawString(font, Component.translatable("radar_fcs.gui.threat"), left + 8, y, 0x707070, false);
                 y += ROW;
-                if (s.threat == EngageSettings.Threat.THREATENING) { label(g, "radar_fcs.gui.threat_radius", y); y += ROW; }
+                if (s.threat == EngageSettings.Threat.THREATENING) {
+                    if (on) label(g, "radar_fcs.gui.threat_radius", y);
+                    else g.drawString(font, Component.translatable("radar_fcs.gui.threat_radius"), left + 8, y, 0x707070, false);
+                    y += ROW;
+                }
                 y += ROW + 4;
-                if (!interceptAvailable()) {
-                    g.drawWordWrap(font, Component.translatable("radar_fcs.gui.intercept_no_mod").withStyle(ChatFormatting.GOLD), left + 8, y,
-                            W - 16, 0xFFAA00);
-                    y += 22;
+                if (!on) {
+                    // вкладка выключена: настройки под серой пеленой, надпись - что нужен мод
+                    g.pose().pushPose();
+                    g.pose().translate(0, 0, 300);
+                    g.fill(left + 4, top + 26, left + W - 4, y - 2, 0xB0303030);
+                    g.pose().popPose();
+                    g.drawWordWrap(font, Component.translatable("radar_fcs.gui.intercept_requires_mod").withStyle(ChatFormatting.GOLD,
+                            ChatFormatting.BOLD), left + 8, y, W - 16, 0xFFAA00);
+                    y += 12;
+                    g.drawWordWrap(font, Component.translatable("radar_fcs.gui.intercept_no_mod").withStyle(ChatFormatting.GRAY), left + 8, y,
+                            W - 16, 0xA0A0A0);
+                    break;
                 }
                 hint(g, "radar_fcs.gui.intercept_hint." + s.threat.name().toLowerCase(Locale.ROOT), y);
             }

@@ -199,9 +199,13 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                 interceptAllowed());
     }
 
-    /** Можно ли сбивать снаряды: установлен CBC Interception (или сервер разрешил без него). */
+    /**
+     * Можно ли сбивать снаряды и ракеты: только с модом CBC Interception (без него снаряды CBC пролетают друг сквозь
+     * друга). Без мода снаряды - не цели (пушки на них не наводятся), вкладка «Перехват» серая.
+     */
     public static boolean interceptAllowed() {
-        return dev.radarfcs.compat.Interception.available() || !FcsConfig.INTERCEPT_REQUIRES_MOD.get();
+        if (dev.radarfcs.FcsDev.interceptWithoutMod) return true;
+        return !dev.radarfcs.FcsDev.hideInterceptMod && dev.radarfcs.compat.Interception.available();
     }
 
     @Nullable

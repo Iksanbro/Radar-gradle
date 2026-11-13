@@ -76,7 +76,7 @@
 15. (0.12) **Перехват снарядов** (просьба пользователя: «отслеживание и перехват только больших пушек и ракет, кроме
    мелких; фильтры, типы, приоритеты»). Сбивать позволяет мод пользователя **CBC Interception** (`cbcintercept`,
    github iksanbro/drone, ветка claude/neoforge-gun-parts-assembly-w70xcp; jar не на Modrinth - тесты подключают его
-   `-PfcsExtraMods`); без него снаряды видны, но огня нет (`interception.requireInterceptionMod`). Отслеживаются
+   `-PfcsExtraMods`); без него снаряды видны мониторам, но не цели и вкладка «Перехват» выключена (с 1.0 Release, п. 37). Отслеживаются
    только снаряды больших пушек (наследники `AbstractBigCannonProjectile`) и ракеты (CBC-AT `AbstractMediumRocket`,
    классы с Rocket/Missile в имени над `AbstractBigCannonProjectile`: cbcatfix, Enchanced Shells) - `compat/Munitions`
    (теги `radar_fcs:intercept_shells/rockets/ignored`); мелкие (автопушки, пулемёты, тяжёлые автопушки CBC-AT, средние
@@ -402,6 +402,27 @@
      `controllerPitchLimit` (вверх 5°: ствол не выше 5°), `gunDriveYawLimit` (влево 30, вправо 20: стоит на 20°, предел 60 -
      попадает). Проверено в клиенте (`-PfcsScreenshot -PfcsLimitUi`, `DevScreenshots.limitUi`: значок с подсказкой
      «Удерживайте для изменения», доски контроллера и привода наклона).
+
+37. (1.0 Release - первая публичная версия, «приписка релиз в названии»: `mod_version=1.0-Release`, jar
+   `radar_fcs-1.0-Release.jar`; внутренние версии 0.1-2.3.1 - в журнале README). Для публикации на CurseForge:
+   - Лицензия MIT - `radar_fcs/LICENSE` (в jar как `LICENSE_radar_fcs`, `build.gradle` jar `from('LICENSE')`); LICENSE в корне
+     репозитория (LGPL) - шаблона ModDevGradle. `mod_description` переписан (свои радары давно удалены).
+   - Иконка: `devtools/mod_icon.py` (PIL, рисует с нуля в 2048 и уменьшает до 512): круглый значок в стиле образца
+     пользователя (синяя сетка, белое кольцо с тёмной каймой) с вычислителем в изометрии (латунь, заклёпки, экран радара
+     с разверткой и отметками, три лампы). `src/main/resources/logo.png` (`logoFile` в `neoforge.mods.toml`) и
+     `release/icon.png` (страница мода).
+   - «Без нашего CBC Interception перехват и его страница не работают»: настройка `interception.requireInterceptionMod`
+     убрана, `FireControlBlockEntity.interceptAllowed()` = мод установлен и включён (`Interception.available()`); снаряды
+     без мода - не цели (`TargetSensor.wanted`, раньше всего, и для назначенных). Тестам - `FcsDev.interceptWithoutMod`
+     (огонь по снарядам без мода) и `FcsDev.hideInterceptMod` (как будто мода нет). Экран вычислителя: вкладка «Перехват»
+     с тёмной подписью, её элементы выключены (`interceptWidgets`, `active` каждый кадр - сводка «Intercept» приходит
+     позже, чем строится экран; смена - `rebuildWidgets`), серая пелена поверх (`translate z 300` - иначе под виджетами) и
+     надпись «Требуется дополнительный мод CBC Interception»; на вкладке «Пушки» переключатели снарядов и ракет выключены
+     с подсказкой. Тест `InterceptGameTests.noFireWithoutInterceptionMod`: мод спрятан - трек есть, целей и выстрелов нет,
+     в сводке нет перехвата; мод вернули - огонь. Без мода CBC Interception и с CBC-AT 0.1.4c на CBC 5.11.7 сервер
+     тестов падает, когда болванка бьётся о землю (`NoSuchMethodError PartialBlockDamageManager.damageBlock` - известная
+     несовместимость CBC-AT, не наша): такие прогоны - с `-PfcsNoCbcAt`. `-PfcsSettingsOnly` - снимки экрана
+     вычислителя (`fcs_settings_0..8`) и выход.
 
 ## 2. Окружение и сборка
 | Что | Значение |

@@ -348,9 +348,10 @@ CBC: Firepower Components** (обычный и для автопушек).
 
 Вычислитель сбивает летящие **снаряды больших пушек** (CBC и аддонов: болванки, фугасные, бронебойные, шрапнель...)
 и **ракеты** (средние ракеты CBC Advanced Technologies и его исправления, ракеты CBC Enchanced Shells). Для этого
-нужен мод **CBC Interception** (`cbcintercept`): без него снаряды CBC пролетают друг сквозь друга, поэтому
-вычислитель их видит (и монитор показывает), но не стреляет — на вкладке и в отчёте будет предупреждение
-(`interception.requireInterceptionMod`).
+нужен дополнительный мод **CBC Interception** (`cbcintercept`): без него снаряды CBC пролетают друг сквозь друга,
+поэтому **перехват выключен**: снаряды и ракеты не цели (пушки на них не наводятся и не стреляют), вкладка
+«Перехват» серая с надписью «Требуется дополнительный мод CBC Interception», переключатели снарядов и ракет на
+вкладке «Пушки» неактивны. Мониторы по-прежнему показывают снаряды.
 
 - **Мелкие снаряды не отслеживаются вовсе**: патроны автопушек и пулемётов (в том числе тяжёлых автопушек CBC-AT,
   средних и роторных пушек Neo Warfare), ракеты ракетных блоков, стрелы и прочее — их бывает очень много.
@@ -473,7 +474,6 @@ CBC: Firepower Components** (обычный и для автопушек).
 | `monitor.designationTicks` | 0 | сколько держится назначение цели с монитора, тиков; 0 — пока его не снимут или цель не пропадёт |
 | `sensor.minSpeed` | 0.6 | цели медленнее (блоков/с) неактивны |
 | `targets.allow*` | всё разрешено | верхняя граница для настроек вычислителей: `allowMobs`, `allowPlayers`, `allowShips`, `allowContraptions`, `allowProjectiles` (перехват снарядов и ракет), `allowOtherEntities` |
-| `interception.requireInterceptionMod` | true | сбивать снаряды только с модом CBC Interception (без него снаряды пролетают друг сквозь друга) |
 | `iff.iffRadius` | 12 | радиус нового транспондера (режим «радиус») |
 | `iff.maxTransponderRadius` | 64 | наибольший радиус, который можно задать транспондеру |
 | `energy.requirePower` | true | блокам мода нужно электричество (FE) |
@@ -494,6 +494,10 @@ CBC: Firepower Components** (обычный и для автопушек).
 - Не ставьте на те же станки auto yaw/pitch контроллеры Create: Radars — вычислитель уступает такие станки.
 - Create Aeronautics / Sable — по желанию (корабли как цели, транспондер на кораблях, вращатели орудия, подшипник-шарнир с приводом орудия).
 - Электричество — любой мод с FE; проверено с **Create Crafts & Additions** 1.6.0 (свежие 1.7.x требуют NeoForge 21.1.248+).
+- **1.0 Release** — первая публичная версия (включает всё из внутренних версий 0.1–2.3.1 ниже). Перехват снарядов и
+  ракет — только с дополнительным модом **CBC Interception**: без него снаряды не цели, вкладка «Перехват» серая с
+  надписью «Требуется дополнительный мод», настройка сервера `interception.requireInterceptionMod` убрана. Лицензия
+  MIT (файл `LICENSE` и в jar), иконка мода.
 - **2.3.1** — пределы поворота в каждую сторону — **отдельные значки и ползунки** (◀ влево / ▶ вправо, ▲ вверх /
   ▼ вниз), полностью независимые. Исправлено: пушка на компактном станке, собранная стволом против стороны станка
   (зеркальные станки с двух сторон постройки), с пределами разворачивалась на 180° — отсчёт теперь от направления
@@ -600,10 +604,20 @@ CBC: Firepower Components** (обычный и для автопушек).
 ```bash
 ./gradlew build              # jar в build/libs/
 ./gradlew coreTest           # офлайн-тест баллистики и треков
-./gradlew runGameTestServer  # 102 игровых теста (моды скачиваются в run/mods)
+./gradlew runGameTestServer  # 111 игровых тестов (моды скачиваются в run/mods)
 ./gradlew runGameTestServer -PfcsMinimal   # то же только с обязательными Create, CBC и Create Radars
 ./gradlew runGameTestServer -PfcsNoCbcAt   # без CBC Advanced Technologies
 ./gradlew runGameTestServer -PfcsNoFpc     # без CBC: Firepower Components
 ./gradlew runGameTestServer -PfcsProbe     # с подробным разбором каждого выстрела в логе
 ./gradlew runGameTestServer -PfcsExtraMods=<папка>   # плюс jar'ы из папки (CurseForge: cbcatfix, CBC Neo Warfare; CBC Interception)
 ```
+
+## Лицензия и благодарности
+- Мод распространяется по лицензии **MIT** (файл [`LICENSE`](LICENSE), он же — в jar). Файл LICENSE в корне репозитория
+  относится к шаблону ModDevGradle, а не к моду.
+- Внутри jar — только **Sable companion** (MIT, со своим файлом лицензии): прослойка для совместимости с Sable.
+  Остальные моды — отдельные зависимости, их код и ресурсы в мод не входят.
+- Обязательные зависимости: **Create**, **Create Big Cannons**, **Create: Radars**. По желанию: **Create Aeronautics /
+  Sable**, **CBC Advanced Technologies** (+ crash fix), **CBC Neo Warfare**, **CBC: Firepower Components**,
+  **Create Crafts & Additions** (электричество), **CBC Interception** (перехват снарядов и ракет).
+- Иконка мода (`logo.png`, `release/icon.png`) нарисована программой `devtools/mod_icon.py`.

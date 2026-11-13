@@ -59,11 +59,12 @@ public class InterceptGameTests {
     static void setup(ServerLevel l) {
         FcsGameTests.direct(l, 200);
         // без CBC Interception снаряды пролетают друг сквозь друга, но выбор целей и огонь проверяем и без него
-        FcsConfig.INTERCEPT_REQUIRES_MOD.set(false);
+        dev.radarfcs.FcsDev.interceptWithoutMod = true;
     }
 
     static void teardown(ServerLevel l) {
-        FcsConfig.INTERCEPT_REQUIRES_MOD.set(true);
+        dev.radarfcs.FcsDev.interceptWithoutMod = false;
+        dev.radarfcs.FcsDev.hideInterceptMod = false;
         FcsGameTests.cleanup(l);
     }
 
@@ -327,24 +328,38 @@ public class InterceptGameTests {
     }
 
     /**
-     * Без CBC Interception (и requireInterceptionMod = true) снаряды видны, но огня по ним нет, в сводке - «нет мода».
-     * С модом - в сводке перехват включён.
+     * Без CBC Interception (мод «спрятан» - `FcsDev.hideInterceptMod`): снаряды видны радару и монитору, но не цели -
+     * пушка на них не наводится и не стреляет, в сводке «перехват недоступен». Мод «вернули» - по тому же снаряду огонь.
      */
-    @GameTest(template = ARENA, batch = "intercept_nomod", timeoutTicks = 160)
+    @GameTest(template = ARENA, batch = "intercept_nomod", timeoutTicks = 320)
     public static void noFireWithoutInterceptionMod(GameTestHelper h) {
         FireControlBlockEntity be = battery(h);
-        boolean mod = ModList.get().isLoaded("cbcintercept");
-        AtomicInteger rounds = countRounds(h, MOUNT), seen = new AtomicInteger();
+        boolean mod = dev.radarfcs.compat.Interception.available();
+        dev.radarfcs.FcsDev.hideInterceptMod = true;
+        AtomicInteger rounds = countRounds(h, MOUNT), seen = new AtomicInteger(), aimed = new AtomicInteger();
         h.runAtTickTime(10, () -> launch(h, "createbigcannons:shot", new Vec3(110.5, 24, 32.5), new Vec3(20.5, 1, 32.5), 5.0));
         h.onEachTick(() -> {
+            if (h.getTick() >= 140) return;
             for (var t : be.sensor().all()) if (t.kind == Track.Kind.PROJECTILE) seen.incrementAndGet();
+            for (var t : be.sensor().active()) if (t.kind == Track.Kind.PROJECTILE) h.fail("a projectile is a target without the interception mod");
+            for (var m : be.mountStates()) if (m.targetId != null) aimed.incrementAndGet();
         });
         h.runAtTickTime(140, () -> {
             if (seen.get() == 0) h.fail("shell not tracked");
-            boolean flag = be.summary().getBoolean("Intercept");
-            if (flag != mod) h.fail("summary interception flag " + flag + ", mod " + mod);
-            if (!mod && rounds.get() > 0) h.fail(rounds.get() + " rounds fired without the interception mod");
-            if (mod && rounds.get() == 0) h.fail("no rounds fired with the interception mod");
+            if (be.summary().getBoolean("Intercept")) h.fail("summary says interception is available without the mod");
+            if (rounds.get() > 0) h.fail(rounds.get() + " rounds fired without the interception mod");
+            if (aimed.get() > 0) h.fail("the gun aimed at a projectile without the interception mod");
+            dev.radarfcs.FcsDev.hideInterceptMod = false;
+            if (!mod) {
+                h.succeed();
+                return;
+            }
+            launch(h, "createbigcannons:shot", new Vec3(110.5, 24, 32.5), new Vec3(20.5, 1, 32.5), 5.0);
+        });
+        h.runAtTickTime(300, () -> {
+            if (!be.summary().getBoolean("Intercept")) h.fail("summary interception flag off with the mod");
+            if (rounds.get() == 0) h.fail("no rounds fired with the interception mod");
+            FcsMod.LOG.info("[radar_fcs test] intercept_nomod: without the mod - tracked {}, 0 rounds; with the mod - {} rounds", seen.get(), rounds.get());
             h.succeed();
         });
     }
