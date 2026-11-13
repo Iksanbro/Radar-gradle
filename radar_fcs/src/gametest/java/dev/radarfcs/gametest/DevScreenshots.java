@@ -92,6 +92,7 @@ public final class DevScreenshots {
                 FcsMod.LOG.warn("[radar_fcs dev] radar bearing not assembled: {}", e.toString());
             }
         });
+        if (GALLERY) galleryShots(mc, server);
         if (tick == 50) shot(mc, "fcs_aiming");
         if (tick == 200) shot(mc, "fcs_overview");
         if (tick == 240) server.execute(() -> {
@@ -113,7 +114,7 @@ public final class DevScreenshots {
                     && server.overworld().getBlockEntity(base.offset(-3, 0, -3)) instanceof dev.radarfcs.block.RadarMonitorBlockEntity mon) {
                 pt = mon.master().screenPointFor(husk.getBoundingBox().getCenter());
             }
-            look(server, pt, new Vec3(base.getX() - 7.5, base.getY() + 1.4, base.getZ() - 1.5));
+            look(server, pt, new Vec3(base.getX() - (GALLERY ? 5.6 : 7.5), base.getY() + 1.4, base.getZ() - 1.5));
         });
         if (tick == 338) shot(mc, "radar_monitor");
         if (tick == 339) shot(mc, "radar_monitor_t1");
@@ -231,8 +232,15 @@ public final class DevScreenshots {
                 new dev.radarfcs.net.CameraPayloads.View(base.offset(-1, 0, 6), base.offset(2, 3, -1)));
         // повернуть взгляд камеры: вниз и в сторону - голова камеры должна повернуться и остаться так после выхода
         if (tick >= 699 && tick <= 703 && mc.player != null) {
-            mc.player.setYRot(-55f);
-            mc.player.setXRot(22f);
+            if (GALLERY && husk != null) {
+                // галерея: вид из камеры - на цель
+                Vec3 eye = Vec3.atCenterOf(base.offset(2, 3, -1)), d = husk.getBoundingBox().getCenter().subtract(eye);
+                mc.player.setYRot((float) Math.toDegrees(Math.atan2(-d.x, d.z)));
+                mc.player.setXRot((float) -Math.toDegrees(Math.atan2(d.y, Math.hypot(d.x, d.z))));
+            } else {
+                mc.player.setYRot(-55f);
+                mc.player.setXRot(22f);
+            }
         }
         if (tick == 706) shot(mc, "camera_view");
         if (tick == 708) dev.radarfcs.client.CameraClient.stop(true);
@@ -500,6 +508,52 @@ public final class DevScreenshots {
     /** Серверное время прошлого опроса и наибольший разрыв между опросами (клиент стоял - сервер шёл). */
     private static long cvLastGameTime = -1, cvMaxServerGap;
     private static volatile double cvClientDistance = Double.NaN;
+
+    /** Крупные ракурсы для галереи страницы мода (только с -PfcsGallery), между кадрами основного сценария. */
+    private static void galleryShots(Minecraft mc, net.minecraft.server.MinecraftServer server) {
+        if (base == null) return;
+        int t = tick;
+        double x = base.getX(), y = base.getY(), z = base.getZ();
+        // батарея целиком: вычислитель, станок с контроллерами, радар, монитор
+        if (t == 140) server.execute(() -> look(server, new Vec3(x + 2, y + 1, z + 1.5), new Vec3(x - 3.2, y + 4.2, z + 8.2)));
+        if (t == 165) shot(mc, "gal_battery");
+        // из-за батареи - пушка наведена на цель
+        if (t == 168) server.execute(() -> look(server, husk != null ? husk.getBoundingBox().getCenter() : new Vec3(x + 36, y + 1, z - 3),
+                new Vec3(x + 0.5, y + 3.6, z + 2.6)));
+        if (t == 190) shot(mc, "gal_aiming");
+        // перед видом из камеры - пустая рука (настроенный линк в руке подсвечивает сеть)
+        if (t == 650) server.execute(() -> server.getPlayerList().getPlayers().get(0)
+                .setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, ItemStack.EMPTY));
+        // орудие на вращателях Sable, наведённое на цель
+        if (t == 1003) server.execute(() -> look(server, new Vec3(x - 7.5, y + 2.5, z + 10.5), new Vec3(x - 4.2, y + 4.6, z + 14.8)));
+        if (t == 1012) shot(mc, "gal_rotator_turret");
+        // своё орудие на подшипниках-шарнирах: приводы, станок, автопушка
+        if (t == 1402) server.execute(() -> look(server, new Vec3(x - 8, y + 4.5, z + 24.5), new Vec3(x - 12.3, y + 7.2, z + 29.6)));
+        if (t == 1412) shot(mc, "gal_swivel_gun");
+        if (t == 1414) server.execute(() -> look(server, new Vec3(x - 7.5, y + 4.5, z + 24.5), new Vec3(x - 2.8, y + 6.6, z + 29.0)));
+        if (t == 1424) shot(mc, "gal_swivel_gun_2");
+    }
+
+    /** Снимки для галереи (-PfcsGallery): без руки, хотбара, прицела и полосок; окна и подсказки очков инженера остаются. */
+    private static final boolean GALLERY = Boolean.getBoolean("radar_fcs.screenshot.gallery");
+
+    @SubscribeEvent
+    public static void galleryHud(net.neoforged.neoforge.client.event.RenderGuiLayerEvent.Pre event) {
+        if (!GALLERY) return;
+        var n = event.getName();
+        if (n.equals(net.neoforged.neoforge.client.gui.VanillaGuiLayers.HOTBAR) || n.equals(net.neoforged.neoforge.client.gui.VanillaGuiLayers.CROSSHAIR)
+                || n.equals(net.neoforged.neoforge.client.gui.VanillaGuiLayers.EXPERIENCE_BAR) || n.equals(net.neoforged.neoforge.client.gui.VanillaGuiLayers.EXPERIENCE_LEVEL)
+                || n.equals(net.neoforged.neoforge.client.gui.VanillaGuiLayers.PLAYER_HEALTH) || n.equals(net.neoforged.neoforge.client.gui.VanillaGuiLayers.FOOD_LEVEL)
+                || n.equals(net.neoforged.neoforge.client.gui.VanillaGuiLayers.ARMOR_LEVEL) || n.equals(net.neoforged.neoforge.client.gui.VanillaGuiLayers.SELECTED_ITEM_NAME)
+                || n.equals(net.neoforged.neoforge.client.gui.VanillaGuiLayers.AIR_LEVEL)) {
+            event.setCanceled(true);
+        }
+    }
+
+    @SubscribeEvent
+    public static void galleryHand(net.neoforged.neoforge.client.event.RenderHandEvent event) {
+        if (GALLERY) event.setCanceled(true);
+    }
 
     @SubscribeEvent
     public static void cvFrame(net.neoforged.neoforge.client.event.RenderFrameEvent.Pre event) {

@@ -423,6 +423,11 @@
      тестов падает, когда болванка бьётся о землю (`NoSuchMethodError PartialBlockDamageManager.damageBlock` - известная
      несовместимость CBC-AT, не наша): такие прогоны - с `-PfcsNoCbcAt`. `-PfcsSettingsOnly` - снимки экрана
      вычислителя (`fcs_settings_0..8`) и выход.
+   - Галерея страницы мода - `release/gallery/*.jpg` (1920x1080) и `captions.md` (подписи EN/RU). Снимаются
+     `-PfcsScreenshot -PfcsGallery -PfcsWidth=1920 -PfcsHeight=1080` (+ `-PfcsPonderOnly`, `-PfcsCameraOnly`): в режиме
+     галереи нет руки, хотбара и прицела (`DevScreenshots.galleryHud/galleryHand`), крупные ракурсы `galleryShots`
+     (`gal_*`), перед видом из камеры рука пустая. Для них в `run/options.txt` ставили guiScale 3, графику «детально»,
+     прорисовку 8 (потом вернули прежнее).
 
 ## 2. Окружение и сборка
 | Что | Значение |

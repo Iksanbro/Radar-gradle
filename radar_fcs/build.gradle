@@ -138,11 +138,13 @@ neoForge {
                 if (project.hasProperty('fcsSwivelOnly')) systemProperty 'radar_fcs.screenshot.swivel', 'true'
                 if (project.hasProperty('fcsPonderOnly')) systemProperty 'radar_fcs.screenshot.ponder', 'true'
                 if (project.hasProperty('fcsCamGun')) { systemProperty 'radar_fcs.screenshot.swivel', 'true'; systemProperty 'radar_fcs.screenshot.camgun', 'true' }
+                if (project.hasProperty('fcsGallery')) systemProperty 'radar_fcs.screenshot.gallery', 'true'
                 if (project.hasProperty('fcsSettingsOnly')) systemProperty 'radar_fcs.screenshot.settings', 'true'
                 if (project.hasProperty('fcsLimitUi')) systemProperty 'radar_fcs.screenshot.limits', 'true'
                 if (project.hasProperty('fcsCamView')) { systemProperty 'radar_fcs.screenshot.turret', 'true'; systemProperty 'radar_fcs.screenshot.camview', 'true' }
                 programArguments.addAll('--quickPlaySingleplayer', project.findProperty('fcsWorld') ?: 'fcs_test',
-                        '--width', '1280', '--height', '720')
+                        '--width', (project.findProperty('fcsWidth') ?: '1280').toString(),
+                        '--height', (project.findProperty('fcsHeight') ?: '720').toString())
             }
         }
         server {
