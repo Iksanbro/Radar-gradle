@@ -10,7 +10,9 @@ import dev.radarfcs.FcsMod;
 import dev.radarfcs.block.AutopilotBlockEntity;
 import dev.radarfcs.core.Autopilot;
 import dev.radarfcs.core.Vec;
+import dev.ryanhcode.sable.api.block.BlockEntitySubLevelActor;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
+import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -27,11 +29,15 @@ import org.joml.Vector3d;
  * (поворот корпуса к цели по включённым осям: рысканье, крен, тангаж) и силу (дальность до цели, высота над целью) в осях корабля; компьютер раздаёт их
  * двигателям. Класс грузится только при установленном Create: Flight Control.
  */
-public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements WrenchContributor, ForwardIndicatorLinkTarget {
+public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements WrenchContributor, ForwardIndicatorLinkTarget,
+        BlockEntitySubLevelActor {
     @Nullable private BlockPos computerOffset;
     @Nullable private BlockPos indicatorOffset;
     @Nullable private BodyForwardFacing forward;
     private long lastError;
+    /** Высота, которую держит режим «только дальность»: на ней взяли цель holdFor. */
+    @Nullable private volatile String holdFor;
+    private volatile double holdY = Double.NaN;
 
     public FlightBridgeBlockEntity(BlockPos pos, BlockState state) {
         super(FlightBridge.BE.get(), pos, state);
@@ -65,7 +71,7 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
     @Override
     public boolean isContributing() {
         Goal g = goal();
-        return g != null && (g.turns() || g.mode() != Autopilot.Mode.OFF);
+        return g != null && !g.direct() && (g.turns() || g.mode() != Autopilot.Mode.OFF);
     }
 
     @Override
@@ -128,11 +134,43 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
     @Override
     public void contributeWrench(Object subLevel, RigidBodyHandle handle, double dt, double[] forceOut, double[] torqueOut) {
         Goal g = goal();
-        if (g == null || level == null || handle == null) return;
+        if (g == null) {
+            holdFor = null;
+            return;
+        }
+        if (!g.direct()) wrench(g, subLevel, handle, dt, forceOut, torqueOut, false);
+    }
+
+    /** Прямое управление: Sable зовёт это у блоков постройки на каждом шаге физики - мост сам толкает корабль. */
+    @Override
+    public void sable$physicsTick(ServerSubLevel subLevel, RigidBodyHandle handle, double dt) {
+        Goal g = goal();
+        if (g == null) {
+            holdFor = null;
+            return;
+        }
+        if (!g.direct() || handle == null || !(dt > 1e-9)) return;
+        double[] f = new double[3], t = new double[3];
+        if (wrench(g, subLevel, handle, dt, f, t, true)) {
+            handle.applyLinearAndAngularImpulse(new Vector3d(f[0] * dt, f[1] * dt, f[2] * dt), new Vector3d(t[0] * dt, t[1] * dt, t[2] * dt), true);
+        }
+    }
+
+    /**
+     * Сила и момент моста в осях корабля: поворот корпуса по включённым осям, дальность и высота (в режиме «только
+     * дальность» - высота, на которой взяли эту цель). gravity - ещё и держать вес корабля (прямое управление; компьютер
+     * управления полётом учитывает тяжесть сам).
+     */
+    private boolean wrench(Goal g, Object subLevel, RigidBodyHandle handle, double dt, double[] forceOut, double[] torqueOut, boolean gravity) {
+        if (level == null || handle == null) return false;
         try {
             Vector3d pos = AttitudeTargetUtil.getLogicalPosition(subLevel);
             Vec ship = new Vec(pos.x, pos.y, pos.z);
             Vec target = g.posAt(level.getGameTime());
+            if (!g.id().equals(holdFor)) {                                 // новая цель - запомнить высоту
+                holdFor = g.id();
+                holdY = pos.y;
+            }
             if (g.turns()) {
                 BodyForwardFacing f = forwardFacing();
                 Vector3d fw = AttitudeTargetUtil.rotateBodyToWorld(subLevel, new Vector3d(f.direction().getStepX(), 0, f.direction().getStepZ()));
@@ -150,18 +188,22 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
                     torqueOut[2] += torque.z;
                 }
             }
+            double mass = FlightPhysicsController.getMass(subLevel);
+            Vector3d force = new Vector3d();
             if (g.mode() != Autopilot.Mode.OFF) {
                 Vector3d v = SableVelocitySemantics.controlLinearVelocityWorld(subLevel, handle, dt);
-                Vec a = Autopilot.accel(g.mode(), g.distance(), g.height(), g.maxSpeed(), ship, new Vec(v.x, v.y, v.z), target, g.vel());
-                double mass = FlightPhysicsController.getMass(subLevel);
-                Vector3d force = new Vector3d(a.x() * mass, a.y() * mass, a.z() * mass);
-                AttitudeTargetUtil.worldToBody(subLevel, force);
-                if (force.isFinite()) {
-                    forceOut[0] += force.x;
-                    forceOut[1] += force.y;
-                    forceOut[2] += force.z;
-                }
+                Vec a = Autopilot.accel(g.mode(), g.distance(), g.height(), g.maxSpeed(), ship, new Vec(v.x, v.y, v.z), target, g.vel(),
+                        g.mode() == Autopilot.Mode.DISTANCE ? holdY : Double.NaN);
+                force.add(a.x() * mass, a.y() * mass, a.z() * mass);
             }
+            if (gravity) force.sub(FlightPhysicsController.getGravityWorld(subLevel, 9.81).mul(mass));
+            AttitudeTargetUtil.worldToBody(subLevel, force);
+            if (force.isFinite()) {
+                forceOut[0] += force.x;
+                forceOut[1] += force.y;
+                forceOut[2] += force.z;
+            }
+            return true;
         } catch (Throwable e) {
             // API Flight Control или Sable изменилось - мост молчит (предупреждение раз в минуту)
             long now = System.currentTimeMillis();
@@ -169,6 +211,7 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
                 lastError = now;
                 FcsMod.LOG.warn("[radar_fcs] flight bridge at {}: {}", worldPosition, e.toString());
             }
+            return false;
         }
     }
 

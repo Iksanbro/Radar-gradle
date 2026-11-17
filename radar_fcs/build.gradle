@@ -70,6 +70,8 @@ dependencies {
 
     // API Sable для игровых тестов (сборка корабля); в основной код не попадает
     gametestSable "maven.modrinth:sable:${sable_version}"
+    // geckolib - для классов двигателей Flight Control в dev-сцене полёта
+    gametestSable "maven.modrinth:geckolib:${geckolib_version}"
 
     // -PfcsMinimal: только обязательные Create + CBC + Create Radars (без Sable и CBC-AT);
     // -PfcsNoCbcAt: без CBC Advanced Technologies
@@ -149,6 +151,7 @@ neoForge {
                 if (project.hasProperty('fcsSettingsOnly')) systemProperty 'radar_fcs.screenshot.settings', 'true'
                 if (project.hasProperty('fcsLimitUi')) systemProperty 'radar_fcs.screenshot.limits', 'true'
                 if (project.hasProperty('fcsBridgeUi')) systemProperty 'radar_fcs.screenshot.bridge', 'true'
+                if (project.hasProperty('fcsFlight')) { systemProperty 'radar_fcs.screenshot.flight', 'true'; systemProperty 'radar_fcs.flight', project.property('fcsFlight') }
                 if (project.hasProperty('fcsCamView')) { systemProperty 'radar_fcs.screenshot.turret', 'true'; systemProperty 'radar_fcs.screenshot.camview', 'true' }
                 programArguments.addAll('--quickPlaySingleplayer', project.findProperty('fcsWorld') ?: 'fcs_test',
                         '--width', (project.findProperty('fcsWidth') ?: '1280').toString(),

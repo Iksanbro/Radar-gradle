@@ -628,8 +628,8 @@ public class SolverTest {
                 double err = Autopilot.yawError(fwd, target.sub(ship));
                 rate += Autopilot.yawAccel(err, rate) * dt;
                 yaw += rate * dt;
-                Vec a = Autopilot.accel(mode, 48, 16, 20, ship, vel, target, tv);
-                if (mode == Autopilot.Mode.DISTANCE) a = new Vec(a.x(), 0, a.z());
+                Vec a = Autopilot.accel(mode, 48, 16, 20, ship, vel, target, tv, 70);
+                if (i == 0) vel = new Vec(0, 3, 0);                      // начальная вертикальная скорость - высота 70 держится
                 vel = vel.addScaled(a, dt);
                 ship = ship.addScaled(vel, dt);
                 if (i > 20 * 40) {
@@ -638,7 +638,7 @@ public class SolverTest {
                     alt = Math.max(alt, Math.abs(ship.y() - target.y() - 16));
                 }
             }
-            boolean m = maxErr < 2 && dist < 1.5 && (mode == Autopilot.Mode.DISTANCE ? Math.abs(ship.y() - 70) < 1e-9 : alt < 0.5);
+            boolean m = maxErr < 2 && dist < 1.5 && (mode == Autopilot.Mode.DISTANCE ? Math.abs(ship.y() - 70) < 0.5 : alt < 0.5);
             System.out.printf(java.util.Locale.ROOT, "autopilot %s: heading error %.2f deg, distance error %.2f, altitude error %.2f%n",
                     mode, maxErr, dist, mode == Autopilot.Mode.DISTANCE ? Math.abs(ship.y() - 70) : alt);
             ok &= m;

@@ -50,6 +50,10 @@ final class FlightTestSupport {
                 && ((FlightBridgeBlockEntity) bridge).linkForwardIndicator(ind);
     }
 
+    static boolean contributes(Object bridge) {
+        return ((FlightBridgeBlockEntity) bridge).isContributing();
+    }
+
     static String forward(Object bridge) {
         return ((FlightBridgeBlockEntity) bridge).forwardFacing().serializedName();
     }

@@ -56,8 +56,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
      * Цель и настройки для физики (читается в шаге физики Sable, поэтому неизменяемая запись в volatile-поле):
      * мировое положение и скорость цели (бл/с) на игровой тик tick.
      */
-    public record Goal(Vec pos, Vec vel, long tick, boolean yaw, boolean pitch, boolean roll, double maxPitch, double maxRoll,
-                       Autopilot.Mode mode, double distance, double height, double maxSpeed) {
+    public record Goal(String id, Vec pos, Vec vel, long tick, boolean yaw, boolean pitch, boolean roll, double maxPitch, double maxRoll,
+                       Autopilot.Mode mode, double distance, double height, double maxSpeed, boolean direct) {
         /** Мост поворачивает корпус (хоть одна ось). */
         public boolean turns() {
             return yaw || pitch || roll;
@@ -85,6 +85,11 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     public double maxPitch = Autopilot.PITCH_DEFAULT, maxRoll = Autopilot.ROLL_DEFAULT;
     public Autopilot.Mode mode = Autopilot.Mode.DISTANCE;
     public double distance = 48, height = 16, maxSpeed = 20;
+    /**
+     * Прямое управление: мост сам толкает и поворачивает корабль (с учётом тяжести), без компьютера управления полётом и
+     * двигателей - как творческие блоки Flight Control. Иначе - через компьютер управления полётом.
+     */
+    public boolean direct;
 
     @Nullable private UUID owner;
     private String ownerTeam = "";
@@ -146,7 +151,7 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     private State computeState(ServerLevel level) {
         if (level.hasNeighborSignal(worldPosition)) return State.PAUSED;
         if (SableCompat.containingId(level, worldPosition) == null) return State.NO_SHIP;
-        if (!computerLinked()) return State.NO_COMPUTER;
+        if (!direct && !computerLinked()) return State.NO_COMPUTER;
         if (goal == null) return State.NO_TARGET;
         return State.ACTIVE;
     }
@@ -179,7 +184,7 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
 
     private void sense(ServerLevel level, long now) {
         String id = targetId(level, now);
-        if (id == null || level.hasNeighborSignal(worldPosition)) {
+        if (level.hasNeighborSignal(worldPosition)) {
             sensor.clear();
             setGoal(null, "", -1);
             return;
@@ -198,14 +203,34 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         }
         TargetSensor.Context ctx = new TargetSensor.Context(owner, ownerTeam, iff, ship == null ? Set.of() : Set.of(ship), origin);
         sensor.sense(level, live, ctx, now, ALL, t -> false, id);
-        Track t = sensor.get(id);
+        // ничего не назначено и вычислители не стреляют - ближайшая чужая цель с радаров сети
+        if (id == null) id = nearest(origin, ship);
+        Track t = id == null ? null : sensor.get(id);
         if (t == null || (ship != null && id.equals(ship.toString()))) {
             setGoal(null, "", -1);
             return;
         }
         Vec vel = t.vel.scale(20);                                          // бл/тик -> бл/с
-        setGoal(new Goal(t.pos, vel, now, heading, pitch, roll, maxPitch, maxRoll, mode, distance, height, maxSpeed), t.name == null ? "?" : t.name,
+        setGoal(new Goal(id, t.pos, vel, now, heading, pitch, roll, maxPitch, maxRoll, mode, distance, height, maxSpeed, direct), t.name == null ? "?" : t.name,
                 t.pos.sub(origin).horizontalLength());
+    }
+
+    /** Ближайшая чужая цель сенсора: враждебный моб, игрок, корабль или контрапшен (не снаряд, не свой корабль). */
+    @Nullable
+    private String nearest(Vec origin, @Nullable UUID ship) {
+        Track best = null;
+        double bestD = Double.POSITIVE_INFINITY;
+        for (Track t : sensor.all()) {
+            if (t.friendly || t.kind == Track.Kind.PROJECTILE || t.kind == Track.Kind.EXTERNAL) continue;
+            if (t.kind == Track.Kind.MOB && !t.hostile) continue;
+            if (ship != null && t.id.equals(ship.toString())) continue;
+            double d = t.pos.distanceSqr(origin);
+            if (d < bestD) {
+                bestD = d;
+                best = t;
+            }
+        }
+        return best == null ? null : best.id;
     }
 
     private void setGoal(@Nullable Goal g, String name, double dist) {
@@ -259,6 +284,7 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         t.putBoolean("Roll", roll);
         t.putDouble("MaxPitch", maxPitch);
         t.putDouble("MaxRoll", maxRoll);
+        t.putBoolean("Direct", direct);
         t.putString("Mode", mode.name());
         t.putDouble("Distance", distance);
         t.putDouble("Height", height);
@@ -270,6 +296,7 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         heading = !t.contains("Heading") || t.getBoolean("Heading");
         pitch = t.getBoolean("Pitch");
         roll = t.getBoolean("Roll");
+        direct = t.getBoolean("Direct");
         maxPitch = Autopilot.cleanPitch(t.contains("MaxPitch") ? t.getDouble("MaxPitch") : Double.NaN);
         maxRoll = Autopilot.cleanRoll(t.contains("MaxRoll") ? t.getDouble("MaxRoll") : Double.NaN);
         try {
@@ -357,6 +384,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.autopilot.axes")).append(": ")
                 .append(axis("yaw", heading)).append(" ").append(axis("roll", roll)).append(" ").append(axis("pitch", pitch))
                 .withStyle(ChatFormatting.GRAY));
+        tooltip.add(Component.literal("    ").append(Component.translatable(direct ? "radar_fcs.autopilot.control.direct"
+                : "radar_fcs.autopilot.control.computer")).withStyle(ChatFormatting.GRAY));
         tooltip.add(Component.literal("    ").append(Component.translatable(mode.key())).withStyle(ChatFormatting.GRAY));
         if (mode != Autopilot.Mode.OFF) {
             tooltip.add(Component.literal("    ").append(Component.translatable(mode == Autopilot.Mode.DISTANCE_ALTITUDE

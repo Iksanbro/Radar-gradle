@@ -336,17 +336,18 @@ SCENES = {
          'The Autopilot Bridge connects the radar network to Create: Flight Control. It goes on a Sable ship and exists '
          'only when Flight Control is installed'),
         ('В радарную сеть — радарным линком. Цель моста — назначенная на мониторе сети (своём или Create Radars), иначе '
-         'та, которую ведёт вычислитель сети',
+         'та, которую ведёт вычислитель сети, иначе ближайшая чужая цель радаров',
          'Add it to a radar network with a Radar Link. Its target is the one designated on a monitor of the network (own '
-         'or Create Radars), otherwise the one a fire control computer of the network is tracking'),
+         'or Create Radars), otherwise the one a fire control computer is tracking, otherwise the nearest hostile radar contact'),
         ('Инструментальный пистолет Flight Control: ПКМ по индикатору направления вперёд, затем по мосту — нос корабля '
          'берётся с индикатора. Без индикатора нос — лицевая сторона моста',
          'Flight Control tool gun: right-click the Forward Indicator, then the bridge - the ship nose comes from the '
          'indicator. Without one, the nose is the front face of the bridge'),
-        ('Потом пистолетом ПКМ по мосту и по компьютеру управления полётом. Мост отдаёт компьютеру момент и силу, а тот '
-         'раздаёт их двигателям',
-         'Then right-click the bridge and the Flight Control Computer with the tool gun. The bridge gives the computer '
-         'torque and force, and the computer spreads them over the thrusters'),
+        ('Потом пистолетом ПКМ по мосту и по компьютеру управления полётом (рабочий режим, «Применить тягу»). Мост отдаёт '
+         'компьютеру момент и силу, а тот раздаёт их двигателям. Без компьютера — настройка «Управление: Напрямую»',
+         'Then right-click the bridge and the Flight Control Computer with the tool gun (work mode, "Apply thrust"). The '
+         'bridge gives the computer torque and force, and the computer spreads them over the thrusters. Without a '
+         'computer use "Control: Direct"'),
         ('ПКМ по мосту — настройки. Отклонения для ведения цели: рысканье — нос на цель по курсу, крен — в сторону '
          'поворота, тангаж — нос на угол места цели; пределы крена и тангажа — числами. Выключенные крен и тангаж мост '
          'держит ровно, стабилизатор ориентации на этом корабле лучше выключить',

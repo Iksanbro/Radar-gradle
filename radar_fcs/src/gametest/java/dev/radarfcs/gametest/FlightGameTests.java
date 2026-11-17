@@ -123,9 +123,10 @@ public class FlightGameTests {
                     turn[0] = w[4];
                     if (!(w[4] < 0)) h.fail("expected a right turn (torque about -Y), got " + f(w[4]));
                     if (!(w[0] > 0) || Math.abs(w[2]) > Math.abs(w[0]) * 0.3) h.fail("expected force toward the target (+X), got " + f(w[0]) + ", " + f(w[2]));
-                    if (Math.abs(w[1]) > 1e-6) h.fail("distance-only mode must not push vertically: " + f(w[1]));
+                    // «только дальность» держит высоту, на которой взяли цель: корабль на ней - вертикаль мала
+                    if (Math.abs(w[1]) > 0.1 * Math.abs(w[0])) h.fail("distance-only mode holds the acquisition altitude, vertical too big: " + f(w[1]));
                     if (b.state() != AutopilotBlockEntity.State.NO_COMPUTER) h.fail("expected NO_COMPUTER, got " + b.state());
-                    if (Math.abs(w[3]) > 1e-6 || Math.abs(w[5]) > 1e-6) h.fail("yaw only on a level ship: no roll/pitch torque, got " + f(w[3]) + ", " + f(w[5]));
+                    if (Math.abs(w[3]) > 0.05 * Math.abs(w[4]) || Math.abs(w[5]) > 0.05 * Math.abs(w[4])) h.fail("yaw only on a level ship: no roll/pitch torque, got " + f(w[3]) + ", " + f(w[5]));
                     b.roll = true;                                         // + крен: поворот вправо - крен вправо
                     phase.set(10);
                     since.set(t);
@@ -146,7 +147,7 @@ public class FlightGameTests {
                     double[] w = FlightTestSupport.wrench(bridge[0], sub);
                     FcsMod.LOG.info("[radar_fcs test] flight_bridge: nose east (indicator): T=({}, {}, {})", f(w[3]), f(w[4]), f(w[5]));
                     if (Math.abs(w[4]) > 0.05 * Math.abs(turn[0])) h.fail("nose on target, still turning: " + f(w[4]));
-                    if (Math.abs(w[5]) > 1e-6) h.fail("pitch off: the nose stays level, got " + f(w[5]));
+                    if (Math.abs(w[5]) > 0.05 * Math.abs(turn[0])) h.fail("pitch off: the nose stays level, got " + f(w[5]));
                     b.pitch = true;                                        // + тангаж: цель ниже корабля - нос вниз
                     phase.set(11);
                     since.set(t);
@@ -175,6 +176,20 @@ public class FlightGameTests {
                 case 4 -> {
                     if (t - since.get() < 12) return;
                     if (b.state() != AutopilotBlockEntity.State.ACTIVE) h.fail("expected ACTIVE with a computer, got " + b.state());
+                    // прямое управление: компьютеру мост больше не отдаёт ничего (толкает корабль сам)
+                    b.direct = true;
+                    // назначение снято: мост берёт ближайшую чужую цель сенсора (тот же хаск)
+                    if (level.getBlockEntity(h.absolutePos(new BlockPos(2, 2, 44))) instanceof RadarMonitorBlockEntity m) m.master().designate(null, null);
+                    phase.set(12);
+                    since.set(t);
+                }
+                case 12 -> {
+                    if (t - since.get() < 12) return;
+                    if (b.goal() == null || !b.goal().direct()) h.fail("no goal without designation (nearest target expected): " + b.state());
+                    if (FlightTestSupport.contributes(bridge[0])) h.fail("direct control must not contribute to the computer");
+                    if (b.state() != AutopilotBlockEntity.State.ACTIVE) h.fail("expected ACTIVE in direct mode, got " + b.state());
+                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: no designation - nearest target {}, direct control", b.targetName());
+                    b.direct = false;
                     level.setBlock(at[0].below().east(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
                     level.setBlock(at[0].east(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
                     phase.set(5);

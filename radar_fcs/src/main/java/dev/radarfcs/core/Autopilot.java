@@ -97,12 +97,18 @@ public final class Autopilot {
 
     /**
      * Нужное ускорение корабля (мир, бл/с²): по горизонтали - держать дальность distance до цели (подход или отход не
-     * быстрее maxSpeed относительно цели), в режиме с высотой - и высоту height над целью. Без дальности - ноль.
+     * быстрее maxSpeed относительно цели); по вертикали - в режиме «дальность и высота» высоту height над целью, в режиме
+     * «только дальность» - высоту holdY (на которой взяли цель; NaN - вертикаль не трогать). Без дальности - ноль.
      *
      * @param ship   положение корабля, его скорость shipVel
      * @param target положение цели, её скорость targetVel
      */
     public static Vec accel(Mode mode, double distance, double height, double maxSpeed, Vec ship, Vec shipVel, Vec target, Vec targetVel) {
+        return accel(mode, distance, height, maxSpeed, ship, shipVel, target, targetVel, Double.NaN);
+    }
+
+    public static Vec accel(Mode mode, double distance, double height, double maxSpeed, Vec ship, Vec shipVel, Vec target, Vec targetVel,
+                            double holdY) {
         if (mode == Mode.OFF) return Vec.ZERO;
         Vec r = target.sub(ship).horizontal();
         double d = r.length();
@@ -113,6 +119,9 @@ public final class Autopilot {
         if (mode == Mode.DISTANCE_ALTITUDE) {
             double climb = clamp(POS_GAIN * (target.y() + height - ship.y()), -maxSpeed, maxSpeed);
             ay = VEL_GAIN * (targetVel.y() + climb - shipVel.y());
+        } else if (Double.isFinite(holdY)) {
+            double climb = clamp(POS_GAIN * (holdY - ship.y()), -maxSpeed, maxSpeed);
+            ay = VEL_GAIN * (climb - shipVel.y());
         }
         Vec a = new Vec(ax, ay, az);
         double len = a.length();

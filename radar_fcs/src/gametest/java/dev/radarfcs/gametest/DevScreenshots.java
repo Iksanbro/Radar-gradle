@@ -275,6 +275,11 @@ public final class DevScreenshots {
         if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.swivel")) tick = 1100;  // только подшипник-шарнир
         if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.limits")) tick = 2000;  // только пределы поворота
         if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.bridge")) tick = 3000;  // только мост автопилота
+        if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.flight")) tick = 5000;  // полёт корабля Flight Control
+        if (tick >= 5000) {
+            flight(mc, server);
+            return;
+        }
         if (tick >= 3000) {
             bridgeUi(mc, server);
             return;
@@ -890,6 +895,26 @@ public final class DevScreenshots {
         if (tick == 2108) shot(mc, "limit_board_drive");
         if (tick == 2110) mc.setScreen(null);
         if (tick == 2114) mc.stop();
+    }
+
+    /** Полёт корабля Flight Control с мостом (-PfcsFlight): режим и оси - из свойства radar_fcs.flight. */
+    private static void flight(Minecraft mc, net.minecraft.server.MinecraftServer server) {
+        String cfg = System.getProperty("radar_fcs.flight", "distance");
+        dev.radarfcs.core.Autopilot.Mode mode = cfg.contains("alt") ? dev.radarfcs.core.Autopilot.Mode.DISTANCE_ALTITUDE
+                : cfg.contains("off") ? dev.radarfcs.core.Autopilot.Mode.OFF : dev.radarfcs.core.Autopilot.Mode.DISTANCE;
+        if (tick == 5002) server.execute(() -> FlightScene.build(server, base, mode, cfg.contains("pitch"), cfg.contains("roll"), cfg.contains("direct")));
+        if (tick == 5040 && !cfg.contains("nodes")) server.execute(() -> FlightScene.designate(server));
+        if (tick > 5300 && tick < 5700 && cfg.contains("move")) server.execute(() -> FlightScene.move(server));
+        if (tick >= 5004 && tick % 10 == 0 && tick <= 5900) {
+            final int t = tick;
+            server.execute(() -> {
+                FlightScene.log(server, "t" + (t - 5000));
+                Vec3 c = FlightScene.camera();
+                look(server, c, c.add(-14, 10, 14));
+            });
+        }
+        if (tick == 5200 || tick == 5500 || tick == 5890) shot(mc, "flight_" + (tick - 5000));
+        if (tick == 5902) mc.stop();
     }
 
     /** Мост автопилота Flight Control: блок рядом с индикатором и компьютером FC, очки инженера, экран настроек. */
