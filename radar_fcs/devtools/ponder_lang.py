@@ -343,17 +343,18 @@ SCENES = {
          'берётся с индикатора. Без индикатора нос — лицевая сторона моста',
          'Flight Control tool gun: right-click the Forward Indicator, then the bridge - the ship nose comes from the '
          'indicator. Without one, the nose is the front face of the bridge'),
-        ('Потом пистолетом ПКМ по мосту и по компьютеру управления полётом (рабочий режим, «Применить тягу»). Мост отдаёт '
-         'компьютеру момент и силу, а тот раздаёт их двигателям. Без компьютера — настройка «Управление: Напрямую»',
-         'Then right-click the bridge and the Flight Control Computer with the tool gun (work mode, "Apply thrust"). The '
-         'bridge gives the computer torque and force, and the computer spreads them over the thrusters. Without a '
-         'computer use "Control: Direct"'),
+        ('Потом пистолетом ПКМ по мосту и по компьютеру управления полётом. Как навигационный терминал, мост ведёт корабль '
+         'через регулятор скорости (движение) и регулятор угловой скорости (повороты), связанные с тем же компьютером, а '
+         'стабилизаторы ориентации и высоты на это время выключает',
+         'Then right-click the bridge and the Flight Control Computer with the tool gun. Like the Navigation Terminal, the '
+         'bridge flies the ship through a Velocity Coupler (movement) and an Angular Velocity Coupler (turning) linked to '
+         'the same computer and switches off the Attitude and Altitude Holds meanwhile'),
         ('ПКМ по мосту — настройки. Отклонения для ведения цели: рысканье — нос на цель по курсу, крен — в сторону '
          'поворота, тангаж — нос на угол места цели; пределы крена и тангажа — числами. Выключенные крен и тангаж мост '
-         'держит ровно, стабилизатор ориентации на этом корабле лучше выключить',
+         'держит ровно. Скорость поворота и полёта ограничивают пределы самих регуляторов',
          'Right-click the bridge for settings. Deflections used to track the target: yaw - nose on its bearing, roll - '
          'bank into the turn, pitch - nose on its elevation; roll and pitch limits are typed. The bridge keeps disabled '
-         'roll and pitch level, so better turn off the Attitude Hold on this ship'),
+         'roll and pitch level. Turn and flight speeds are capped by the couplers\' own limits'),
         ('«Только дальность»: корабль подходит и держит вписанную дальность до цели по горизонтали, высоту держат другие '
          'блоки. «Дальность и высота»: ещё и вписанную высоту над целью. Предел скорости — тоже числом',
          '"Distance only": the ship closes in and keeps the typed horizontal distance to the target; other blocks keep the '

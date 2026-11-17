@@ -9,7 +9,7 @@ import dev.radarfcs.block.RadarMonitorBlock;
 import dev.radarfcs.block.RadarMonitorBlockEntity;
 import dev.radarfcs.core.Autopilot;
 import dev.radarfcs.registry.FcsRegistry;
-import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.core.BlockPos;
@@ -33,39 +33,51 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @PrefixGameTestTemplate(false)
 public class FlightGameTests {
     private static final String ARENA = "arena";
+    private static final String VEL = "BODY_VELOCITY:", ANG = "BODY_ANGULAR_VELOCITY:";
 
     @BeforeBatch(batch = "flight") public static void b1(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "flight") public static void a1(ServerLevel l) { FcsGameTests.cleanup(l); }
 
-    private static String f(double v) {
-        return String.format(Locale.ROOT, "%.2f", v);
+    private static double num(Map<String, Object> m, String key) {
+        return m.get(key) instanceof Double d ? d : Double.NaN;
     }
 
     /**
-     * Мост на постройке Sable (лицом на север), монитор на земле в той же радарной сети назначает хаска к востоку.
-     * Мост ведёт эту цель: без индикатора нос - лицевая сторона (север), цель справа - момент по курсу вправо
-     * (вокруг -Y), сила к цели (+X; держать 10 блоков, до цели ~22); с креном - ещё крен вправо. Индикатор «вперёд =
-     * восток» и тангаж: цель ниже корабля - нос вниз. Индикатор «вперёд = восток» - нос уже на цели,
-     * момента по курсу почти нет. Режим «дальность и высота» с высотой +12 над целью - сила вверх. Связь с компьютером
-     * управления полётом - мост участвует; сигнал редстоуна - пауза, цели нет; мост убрали - компьютер его забыл.
+     * Мост на постройке Sable (лицом на север) с компьютером управления полётом, стабилизаторами ориентации (держать
+     * текущую) и высоты; монитор на земле в той же радарной сети назначает хаска к востоку. Без регуляторов скорости -
+     * «нужны регуляторы». Регуляторы скорости и угловой скорости связали - мост берёт аренду, как навигационный терминал
+     * Flight Control: регулятор скорости включён и ведёт к цели (+X), регулятор угловой скорости - поворот вправо (-Y),
+     * оба стабилизатора выключены. Индикатор «вперёд = восток» - поворота по курсу почти нет; тангаж - цель ниже, нос
+     * вниз (-Z). «Дальность и высота» +12 - вверх. Назначение сняли - ближайшая цель радаров. Редстоун - пауза, аренда
+     * отдана. Мост сломан - компьютер его забыл.
      */
-    @GameTest(template = ARENA, batch = "flight", timeoutTicks = 400)
-    public static void bridgeSteersToDesignatedTarget(GameTestHelper h) {
+    @GameTest(template = ARENA, batch = "flight", timeoutTicks = 500)
+    public static void bridgeLeasesFlightControllers(GameTestHelper h) {
         if (!ModList.get().isLoaded("create_flight_control") || !ModList.get().isLoaded("sable")) {
             h.succeed();
             return;
         }
         floor(h);
         UUID net = UUID.randomUUID();
-        // постройка: платформа 3x3 на высоте 4, на ней мост (лицом на север), индикатор (вперёд - восток) и компьютер
         for (int x = 10; x <= 12; x++) for (int z = 30; z <= 32; z++) h.setBlock(new BlockPos(x, 4, z), Blocks.IRON_BLOCK.defaultBlockState());
         BlockPos bridgeRel = new BlockPos(11, 5, 31);
+        // относительно моста: индикатор, компьютер, регулятор скорости, угловой скорости, стабилизаторы ориентации и высоты
+        BlockPos dInd = new BlockPos(-1, 0, -1), dCc = new BlockPos(1, 0, 1), dVel = new BlockPos(-1, 0, 1), dAng = new BlockPos(1, 0, -1),
+                dAtt = new BlockPos(-1, 0, 0), dAlt = new BlockPos(1, 0, 0);
         h.setBlock(bridgeRel, FlightTestSupport.bridge(Direction.NORTH));
-        h.setBlock(new BlockPos(10, 5, 30), FlightTestSupport.indicator(Direction.EAST));
-        h.setBlock(new BlockPos(12, 5, 32), FlightTestSupport.computer());
+        h.setBlock(bridgeRel.offset(dInd), FlightTestSupport.indicator(Direction.EAST));
+        h.setBlock(bridgeRel.offset(dCc), FlightTestSupport.computer());
+        h.setBlock(bridgeRel.offset(dVel), FlightTestSupport.fc("velocity_coupler"));
+        h.setBlock(bridgeRel.offset(dAng), FlightTestSupport.fc("angular_velocity_coupler"));
+        h.setBlock(bridgeRel.offset(dAtt), FlightTestSupport.fc("attitude_hold"));
+        h.setBlock(bridgeRel.offset(dAlt), FlightTestSupport.fc("altitude_hold"));
         FcsGameTests.placeLink(h, bridgeRel, Direction.UP, net);
+        ServerLevel lv = h.getLevel();
+        BlockPos ab = h.absolutePos(bridgeRel), acc = ab.offset(dCc);
+        FlightTestSupport.startComputer(lv, acc);
+        for (BlockPos d : new BlockPos[]{dAtt, dAlt}) FlightTestSupport.linkController(lv, acc, ab.offset(d));
+        FlightTestSupport.attitudeHoldCurrent(lv, ab.offset(dAtt));
         Object sub = SableTestSupport.staticSub(h, new BlockPos(10, 4, 30), new BlockPos(12, 6, 32));
-        // монитор 2x2 на земле в той же сети
         BlockState mon = FcsRegistry.RADAR_MONITOR.get().defaultBlockState().setValue(RadarMonitorBlock.FACING, Direction.SOUTH);
         for (int x = 2; x <= 3; x++) for (int y = 2; y <= 3; y++) {
             h.setBlock(new BlockPos(x, y, 44), mon);
@@ -75,8 +87,7 @@ public class FlightGameTests {
         Mob husk = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(33.5, 1, 31.5), 0, 0));
         AtomicInteger phase = new AtomicInteger(), since = new AtomicInteger();
         Object[] bridge = new Object[1];
-        double[] turn = {0};                                               // момент по курсу с носом на север
-        BlockPos[] at = new BlockPos[3];                                   // мост, индикатор, компьютер (в плоте)
+        BlockPos[] at = new BlockPos[1];                                  // мост в плоте постройки
         h.onEachTick(() -> {
             int t = (int) h.getTick();
             ServerLevel level = h.getLevel();
@@ -91,11 +102,10 @@ public class FlightGameTests {
                     if (t > 100) h.fail("bridge not found in the radar network");
                     return;
                 }
-                // индикатор и компьютер - на тех же местах относительно моста
-                at[1] = at[0].offset(-1, 0, -1);
-                at[2] = at[0].offset(1, 0, 1);
+                if (!FlightTestSupport.linkComputer(level, bridge[0], at[0].offset(dCc))) h.fail("bridge-computer link failed");
             }
             AutopilotBlockEntity b = (AutopilotBlockEntity) bridge[0];
+            BlockPos cc = at[0].offset(dCc);
             switch (phase.get()) {
                 case 0 -> {                                                 // назначить цель на мониторе
                     if (!(level.getBlockEntity(h.absolutePos(new BlockPos(2, 2, 44))) instanceof RadarMonitorBlockEntity m)) return;
@@ -103,111 +113,83 @@ public class FlightGameTests {
                     if (husk.getUUID().equals(m.master().localDesignation(level.getGameTime()))) {
                         b.mode = Autopilot.Mode.DISTANCE;
                         b.distance = 10;
-                        b.heading = true;
                         phase.set(1);
                         since.set(t);
                     } else if (t > 150) {
                         h.fail("monitor did not designate the husk");
                     }
                 }
-                case 1 -> {                                                 // без индикатора: нос - север
-                    if (b.goal() == null) {
-                        if (t - since.get() > 60) h.fail("bridge has no goal, state " + b.state());
-                        return;
+                case 1 -> {                                                 // регуляторов скорости нет
+                    if (t - since.get() < 30) return;
+                    if (b.goal() == null) h.fail("bridge has no goal, state " + b.state());
+                    if (b.state() != AutopilotBlockEntity.State.NEED_COUPLERS && b.state() != AutopilotBlockEntity.State.COMPUTER_OFF) {
+                        h.fail("expected NEED_COUPLERS without couplers, got " + b.state());
                     }
-                    if (!b.targetName().contains("Husk") && !b.targetName().contains("Кадавр")) h.fail("wrong target " + b.targetName());
-                    double[] w = FlightTestSupport.wrench(bridge[0], sub);
-                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: nose north, target east: F=({}, {}, {}) T=({}, {}, {}), state {}",
-                            f(w[0]), f(w[1]), f(w[2]), f(w[3]), f(w[4]), f(w[5]), b.state());
-                    if (!"north".equals(FlightTestSupport.forward(bridge[0]))) h.fail("forward without indicator: " + FlightTestSupport.forward(bridge[0]));
-                    turn[0] = w[4];
-                    if (!(w[4] < 0)) h.fail("expected a right turn (torque about -Y), got " + f(w[4]));
-                    if (!(w[0] > 0) || Math.abs(w[2]) > Math.abs(w[0]) * 0.3) h.fail("expected force toward the target (+X), got " + f(w[0]) + ", " + f(w[2]));
-                    // «только дальность» держит высоту, на которой взяли цель: корабль на ней - вертикаль мала
-                    if (Math.abs(w[1]) > 0.1 * Math.abs(w[0])) h.fail("distance-only mode holds the acquisition altitude, vertical too big: " + f(w[1]));
-                    if (b.state() != AutopilotBlockEntity.State.NO_COMPUTER) h.fail("expected NO_COMPUTER, got " + b.state());
-                    if (Math.abs(w[3]) > 0.05 * Math.abs(w[4]) || Math.abs(w[5]) > 0.05 * Math.abs(w[4])) h.fail("yaw only on a level ship: no roll/pitch torque, got " + f(w[3]) + ", " + f(w[5]));
-                    b.roll = true;                                         // + крен: поворот вправо - крен вправо
-                    phase.set(10);
-                    since.set(t);
-                }
-                case 10 -> {
-                    if (t - since.get() < 4) return;
-                    double[] w = FlightTestSupport.wrench(bridge[0], sub);
-                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: + roll, right turn: T=({}, {}, {})", f(w[3]), f(w[4]), f(w[5]));
-                    // нос на север (0, 0, -1): крен вправо - поворот вокруг носа на +угол, момент по -Z
-                    if (!(w[5] < 0)) h.fail("expected a right bank (torque about -Z with the nose north), got " + f(w[5]));
-                    if (!(w[4] < 0)) h.fail("roll must keep the yaw turn, got " + f(w[4]));
-                    b.roll = false;
-                    if (!FlightTestSupport.linkIndicator(level, bridge[0], at[1])) h.fail("indicator link failed");
+                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: no couplers - {}", b.state());
+                    FlightTestSupport.linkController(level, cc, at[0].offset(dVel));
+                    FlightTestSupport.linkController(level, cc, at[0].offset(dAng));
                     phase.set(2);
-                }
-                case 2 -> {                                                 // индикатор: нос - восток, на цель
-                    if (!"east".equals(FlightTestSupport.forward(bridge[0]))) h.fail("forward with indicator: " + FlightTestSupport.forward(bridge[0]));
-                    double[] w = FlightTestSupport.wrench(bridge[0], sub);
-                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: nose east (indicator): T=({}, {}, {})", f(w[3]), f(w[4]), f(w[5]));
-                    if (Math.abs(w[4]) > 0.05 * Math.abs(turn[0])) h.fail("nose on target, still turning: " + f(w[4]));
-                    if (Math.abs(w[5]) > 0.05 * Math.abs(turn[0])) h.fail("pitch off: the nose stays level, got " + f(w[5]));
-                    b.pitch = true;                                        // + тангаж: цель ниже корабля - нос вниз
-                    phase.set(11);
                     since.set(t);
                 }
-                case 11 -> {
-                    if (t - since.get() < 4) return;
-                    double[] w = FlightTestSupport.wrench(bridge[0], sub);
-                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: + pitch, target below: T=({}, {}, {})", f(w[3]), f(w[4]), f(w[5]));
-                    // нос на восток: нос вверх - поворот вокруг +Z (нос x вверх), цель ниже - момент по -Z
-                    if (!(w[5] < 0)) h.fail("expected nose down (torque about -Z with the nose east), got " + f(w[5]));
-                    b.pitch = false;
-                    b.mode = Autopilot.Mode.DISTANCE_ALTITUDE;
-                    b.height = 12;
+                case 2 -> {                                                 // аренда: регуляторы включены, стабилизаторы выключены
+                    if (t - since.get() < 20) return;
+                    Map<String, Object> c = FlightTestSupport.commands(level, cc, at[0]);
+                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: nose north, target east - {} {}", b.state(), c);
+                    if (b.state() != AutopilotBlockEntity.State.ACTIVE) h.fail("expected ACTIVE with couplers, got " + b.state());
+                    if (!"REQUEST_ON".equals(c.get(VEL + "participation")) || !"REQUEST_ON".equals(c.get(ANG + "participation"))) h.fail("couplers not requested on: " + c);
+                    if (!"REQUEST_OFF".equals(c.get("ATTITUDE_HOLD:participation"))) h.fail("attitude hold not suppressed: " + c);
+                    if (!"REQUEST_OFF".equals(c.get("ALTITUDE_HOLD:participation"))) h.fail("altitude hold not suppressed: " + c);
+                    if (!(num(c, VEL + "BODY_VELOCITY_X") > 0)) h.fail("expected velocity toward the target (+X): " + c);
+                    if (!(num(c, ANG + "BODY_ANGULAR_VELOCITY_Y") < 0)) h.fail("expected a right turn (-Y): " + c);
+                    if (!FlightTestSupport.linkIndicator(level, bridge[0], at[0].offset(dInd))) h.fail("indicator link failed");
+                    b.pitch = true;
                     phase.set(3);
                     since.set(t);
                 }
-                case 3 -> {                                                 // дальность и высота: +12 над целью
-                    if (t - since.get() < 4) return;                       // настройки уходят в цель на следующем опросе
-                    double[] w = FlightTestSupport.wrench(bridge[0], sub);
-                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: distance+altitude: F=({}, {}, {})", f(w[0]), f(w[1]), f(w[2]));
-                    if (!(w[1] > 0)) h.fail("expected an upward force (ship below target + 12), got " + f(w[1]));
-                    if (!FlightTestSupport.linkComputer(level, bridge[0], at[2])) h.fail("computer link failed");
+                case 3 -> {                                                 // индикатор: нос на восток; тангаж - цель ниже
+                    if (t - since.get() < 6) return;
+                    Map<String, Object> c = FlightTestSupport.commands(level, cc, at[0]);
+                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: nose east (indicator), pitch - {}", c);
+                    if (!"east".equals(FlightTestSupport.forward(bridge[0]))) h.fail("forward with indicator: " + FlightTestSupport.forward(bridge[0]));
+                    if (Math.abs(num(c, ANG + "BODY_ANGULAR_VELOCITY_Y")) > 0.05) h.fail("nose on target, still turning: " + c);
+                    if (!(num(c, ANG + "BODY_ANGULAR_VELOCITY_Z") < 0)) h.fail("expected nose down (-Z): " + c);
+                    b.pitch = false;
+                    b.mode = Autopilot.Mode.DISTANCE_ALTITUDE;
+                    b.height = 12;
                     phase.set(4);
                     since.set(t);
                 }
-                case 4 -> {
-                    if (t - since.get() < 12) return;
-                    if (b.state() != AutopilotBlockEntity.State.ACTIVE) h.fail("expected ACTIVE with a computer, got " + b.state());
-                    // прямое управление: компьютеру мост больше не отдаёт ничего (толкает корабль сам)
-                    b.direct = true;
-                    // назначение снято: мост берёт ближайшую чужую цель сенсора (тот же хаск)
+                case 4 -> {                                                 // дальность и высота +12
+                    if (t - since.get() < 6) return;
+                    Map<String, Object> c = FlightTestSupport.commands(level, cc, at[0]);
+                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: distance+altitude - {}", c);
+                    if (!(num(c, VEL + "BODY_VELOCITY_Y") > 0)) h.fail("expected climbing (+Y): " + c);
                     if (level.getBlockEntity(h.absolutePos(new BlockPos(2, 2, 44))) instanceof RadarMonitorBlockEntity m) m.master().designate(null, null);
-                    phase.set(12);
-                    since.set(t);
-                }
-                case 12 -> {
-                    if (t - since.get() < 12) return;
-                    if (b.goal() == null || !b.goal().direct()) h.fail("no goal without designation (nearest target expected): " + b.state());
-                    if (FlightTestSupport.contributes(bridge[0])) h.fail("direct control must not contribute to the computer");
-                    if (b.state() != AutopilotBlockEntity.State.ACTIVE) h.fail("expected ACTIVE in direct mode, got " + b.state());
-                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: no designation - nearest target {}, direct control", b.targetName());
-                    b.direct = false;
-                    level.setBlock(at[0].below().east(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
-                    level.setBlock(at[0].east(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
                     phase.set(5);
                     since.set(t);
                 }
-                case 5 -> {
+                case 5 -> {                                                 // без назначения - ближайшая цель радаров
                     if (t - since.get() < 12) return;
-                    if (b.state() != AutopilotBlockEntity.State.PAUSED || b.goal() != null) h.fail("redstone did not pause: " + b.state());
-                    level.removeBlock(at[0], false);
+                    if (b.goal() == null) h.fail("no goal without designation (nearest target expected): " + b.state());
+                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: no designation - nearest target {}", b.targetName());
+                    level.setBlock(at[0].north(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);   // рядом с мостом (с севера свободно)
                     phase.set(6);
+                    since.set(t);
                 }
-                case 6 -> {
-                    if (!FlightTestSupport.computerForgot(level, at[2], at[0])) h.fail("computer still lists the removed bridge");
+                case 6 -> {                                                 // пауза: аренда отдана
+                    if (t - since.get() < 12) return;
+                    Map<String, Object> c = FlightTestSupport.commands(level, cc, at[0]);
+                    if (b.state() != AutopilotBlockEntity.State.PAUSED || b.goal() != null) h.fail("redstone did not pause: " + b.state());
+                    if (!c.isEmpty()) h.fail("lease not released on pause: " + c);
+                    level.removeBlock(at[0], false);
+                    phase.set(7);
+                }
+                case 7 -> {
+                    if (!FlightTestSupport.computerForgot(level, cc, at[0])) h.fail("computer still lists the removed bridge");
                     h.succeed();
                 }
                 default -> { }
             }
         });
     }
-
 }

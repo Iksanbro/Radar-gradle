@@ -44,7 +44,7 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 - Flies a Flight Control ship to the **radar network's target**: the one designated on a monitor (own or Create: Radars), otherwise the fire control computer's target.
 - **Deflections used to track the target** are toggled separately: **yaw** (nose on the target bearing), **roll** (bank into the turn) and **pitch** (nose on the target elevation), with roll and pitch limits. The nose comes from the Flight Control **Forward Indicator** (linked with the tool gun).
 - Modes **"distance only"** and **"distance and altitude"** - distance, height above the target and speed limit are typed in.
-- Links to the **Flight Control Computer** with the Flight Control tool gun, like its own stabilizers, or controls the ship **directly** (no computer or thrusters). Without a designated target it takes the nearest hostile radar contact; redstone pauses it.
+- Works like the Flight Control **Navigation Terminal**: flies the ship through a **Velocity Coupler** and an **Angular Velocity Coupler** linked to the Flight Control Computer and switches the stabilizers off while flying to the target. Without a designated target it takes the nearest hostile radar contact; redstone pauses it.
 
 ### 💥 Shell & rocket interception (requires CBC Interception)
 - Shoots down incoming **big cannon shells** and **rockets** (CBC, CBC Advanced Technologies and other addons): threat filter, types and priorities, "first to arrive first".

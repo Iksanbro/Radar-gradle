@@ -396,6 +396,9 @@ final class FcsScenes {
         s.overlay().showLine(PonderPalette.OUTPUT, u.vector().centerOf(1, 2, 2), u.vector().centerOf(3, 2, 2), 110);
         sayAt(s, 110, face(u, 1, 2, 2, Direction.NORTH), true);                                   // 3 индикатор
         s.world().showSectionAndMerge(u.select().position(5, 2, 2), Direction.DOWN, ship);
+        s.idle(5);
+        s.world().showSectionAndMerge(u.select().position(2, 2, 3), Direction.DOWN, ship);   // регулятор скорости
+        s.world().showSectionAndMerge(u.select().position(4, 2, 3), Direction.DOWN, ship);   // регулятор угловой скорости
         s.idle(10);
         s.overlay().showControls(face(u, 5, 2, 2, Direction.NORTH), Pointing.DOWN, 40).rightClick().withItem(gun);
         s.overlay().showLine(PonderPalette.BLUE, u.vector().centerOf(3, 2, 2), u.vector().centerOf(5, 2, 2), 110);

@@ -60,7 +60,7 @@ final class FlightScene {
     }
 
     /** Построить корабль на высоте 30 над base, всё связать и собрать в постройку Sable. */
-    static void build(MinecraftServer server, BlockPos base, Autopilot.Mode mode, boolean pitch, boolean roll, boolean direct) {
+    static void build(MinecraftServer server, BlockPos base, Autopilot.Mode mode, boolean pitch, boolean roll, boolean holds, boolean couplers) {
         ServerLevel level = server.overworld();
         FcsDev.radarless = true;
         FcsDev.radarlessRange = 300;
@@ -96,11 +96,37 @@ final class FlightScene {
             }
         }
         if (!(level.getBlockEntity(br) instanceof FlightBridgeBlockEntity b)) throw new IllegalStateException("no bridge");
-        if (!direct) {
-            c.addController(br);
-            b.setLinkedComputer(br, cc);
+        c.addController(br);
+        b.setLinkedComputer(br, cc);
+        // регуляторы скорости и угловой скорости (и, для проверки подавления, стабилизаторы ориентации и высоты):
+        // верхом вверх, вал снизу - творческий мотор в палубе под каждым
+        java.util.List<BlockPos> ctrls = new java.util.ArrayList<>();
+        if (couplers) {
+            ctrls.add(place(level, deck.offset(-1, 1, -1), "velocity_coupler"));
+            ctrls.add(place(level, deck.offset(1, 1, -1), "angular_velocity_coupler"));
         }
-        b.direct = direct;
+        if (holds) {
+            ctrls.add(place(level, deck.offset(-1, 1, 1), "attitude_hold"));
+            ctrls.add(place(level, deck.offset(1, 1, 1), "altitude_hold"));
+        }
+        for (BlockPos p : ctrls) {
+            if (level.getBlockEntity(p) instanceof ace.flight.api.WrenchContributor wc) {
+                c.addController(p);
+                wc.setLinkedComputer(p, cc);
+            }
+            if (level.getBlockEntity(p) instanceof ace.flight.block.VelocityCouplerBlockEntity v) {
+                v.setConfig(false, v.kpX, v.kpY, v.kpZ, v.kdX, v.kdY, v.kdZ, 15, 15, 15, 15, 15, 15);
+            }
+            if (level.getBlockEntity(p) instanceof ace.flight.block.AngularVelocityCouplerBlockEntity w) {
+                w.setConfig(false, w.kpX, w.kpY, w.kpZ, w.kdX, w.kdY, w.kdZ, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6);
+            }
+            if (level.getBlockEntity(p) instanceof ace.flight.block.AttitudeHoldBlockEntity at) {
+                at.setConfig(at.kp, at.kd, ace.flight.control.AttitudeHoldMode.HOLD_CURRENT, at.getBodyForwardFacing(), true);
+            }
+            if (level.getBlockEntity(p) instanceof ace.flight.block.AltitudeHoldBlockEntity al) {
+                al.setConfig(true, al.kp, al.kd, 1, true, deck.getY() - 20, 0, 1);       // держать на 20 ниже - мешало бы
+            }
+        }
         if (level.getBlockEntity(ind) instanceof ForwardIndicatorBlockEntity i) b.linkForwardIndicator(i);
         b.mode = mode;
         b.distance = 24;
@@ -109,7 +135,7 @@ final class FlightScene {
         b.heading = true;
         b.pitch = pitch;
         b.roll = roll;
-        c.setWorking(!direct);                                             // напрямую - компьютер выключен
+        c.setWorking(true);
         c.workDryRun = false;
         FcsMod.LOG.info("[radar_fcs flight] built: thrusters {}, computer working {}, dry {}, mode {}, bridge forward {}",
                 thrusters.size(), c.working, c.workDryRun, c.mode, b.forwardFacing());
@@ -133,6 +159,17 @@ final class FlightScene {
                 new BoundingBox3i(min.getX(), min.getY(), min.getZ(), max.getX(), max.getY(), max.getZ()));
         bridge = null;
         computer = null;
+    }
+
+    private static BlockPos place(ServerLevel level, BlockPos p, String id) {
+        var st = block("create_flight_control:" + id).defaultBlockState();
+        for (var prop : st.getProperties()) {
+            if (prop.getName().equals("top") && prop instanceof net.minecraft.world.level.block.state.properties.DirectionProperty dp) st = st.setValue(dp, Direction.UP);
+        }
+        level.setBlock(p, st, 3);
+        level.setBlock(p.below(), block("create:creative_motor").defaultBlockState().trySetValue(BlockStateProperties.FACING, Direction.UP), 3);
+        if (level.getBlockEntity(p.below()) instanceof com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity m) m.generatedSpeed.setValue(64);
+        return p;
     }
 
     /** Найти блоки на постройке (после сборки они в плоте). */
@@ -175,7 +212,7 @@ final class FlightScene {
         double dx = t.x - p.x, dz = t.z - p.z;
         double yawErr = Math.toDegrees(Autopilot.yawError(new dev.radarfcs.core.Vec(fwd.x, fwd.y, fwd.z), new dev.radarfcs.core.Vec(dx, 0, dz)));
         String st = bridge == null ? "no bridge" : bridge.state() + " goal=" + (bridge.goal() != null) + " contrib=" + bridge.isContributing()
-                + " target=" + bridge.targetName();
+                + " target=" + bridge.targetName() + " state=" + bridge.state();
         String cc = computer == null ? "no computer" : "working=" + computer.working + " dry=" + computer.workDryRun
                 + " F=(" + f(Double.longBitsToDouble(field(computer, "workTargetFX"))) + ", " + f(Double.longBitsToDouble(field(computer, "workTargetFY")))
                 + ", " + f(Double.longBitsToDouble(field(computer, "workTargetFZ"))) + ") T=(" + f(Double.longBitsToDouble(field(computer, "workTargetTX")))

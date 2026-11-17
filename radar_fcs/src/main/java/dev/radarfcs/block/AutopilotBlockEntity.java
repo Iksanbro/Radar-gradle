@@ -45,7 +45,13 @@ import org.jetbrains.annotations.Nullable;
 public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveGoggleInformation {
     /** Состояние для очков инженера. */
     public enum State {
-        ACTIVE, PAUSED, NO_SHIP, NO_COMPUTER, NO_TARGET;
+        ACTIVE, PAUSED, NO_SHIP, NO_COMPUTER, NO_TARGET,
+        /** Компьютер управления полётом выключен, в режиме отладки или ещё не знает корабль. */
+        COMPUTER_OFF,
+        /** Нужен регулятор скорости (движение) / угловой скорости (повороты) / оба, связанные с компьютером и с вращением. */
+        NEED_VELOCITY, NEED_ANGULAR, NEED_COUPLERS,
+        /** Регуляторы заняты другим автопилотом (навигационный терминал) или их держит редстоун-прокси. */
+        BUSY;
 
         public String key() {
             return "radar_fcs.autopilot.state." + name().toLowerCase(Locale.ROOT);
@@ -57,7 +63,7 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
      * мировое положение и скорость цели (бл/с) на игровой тик tick.
      */
     public record Goal(String id, Vec pos, Vec vel, long tick, boolean yaw, boolean pitch, boolean roll, double maxPitch, double maxRoll,
-                       Autopilot.Mode mode, double distance, double height, double maxSpeed, boolean direct) {
+                       Autopilot.Mode mode, double distance, double height, double maxSpeed) {
         /** Мост поворачивает корпус (хоть одна ось). */
         public boolean turns() {
             return yaw || pitch || roll;
@@ -85,11 +91,6 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     public double maxPitch = Autopilot.PITCH_DEFAULT, maxRoll = Autopilot.ROLL_DEFAULT;
     public Autopilot.Mode mode = Autopilot.Mode.DISTANCE;
     public double distance = 48, height = 16, maxSpeed = 20;
-    /**
-     * Прямое управление: мост сам толкает и поворачивает корабль (с учётом тяжести), без компьютера управления полётом и
-     * двигателей - как творческие блоки Flight Control. Иначе - через компьютер управления полётом.
-     */
-    public boolean direct;
 
     @Nullable private UUID owner;
     private String ownerTeam = "";
@@ -118,7 +119,15 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     /** Связан с индикатором направления вперёд (иначе «вперёд» - лицевая сторона моста). */
     public abstract boolean indicatorLinked();
 
-    /** Цель и настройки для физики или null (нет цели, мост выключен). */
+    /**
+     * Каждый тик на сервере: вести корабль к цели (goal) или отпустить управление (null - нет цели или пауза).
+     */
+    protected abstract void drive(ServerLevel level, @Nullable Goal goal);
+
+    /** Состояние управления, когда цель есть (связь с компьютером уже проверена). */
+    protected abstract State driveState();
+
+    /** Цель и настройки или null (нет цели, мост выключен). */
     @Nullable
     public Goal goal() {
         return goal;
@@ -137,6 +146,7 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
             discover(level);
         }
         if (now % 2 == 0) sense(level, now);
+        drive(level, level.hasNeighborSignal(worldPosition) ? null : goal);
         if (now - lastSync >= 10) {
             lastSync = now;
             State s = computeState(level);
@@ -151,9 +161,9 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     private State computeState(ServerLevel level) {
         if (level.hasNeighborSignal(worldPosition)) return State.PAUSED;
         if (SableCompat.containingId(level, worldPosition) == null) return State.NO_SHIP;
-        if (!direct && !computerLinked()) return State.NO_COMPUTER;
+        if (!computerLinked()) return State.NO_COMPUTER;
         if (goal == null) return State.NO_TARGET;
-        return State.ACTIVE;
+        return driveState();
     }
 
     /** Аппаратура сети: радары Create Radars, мониторы (свои и CR), вычислители. */
@@ -211,7 +221,7 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
             return;
         }
         Vec vel = t.vel.scale(20);                                          // бл/тик -> бл/с
-        setGoal(new Goal(id, t.pos, vel, now, heading, pitch, roll, maxPitch, maxRoll, mode, distance, height, maxSpeed, direct), t.name == null ? "?" : t.name,
+        setGoal(new Goal(id, t.pos, vel, now, heading, pitch, roll, maxPitch, maxRoll, mode, distance, height, maxSpeed), t.name == null ? "?" : t.name,
                 t.pos.sub(origin).horizontalLength());
     }
 
@@ -284,7 +294,6 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         t.putBoolean("Roll", roll);
         t.putDouble("MaxPitch", maxPitch);
         t.putDouble("MaxRoll", maxRoll);
-        t.putBoolean("Direct", direct);
         t.putString("Mode", mode.name());
         t.putDouble("Distance", distance);
         t.putDouble("Height", height);
@@ -296,7 +305,6 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         heading = !t.contains("Heading") || t.getBoolean("Heading");
         pitch = t.getBoolean("Pitch");
         roll = t.getBoolean("Roll");
-        direct = t.getBoolean("Direct");
         maxPitch = Autopilot.cleanPitch(t.contains("MaxPitch") ? t.getDouble("MaxPitch") : Double.NaN);
         maxRoll = Autopilot.cleanRoll(t.contains("MaxRoll") ? t.getDouble("MaxRoll") : Double.NaN);
         try {
@@ -384,8 +392,6 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.autopilot.axes")).append(": ")
                 .append(axis("yaw", heading)).append(" ").append(axis("roll", roll)).append(" ").append(axis("pitch", pitch))
                 .withStyle(ChatFormatting.GRAY));
-        tooltip.add(Component.literal("    ").append(Component.translatable(direct ? "radar_fcs.autopilot.control.direct"
-                : "radar_fcs.autopilot.control.computer")).withStyle(ChatFormatting.GRAY));
         tooltip.add(Component.literal("    ").append(Component.translatable(mode.key())).withStyle(ChatFormatting.GRAY));
         if (mode != Autopilot.Mode.OFF) {
             tooltip.add(Component.literal("    ").append(Component.translatable(mode == Autopilot.Mode.DISTANCE_ALTITUDE

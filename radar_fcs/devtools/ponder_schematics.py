@@ -259,6 +259,8 @@ def flight_bridge():
     link(s, 3, 3, 2, 'up')
     s.set(1, 2, 2, 'create_flight_control:forward_indicator', facing='south')
     s.set(5, 2, 2, 'create_flight_control:flight_control_computer', facing='north', top='up')
+    s.set(2, 2, 3, 'create_flight_control:velocity_coupler', top='up')
+    s.set(4, 2, 3, 'create_flight_control:angular_velocity_coupler', top='up')
     s.set(3, 1, 5, FCS + 'radar_monitor', facing='north')
     link(s, 3, 2, 5, 'up')
     s.save('flight_bridge')

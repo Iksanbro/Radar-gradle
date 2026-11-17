@@ -570,6 +570,45 @@ public class SolverTest {
     }
 
     /**
+     * Мост через регуляторы Flight Control: регулятор угловой скорости догоняет desiredRates (запаздывание 0.2 с, предел
+     * 0.4 рад/с по оси), регулятор скорости - desiredVelocity (0.5 с). Корабль носом на восток, цель уходит на север 4 бл/с:
+     * нос на цели, дальность 30, высота над целью +12; с креном - в повороте крен, в конце ровно.
+     */
+    static boolean couplerFlight(boolean roll, boolean pitch) {
+        Vec f = new Vec(1, 0, 0), u = Vec.UP, w = Vec.ZERO, ship = new Vec(0, 80, 0), vel = Vec.ZERO;
+        Vec target = new Vec(60, 60, -40), tv = new Vec(0, 0, -4);
+        double dt = 0.02, maxBank = 0, minBank = 0;
+        for (int i = 0; i < 50 * 60; i++) {
+            target = target.addScaled(tv, dt);
+            Vec wd = Autopilot.desiredRates(f, u, target.sub(ship), true, pitch, roll, 45, 30);
+            Vec wc = new Vec(Autopilot.clamp(wd.x(), -0.4, 0.4), Autopilot.clamp(wd.y(), -0.4, 0.4), Autopilot.clamp(wd.z(), -0.4, 0.4));
+            w = w.add(wc.sub(w).scale(dt / 0.2));
+            double wl = w.length();
+            if (wl > 1e-12) {
+                Vec ax = w.scale(1 / wl);
+                f = rot(f, ax, wl * dt).normalize();
+                u = rot(u, ax, wl * dt).normalize();
+            }
+            Vec vd = Autopilot.desiredVelocity(Autopilot.Mode.DISTANCE_ALTITUDE, 30, 12, 15, ship, target, tv, Double.NaN);
+            vel = vel.add(vd.sub(vel).scale(dt / 0.5));
+            ship = ship.addScaled(vel, dt);
+            Vec side = f.cross(Vec.UP).normalize();
+            double bank = Math.toDegrees(Math.atan2(u.dot(side), u.dot(Vec.UP.sub(f.scale(f.y())).normalize())));
+            maxBank = Math.max(maxBank, bank);
+            minBank = Math.min(minBank, bank);
+        }
+        double yawErr = Math.toDegrees(Math.abs(Autopilot.yawError(f, target.sub(ship))));
+        double dist = target.sub(ship).horizontalLength(), height = ship.y() - target.y();
+        Vec side = f.cross(Vec.UP).normalize();
+        double bank = Math.toDegrees(Math.atan2(u.dot(side), u.dot(Vec.UP.sub(f.scale(f.y())).normalize())));
+        boolean ok = yawErr < 2 && Math.abs(dist - 30) < 1.5 && Math.abs(height - 12) < 0.5 && Math.abs(bank) < 2
+                && (roll ? maxBank > 5 || minBank < -5 : Math.abs(maxBank) < 3 && Math.abs(minBank) < 3);
+        System.out.printf(java.util.Locale.ROOT, "autopilot couplers roll=%s pitch=%s: heading err %.2f, distance %.2f, height %.2f, bank %.2f (turn %.1f..%.1f)%n",
+                roll, pitch, yawErr, dist, height, bank, minBank, maxBank);
+        return ok;
+    }
+
+    /**
      * Ориентация моста: тело с единичной инерцией, нос на восток, цель слева-сверху (на северо-востоке, угол места 20°).
      * Только рысканье - курс на цель, нос и крыло мост держит ровно; + тангаж - нос на угол места цели;
      * + крен - в повороте влево крен влево (до предела 30°), когда нос на цели - крыло ровно. Предел тангажа 10° -
@@ -648,6 +687,9 @@ public class SolverTest {
         ok &= attitude(true, true, true, 45);
         ok &= attitude(true, true, true, 10);
         ok &= attitude(false, true, false, 45);
+        ok &= couplerFlight(false, false);
+        ok &= couplerFlight(true, false);
+        ok &= couplerFlight(true, true);
         ok &= Autopilot.attitudeAccel(new Vec(1, 0, 0), Vec.UP, new Vec(0.1, 0.2, 0.3), new Vec(0, 1, 1), false, false, false, 45, 30).length() == 0;
         if (!ok) failures++;
         System.out.println("autopilot: " + (ok ? "all checks passed" : "failed"));

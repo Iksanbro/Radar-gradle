@@ -902,7 +902,7 @@ public final class DevScreenshots {
         String cfg = System.getProperty("radar_fcs.flight", "distance");
         dev.radarfcs.core.Autopilot.Mode mode = cfg.contains("alt") ? dev.radarfcs.core.Autopilot.Mode.DISTANCE_ALTITUDE
                 : cfg.contains("off") ? dev.radarfcs.core.Autopilot.Mode.OFF : dev.radarfcs.core.Autopilot.Mode.DISTANCE;
-        if (tick == 5002) server.execute(() -> FlightScene.build(server, base, mode, cfg.contains("pitch"), cfg.contains("roll"), cfg.contains("direct")));
+        if (tick == 5002) server.execute(() -> FlightScene.build(server, base, mode, cfg.contains("pitch"), cfg.contains("roll"), cfg.contains("holds"), !cfg.contains("nocoupl")));
         if (tick == 5040 && !cfg.contains("nodes")) server.execute(() -> FlightScene.designate(server));
         if (tick > 5300 && tick < 5700 && cfg.contains("move")) server.execute(() -> FlightScene.move(server));
         if (tick >= 5004 && tick % 10 == 0 && tick <= 5900) {

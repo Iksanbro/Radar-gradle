@@ -90,6 +90,56 @@ public final class Autopilot {
         return out;
     }
 
+    /**
+     * Желаемая угловая скорость корабля (мир, рад/с) для регулятора угловой скорости Flight Control: по каждой оси -
+     * ошибка угла x {@link #YAW_GAIN}, не больше {@link #YAW_RATE_MAX}. Оси - как в {@link #attitudeAccel}: рысканье
+     * вокруг мировой вертикали, тангаж вокруг поперечной оси, крен вокруг носа; выключенные тангаж и крен - держать
+     * ровно, выключенное рысканье - 0 вокруг вертикали (курс держится). Все три выключены - ноль.
+     */
+    public static Vec desiredRates(Vec forward, Vec up, Vec dir, boolean yaw, boolean pitch, boolean roll,
+                                   double maxPitchDeg, double maxRollDeg) {
+        if (!yaw && !pitch && !roll) return Vec.ZERO;
+        Vec f = forward.normalize();
+        double e = yawError(f, dir);
+        Vec out = yaw ? Vec.UP.scale(rate(e)) : Vec.ZERO;
+        Vec side = f.cross(Vec.UP);
+        if (side.length() < 1e-6) return out;
+        side = side.normalize();
+        double pitchNow = Math.atan2(f.y(), f.horizontalLength());
+        double maxP = Math.toRadians(clamp(maxPitchDeg, ANGLE_MIN, PITCH_MAX));
+        double pitchWant = !pitch || dir.lengthSqr() < 1e-12 ? 0 : clamp(Math.atan2(dir.y(), dir.horizontalLength()), -maxP, maxP);
+        out = out.add(side.scale(rate(pitchWant - pitchNow)));
+        Vec level = Vec.UP.sub(f.scale(f.y())).normalize();
+        double bankNow = Math.atan2(up.dot(side), up.dot(level));
+        double maxR = Math.toRadians(clamp(maxRollDeg, ANGLE_MIN, ROLL_MAX));
+        double bankWant = roll && Double.isFinite(e) ? -clamp(e / ROLL_FULL_ERROR, -1, 1) * maxR : 0;
+        return out.add(f.scale(rate(wrap(bankWant - bankNow))));
+    }
+
+    private static double rate(double error) {
+        return Double.isFinite(error) ? clamp(YAW_GAIN * error, -YAW_RATE_MAX, YAW_RATE_MAX) : 0;
+    }
+
+    /**
+     * Желаемая скорость корабля (мир, бл/с) для регулятора скорости Flight Control: по горизонтали - скорость цели +
+     * сближение (ошибка дальности x {@link #POS_GAIN}, не больше maxSpeed), по вертикали - к высоте над целью (режим
+     * «дальность и высота») или к holdY («только дальность»; NaN - вертикаль 0). Режим «выкл» - null (движением не
+     * управлять).
+     */
+    public static Vec desiredVelocity(Mode mode, double distance, double height, double maxSpeed, Vec ship, Vec target, Vec targetVel,
+                                      double holdY) {
+        if (mode == Mode.OFF) return null;
+        Vec r = target.sub(ship).horizontal();
+        double d = r.length();
+        Vec dir = d > 1e-3 ? r.scale(1 / d) : Vec.ZERO;
+        double closing = clamp(POS_GAIN * (d - distance), -maxSpeed, maxSpeed);
+        Vec v = targetVel.horizontal().add(dir.scale(closing));
+        double vy = 0;
+        if (mode == Mode.DISTANCE_ALTITUDE) vy = targetVel.y() + clamp(POS_GAIN * (target.y() + height - ship.y()), -maxSpeed, maxSpeed);
+        else if (Double.isFinite(holdY)) vy = clamp(POS_GAIN * (holdY - ship.y()), -maxSpeed, maxSpeed);
+        return new Vec(v.x(), vy, v.z());
+    }
+
     /** Угол в -π..π. */
     public static double wrap(double a) {
         return Math.atan2(Math.sin(a), Math.cos(a));

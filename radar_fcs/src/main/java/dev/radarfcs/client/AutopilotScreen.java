@@ -19,10 +19,10 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * дальность, высота над целью и предел скорости - числами с клавиатуры.
  */
 public final class AutopilotScreen extends Screen {
-    private static final int W = 300, H = 286;
+    private static final int W = 300, H = 262;
 
     private final BlockPos pos;
-    private boolean heading, pitch, roll, direct;
+    private boolean heading, pitch, roll;
     private Autopilot.Mode mode;
     private final double distance0, height0, speed0, roll0, pitch0;
     private int left, top;
@@ -35,7 +35,6 @@ public final class AutopilotScreen extends Screen {
         heading = !t.contains("Heading") || t.getBoolean("Heading");
         pitch = t.getBoolean("Pitch");
         roll = t.getBoolean("Roll");
-        direct = t.getBoolean("Direct");
         Autopilot.Mode m;
         try {
             m = Autopilot.Mode.valueOf(t.getString("Mode"));
@@ -55,44 +54,39 @@ public final class AutopilotScreen extends Screen {
         left = (width - W) / 2;
         top = (height - H) / 2;
         int x = left + 170, w = W - 180;
-        addRenderableWidget(Button.builder(control(), b -> {
-            direct = !direct;
-            b.setMessage(control());
-        }).bounds(x, top + 22, w, 18).build());
         // оси ведения цели: рысканье, крен, тангаж
         int bw = (W - 24) / 3;
         addRenderableWidget(Button.builder(axis("yaw", heading), b -> {
             heading = !heading;
             b.setMessage(axis("yaw", heading));
-        }).bounds(left + 8, top + 60, bw, 18).build());
+        }).bounds(left + 8, top + 36, bw, 18).build());
         addRenderableWidget(Button.builder(axis("roll", roll), b -> {
             roll = !roll;
             b.setMessage(axis("roll", roll));
             updateFields();
-        }).bounds(left + 12 + bw, top + 60, bw, 18).build());
+        }).bounds(left + 12 + bw, top + 36, bw, 18).build());
         addRenderableWidget(Button.builder(axis("pitch", pitch), b -> {
             pitch = !pitch;
             b.setMessage(axis("pitch", pitch));
             updateFields();
-        }).bounds(left + 16 + 2 * bw, top + 60, bw, 18).build());
-        rollField = field(x, top + 84, w, keep(rollField, roll0));
-        pitchField = field(x, top + 106, w, keep(pitchField, pitch0));
+        }).bounds(left + 16 + 2 * bw, top + 36, bw, 18).build());
+        rollField = field(x, top + 60, w, keep(rollField, roll0));
+        pitchField = field(x, top + 82, w, keep(pitchField, pitch0));
         addRenderableWidget(Button.builder(Component.translatable(mode.key()), b -> {
             Autopilot.Mode[] v = Autopilot.Mode.values();
             mode = v[(mode.ordinal() + 1) % v.length];
             b.setMessage(Component.translatable(mode.key()));
             updateFields();
-        }).bounds(left + 8, top + 130, W - 16, 18).build());
-        distField = field(x, top + 154, w, keep(distField, distance0));
-        heightField = field(x, top + 176, w, keep(heightField, height0));
-        speedField = field(x, top + 198, w, keep(speedField, speed0));
+        }).bounds(left + 8, top + 106, W - 16, 18).build());
+        distField = field(x, top + 130, w, keep(distField, distance0));
+        heightField = field(x, top + 152, w, keep(heightField, height0));
+        speedField = field(x, top + 174, w, keep(speedField, speed0));
         updateFields();
         addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gun.save"), b -> {
             CompoundTag t = new CompoundTag();
             t.putBoolean("Heading", heading);
             t.putBoolean("Pitch", pitch);
             t.putBoolean("Roll", roll);
-            t.putBoolean("Direct", direct);
             t.putDouble("MaxRoll", parse(rollField, roll0, Autopilot::cleanRoll));
             t.putDouble("MaxPitch", parse(pitchField, pitch0, Autopilot::cleanPitch));
             t.putString("Mode", mode.name());
@@ -140,11 +134,6 @@ public final class AutopilotScreen extends Screen {
         pitchField.setTextColor(pitch ? 0xE0E0E0 : 0x606060);
     }
 
-    private Component control() {
-        return Component.translatable(direct ? "radar_fcs.autopilot.control.direct" : "radar_fcs.autopilot.control.computer")
-                .withStyle(direct ? ChatFormatting.GOLD : ChatFormatting.AQUA);
-    }
-
     private static Component axis(String name, boolean on) {
         return Component.translatable("radar_fcs.autopilot.axis." + name).withStyle(on ? ChatFormatting.GREEN : ChatFormatting.RED);
     }
@@ -164,16 +153,15 @@ public final class AutopilotScreen extends Screen {
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         super.render(g, mouseX, mouseY, partialTick);
         g.drawString(font, title, left + 8, top + 8, 0xFFD27F, false);
-        g.drawString(font, Component.translatable("radar_fcs.autopilot.control"), left + 8, top + 27, 0xC0C0C0, false);
-        g.drawString(font, Component.translatable("radar_fcs.autopilot.axes_title"), left + 8, top + 48, 0xC0C0C0, false);
-        g.drawString(font, Component.translatable("radar_fcs.autopilot.max_roll"), left + 8, top + 88, roll ? 0xC0C0C0 : 0x606060, false);
-        g.drawString(font, Component.translatable("radar_fcs.autopilot.max_pitch"), left + 8, top + 110, pitch ? 0xC0C0C0 : 0x606060, false);
+        g.drawString(font, Component.translatable("radar_fcs.autopilot.axes_title"), left + 8, top + 24, 0xC0C0C0, false);
+        g.drawString(font, Component.translatable("radar_fcs.autopilot.max_roll"), left + 8, top + 64, roll ? 0xC0C0C0 : 0x606060, false);
+        g.drawString(font, Component.translatable("radar_fcs.autopilot.max_pitch"), left + 8, top + 86, pitch ? 0xC0C0C0 : 0x606060, false);
         int off = mode != Autopilot.Mode.OFF ? 0xC0C0C0 : 0x606060;
-        g.drawString(font, Component.translatable("radar_fcs.autopilot.distance"), left + 8, top + 158, off, false);
-        g.drawString(font, Component.translatable("radar_fcs.autopilot.height"), left + 8, top + 180,
+        g.drawString(font, Component.translatable("radar_fcs.autopilot.distance"), left + 8, top + 134, off, false);
+        g.drawString(font, Component.translatable("radar_fcs.autopilot.height"), left + 8, top + 156,
                 mode == Autopilot.Mode.DISTANCE_ALTITUDE ? 0xC0C0C0 : 0x606060, false);
-        g.drawString(font, Component.translatable("radar_fcs.autopilot.max_speed"), left + 8, top + 202, off, false);
-        g.drawWordWrap(font, Component.translatable(mode.key() + ".hint"), left + 8, top + 222, W - 16, 0x8A9098);
+        g.drawString(font, Component.translatable("radar_fcs.autopilot.max_speed"), left + 8, top + 178, off, false);
+        g.drawWordWrap(font, Component.translatable(mode.key() + ".hint"), left + 8, top + 198, W - 16, 0x8A9098);
     }
 
     @Override
