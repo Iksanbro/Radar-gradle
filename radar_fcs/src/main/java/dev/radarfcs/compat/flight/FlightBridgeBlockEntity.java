@@ -24,7 +24,7 @@ import org.joml.Vector3d;
 /**
  * Мост Flight Control: участник компьютера управления полётом (как стабилизаторы Flight Control - связывается с ним
  * инструментальным пистолетом) и цель индикатора направления вперёд. Каждый шаг физики отдаёт компьютеру момент
- * (поворот корпуса носом к цели) и силу (дальность до цели, высота над целью) в осях корабля; компьютер раздаёт их
+ * (поворот корпуса к цели по включённым осям: рысканье, крен, тангаж) и силу (дальность до цели, высота над целью) в осях корабля; компьютер раздаёт их
  * двигателям. Класс грузится только при установленном Create: Flight Control.
  */
 public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements WrenchContributor, ForwardIndicatorLinkTarget {
@@ -65,7 +65,7 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
     @Override
     public boolean isContributing() {
         Goal g = goal();
-        return g != null && (g.heading() || g.mode() != Autopilot.Mode.OFF);
+        return g != null && (g.turns() || g.mode() != Autopilot.Mode.OFF);
     }
 
     @Override
@@ -133,12 +133,14 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             Vector3d pos = AttitudeTargetUtil.getLogicalPosition(subLevel);
             Vec ship = new Vec(pos.x, pos.y, pos.z);
             Vec target = g.posAt(level.getGameTime());
-            if (g.heading()) {
+            if (g.turns()) {
                 BodyForwardFacing f = forwardFacing();
                 Vector3d fw = AttitudeTargetUtil.rotateBodyToWorld(subLevel, new Vector3d(f.direction().getStepX(), 0, f.direction().getStepZ()));
-                double err = Autopilot.yawError(new Vec(fw.x, fw.y, fw.z), target.sub(ship));
+                Vector3d up = AttitudeTargetUtil.rotateBodyToWorld(subLevel, new Vector3d(0, 1, 0));
                 Vector3d w = handle.getAngularVelocity(new Vector3d());
-                Vector3d alpha = new Vector3d(0, Autopilot.yawAccel(err, w.y), 0);
+                Vec a = Autopilot.attitudeAccel(new Vec(fw.x, fw.y, fw.z), new Vec(up.x, up.y, up.z), new Vec(w.x, w.y, w.z),
+                        target.sub(ship), g.yaw(), g.pitch(), g.roll(), g.maxPitch(), g.maxRoll());
+                Vector3d alpha = new Vector3d(a.x(), a.y(), a.z());
                 AttitudeTargetUtil.worldToBody(subLevel, alpha);
                 Matrix3d inertia = FlightPhysicsController.getInertiaTensor(subLevel);
                 Vector3d torque = inertia.transform(alpha, new Vector3d());

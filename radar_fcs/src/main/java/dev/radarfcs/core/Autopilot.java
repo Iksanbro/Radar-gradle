@@ -21,6 +21,10 @@ public final class Autopilot {
 
     public static final double DISTANCE_MIN = 0, DISTANCE_MAX = 4096, HEIGHT_MIN = -1024, HEIGHT_MAX = 1024;
     public static final double SPEED_MIN = 1, SPEED_MAX = 200;
+    /** Пределы крена и тангажа (градусы): по умолчанию, допустимые. */
+    public static final double ROLL_DEFAULT = 30, PITCH_DEFAULT = 45, ANGLE_MIN = 1, ROLL_MAX = 80, PITCH_MAX = 89;
+    /** Ошибка курса (рад), при которой крен - полный предел: меньше - пропорционально. */
+    public static final double ROLL_FULL_ERROR = Math.toRadians(30);
 
     private Autopilot() {}
 
@@ -39,9 +43,56 @@ public final class Autopilot {
 
     /** Нужное угловое ускорение вокруг мировой +Y (рад/с²) по ошибке курса и текущей угловой скорости вокруг +Y. */
     public static double yawAccel(double error, double yawRate) {
-        if (!Double.isFinite(error)) return -YAW_RATE_GAIN * yawRate;
+        return axisAccel(error, yawRate);
+    }
+
+    /** Угловое ускорение вокруг оси (рад/с²): ошибка угла -> скорость поворота (не больше предела) -> ускорение. */
+    public static double axisAccel(double error, double rate) {
+        if (!Double.isFinite(error)) return -YAW_RATE_GAIN * rate;
         double want = clamp(YAW_GAIN * error, -YAW_RATE_MAX, YAW_RATE_MAX);
-        return YAW_RATE_GAIN * (want - yawRate);
+        return YAW_RATE_GAIN * (want - rate);
+    }
+
+    /**
+     * Нужное угловое ускорение корабля (мир, рад/с²) для ведения цели по включённым осям.
+     * <ul>
+     *   <li>рысканье - нос (по горизонтали) на цель, вокруг мировой вертикали;</li>
+     *   <li>тангаж - нос вверх/вниз на угол места цели (не больше maxPitch от горизонта), вокруг поперечной оси;</li>
+     *   <li>крен - в сторону поворота, как самолёт: пропорционально ошибке курса, полный maxRoll при 30° и больше;
+     *       нос на цели - крыло ровно. Вокруг продольной оси.</li>
+     * </ul>
+     * Выключенные тангаж и крен мост держит ровно (нос по горизонту, крыло ровно) - иначе при повороте с поднятым
+     * носом корабль заваливался бы по крену; выключенное рысканье - не трогает. Все три выключены - момента нет.
+     *
+     * @param forward нос корабля (мир), up - его «верх», w - угловая скорость (мир, рад/с), dir - направление на цель
+     */
+    public static Vec attitudeAccel(Vec forward, Vec up, Vec w, Vec dir, boolean yaw, boolean pitch, boolean roll,
+                                    double maxPitchDeg, double maxRollDeg) {
+        if (!yaw && !pitch && !roll) return Vec.ZERO;
+        Vec f = forward.normalize();
+        double e = yawError(f, dir);
+        Vec out = Vec.ZERO;
+        if (yaw) out = out.add(Vec.UP.scale(axisAccel(e, w.y())));
+        Vec side = f.cross(Vec.UP);                                      // вправо от носа (по горизонтали)
+        if (side.length() < 1e-6) return out;                           // нос вертикально - тангаж и крен не определены
+        side = side.normalize();
+        // тангаж: на угол места цели или (выключен) нос по горизонту
+        double pitchNow = Math.atan2(f.y(), f.horizontalLength());
+        double maxP = Math.toRadians(clamp(maxPitchDeg, ANGLE_MIN, PITCH_MAX));
+        double pitchWant = !pitch || dir.lengthSqr() < 1e-12 ? 0 : clamp(Math.atan2(dir.y(), dir.horizontalLength()), -maxP, maxP);
+        out = out.add(side.scale(axisAccel(pitchWant - pitchNow, w.dot(side))));    // + вокруг «вправо» - нос вверх
+        // крен: в сторону поворота или (выключен) крыло ровно
+        Vec level = Vec.UP.sub(f.scale(f.y())).normalize();             // «верх» без крена
+        double bankNow = Math.atan2(up.dot(side), up.dot(level));        // + - крен вправо (правое крыло вниз)
+        double maxR = Math.toRadians(clamp(maxRollDeg, ANGLE_MIN, ROLL_MAX));
+        double bankWant = roll && Double.isFinite(e) ? -clamp(e / ROLL_FULL_ERROR, -1, 1) * maxR : 0;   // влево (e > 0) - крен влево
+        out = out.add(f.scale(axisAccel(wrap(bankWant - bankNow), w.dot(f))));    // + вокруг носа - крен вправо
+        return out;
+    }
+
+    /** Угол в -π..π. */
+    public static double wrap(double a) {
+        return Math.atan2(Math.sin(a), Math.cos(a));
     }
 
     /**
@@ -79,6 +130,14 @@ public final class Autopilot {
 
     public static double cleanHeight(double v) {
         return Double.isFinite(v) ? clamp(v, HEIGHT_MIN, HEIGHT_MAX) : 16;
+    }
+
+    public static double cleanRoll(double v) {
+        return Double.isFinite(v) ? clamp(v, ANGLE_MIN, ROLL_MAX) : ROLL_DEFAULT;
+    }
+
+    public static double cleanPitch(double v) {
+        return Double.isFinite(v) ? clamp(v, ANGLE_MIN, PITCH_MAX) : PITCH_DEFAULT;
     }
 
     public static double cleanSpeed(double v) {

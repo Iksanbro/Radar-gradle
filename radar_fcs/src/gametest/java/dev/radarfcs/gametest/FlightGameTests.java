@@ -44,7 +44,8 @@ public class FlightGameTests {
     /**
      * Мост на постройке Sable (лицом на север), монитор на земле в той же радарной сети назначает хаска к востоку.
      * Мост ведёт эту цель: без индикатора нос - лицевая сторона (север), цель справа - момент по курсу вправо
-     * (вокруг -Y), сила к цели (+X; держать 10 блоков, до цели ~22). Индикатор «вперёд = восток» - нос уже на цели,
+     * (вокруг -Y), сила к цели (+X; держать 10 блоков, до цели ~22); с креном - ещё крен вправо. Индикатор «вперёд =
+     * восток» и тангаж: цель ниже корабля - нос вниз. Индикатор «вперёд = восток» - нос уже на цели,
      * момента по курсу почти нет. Режим «дальность и высота» с высотой +12 над целью - сила вверх. Связь с компьютером
      * управления полётом - мост участвует; сигнал редстоуна - пауза, цели нет; мост убрали - компьютер его забыл.
      */
@@ -124,6 +125,19 @@ public class FlightGameTests {
                     if (!(w[0] > 0) || Math.abs(w[2]) > Math.abs(w[0]) * 0.3) h.fail("expected force toward the target (+X), got " + f(w[0]) + ", " + f(w[2]));
                     if (Math.abs(w[1]) > 1e-6) h.fail("distance-only mode must not push vertically: " + f(w[1]));
                     if (b.state() != AutopilotBlockEntity.State.NO_COMPUTER) h.fail("expected NO_COMPUTER, got " + b.state());
+                    if (Math.abs(w[3]) > 1e-6 || Math.abs(w[5]) > 1e-6) h.fail("yaw only on a level ship: no roll/pitch torque, got " + f(w[3]) + ", " + f(w[5]));
+                    b.roll = true;                                         // + крен: поворот вправо - крен вправо
+                    phase.set(10);
+                    since.set(t);
+                }
+                case 10 -> {
+                    if (t - since.get() < 4) return;
+                    double[] w = FlightTestSupport.wrench(bridge[0], sub);
+                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: + roll, right turn: T=({}, {}, {})", f(w[3]), f(w[4]), f(w[5]));
+                    // нос на север (0, 0, -1): крен вправо - поворот вокруг носа на +угол, момент по -Z
+                    if (!(w[5] < 0)) h.fail("expected a right bank (torque about -Z with the nose north), got " + f(w[5]));
+                    if (!(w[4] < 0)) h.fail("roll must keep the yaw turn, got " + f(w[4]));
+                    b.roll = false;
                     if (!FlightTestSupport.linkIndicator(level, bridge[0], at[1])) h.fail("indicator link failed");
                     phase.set(2);
                 }
@@ -132,6 +146,18 @@ public class FlightGameTests {
                     double[] w = FlightTestSupport.wrench(bridge[0], sub);
                     FcsMod.LOG.info("[radar_fcs test] flight_bridge: nose east (indicator): T=({}, {}, {})", f(w[3]), f(w[4]), f(w[5]));
                     if (Math.abs(w[4]) > 0.05 * Math.abs(turn[0])) h.fail("nose on target, still turning: " + f(w[4]));
+                    if (Math.abs(w[5]) > 1e-6) h.fail("pitch off: the nose stays level, got " + f(w[5]));
+                    b.pitch = true;                                        // + тангаж: цель ниже корабля - нос вниз
+                    phase.set(11);
+                    since.set(t);
+                }
+                case 11 -> {
+                    if (t - since.get() < 4) return;
+                    double[] w = FlightTestSupport.wrench(bridge[0], sub);
+                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: + pitch, target below: T=({}, {}, {})", f(w[3]), f(w[4]), f(w[5]));
+                    // нос на восток: нос вверх - поворот вокруг +Z (нос x вверх), цель ниже - момент по -Z
+                    if (!(w[5] < 0)) h.fail("expected nose down (torque about -Z with the nose east), got " + f(w[5]));
+                    b.pitch = false;
                     b.mode = Autopilot.Mode.DISTANCE_ALTITUDE;
                     b.height = 12;
                     phase.set(3);

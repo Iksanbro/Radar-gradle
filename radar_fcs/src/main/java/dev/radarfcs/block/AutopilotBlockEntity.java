@@ -56,8 +56,13 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
      * Цель и настройки для физики (читается в шаге физики Sable, поэтому неизменяемая запись в volatile-поле):
      * мировое положение и скорость цели (бл/с) на игровой тик tick.
      */
-    public record Goal(Vec pos, Vec vel, long tick, boolean heading, Autopilot.Mode mode, double distance, double height,
-                       double maxSpeed) {
+    public record Goal(Vec pos, Vec vel, long tick, boolean yaw, boolean pitch, boolean roll, double maxPitch, double maxRoll,
+                       Autopilot.Mode mode, double distance, double height, double maxSpeed) {
+        /** Мост поворачивает корпус (хоть одна ось). */
+        public boolean turns() {
+            return yaw || pitch || roll;
+        }
+
         /** Положение цели на момент time (игровые тики, дробные). */
         public Vec posAt(double time) {
             return pos.addScaled(vel, (time - tick) / 20.0);
@@ -75,7 +80,9 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     }
 
     // настройки (экран моста)
-    public boolean heading = true;
+    /** Оси ведения цели: рысканье (курс), тангаж (нос на угол места цели), крен (в сторону поворота). */
+    public boolean heading = true, pitch, roll;
+    public double maxPitch = Autopilot.PITCH_DEFAULT, maxRoll = Autopilot.ROLL_DEFAULT;
     public Autopilot.Mode mode = Autopilot.Mode.DISTANCE;
     public double distance = 48, height = 16, maxSpeed = 20;
 
@@ -197,7 +204,7 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
             return;
         }
         Vec vel = t.vel.scale(20);                                          // бл/тик -> бл/с
-        setGoal(new Goal(t.pos, vel, now, heading, mode, distance, height, maxSpeed), t.name == null ? "?" : t.name,
+        setGoal(new Goal(t.pos, vel, now, heading, pitch, roll, maxPitch, maxRoll, mode, distance, height, maxSpeed), t.name == null ? "?" : t.name,
                 t.pos.sub(origin).horizontalLength());
     }
 
@@ -248,6 +255,10 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     public CompoundTag writeSettings() {
         CompoundTag t = new CompoundTag();
         t.putBoolean("Heading", heading);
+        t.putBoolean("Pitch", pitch);
+        t.putBoolean("Roll", roll);
+        t.putDouble("MaxPitch", maxPitch);
+        t.putDouble("MaxRoll", maxRoll);
         t.putString("Mode", mode.name());
         t.putDouble("Distance", distance);
         t.putDouble("Height", height);
@@ -257,6 +268,10 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
 
     public void readSettings(CompoundTag t) {
         heading = !t.contains("Heading") || t.getBoolean("Heading");
+        pitch = t.getBoolean("Pitch");
+        roll = t.getBoolean("Roll");
+        maxPitch = Autopilot.cleanPitch(t.contains("MaxPitch") ? t.getDouble("MaxPitch") : Double.NaN);
+        maxRoll = Autopilot.cleanRoll(t.contains("MaxRoll") ? t.getDouble("MaxRoll") : Double.NaN);
         try {
             mode = Autopilot.Mode.valueOf(t.getString("Mode"));
         } catch (IllegalArgumentException e) {
@@ -339,8 +354,9 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
             tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.autopilot.target", targetName,
                     String.format(Locale.ROOT, "%.0f", targetDistance))).withStyle(ChatFormatting.AQUA));
         }
-        tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.autopilot.heading"))
-                .append(": ").append(Component.translatable(heading ? "radar_fcs.gun.on" : "radar_fcs.gun.off")).withStyle(ChatFormatting.GRAY));
+        tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.autopilot.axes")).append(": ")
+                .append(axis("yaw", heading)).append(" ").append(axis("roll", roll)).append(" ").append(axis("pitch", pitch))
+                .withStyle(ChatFormatting.GRAY));
         tooltip.add(Component.literal("    ").append(Component.translatable(mode.key())).withStyle(ChatFormatting.GRAY));
         if (mode != Autopilot.Mode.OFF) {
             tooltip.add(Component.literal("    ").append(Component.translatable(mode == Autopilot.Mode.DISTANCE_ALTITUDE
@@ -351,6 +367,10 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
                 ? "radar_fcs.autopilot.indicator_linked" : "radar_fcs.autopilot.indicator_none"))
                 .withStyle(indicatorLinked() ? ChatFormatting.LIGHT_PURPLE : ChatFormatting.DARK_GRAY));
         return true;
+    }
+
+    private static Component axis(String name, boolean on) {
+        return Component.translatable("radar_fcs.autopilot.axis." + name).withStyle(on ? ChatFormatting.GREEN : ChatFormatting.DARK_GRAY);
     }
 
     public static String fmt(double v) {

@@ -42,7 +42,7 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 ### 🛩️ Autopilot Bridge (requires Create: Flight Control)
 - The block exists **only when Create: Flight Control is installed** and is crafted from its parts.
 - Flies a Flight Control ship to the **radar network's target**: the one designated on a monitor (own or Create: Radars), otherwise the fire control computer's target.
-- **Turns the hull nose onto the target** - the nose comes from the Flight Control **Forward Indicator** (linked with the tool gun).
+- **Deflections used to track the target** are toggled separately: **yaw** (nose on the target bearing), **roll** (bank into the turn) and **pitch** (nose on the target elevation), with roll and pitch limits. The nose comes from the Flight Control **Forward Indicator** (linked with the tool gun).
 - Modes **"distance only"** and **"distance and altitude"** - distance, height above the target and speed limit are typed in.
 - Links to the **Flight Control Computer** with the Flight Control tool gun, like its own stabilizers; redstone pauses it.
 

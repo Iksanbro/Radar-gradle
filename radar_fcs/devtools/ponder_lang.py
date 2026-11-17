@@ -347,10 +347,12 @@ SCENES = {
          'раздаёт их двигателям',
          'Then right-click the bridge and the Flight Control Computer with the tool gun. The bridge gives the computer '
          'torque and force, and the computer spreads them over the thrusters'),
-        ('ПКМ по мосту — настройки. «Поворот корпуса к цели» разворачивает корабль носом на цель; стабилизатор ориентации '
-         'лучше перевести в режим без удержания курса',
-         'Right-click the bridge for settings. "Turn the hull to the target" swings the ship nose onto the target; set the '
-         'Attitude Hold to a mode that does not hold the heading'),
+        ('ПКМ по мосту — настройки. Отклонения для ведения цели: рысканье — нос на цель по курсу, крен — в сторону '
+         'поворота, тангаж — нос на угол места цели; пределы крена и тангажа — числами. Выключенные крен и тангаж мост '
+         'держит ровно, стабилизатор ориентации на этом корабле лучше выключить',
+         'Right-click the bridge for settings. Deflections used to track the target: yaw - nose on its bearing, roll - '
+         'bank into the turn, pitch - nose on its elevation; roll and pitch limits are typed. The bridge keeps disabled '
+         'roll and pitch level, so better turn off the Attitude Hold on this ship'),
         ('«Только дальность»: корабль подходит и держит вписанную дальность до цели по горизонтали, высоту держат другие '
          'блоки. «Дальность и высота»: ещё и вписанную высоту над целью. Предел скорости — тоже числом',
          '"Distance only": the ship closes in and keeps the typed horizontal distance to the target; other blocks keep the '

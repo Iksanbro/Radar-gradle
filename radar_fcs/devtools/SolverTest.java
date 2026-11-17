@@ -563,6 +563,50 @@ public class SolverTest {
         System.out.println("angle limits: " + (ok ? "all checks passed" : "failed"));
     }
 
+    /** Поворот вектора v вокруг единичной оси a на угол ang (Родриг). */
+    static Vec rot(Vec v, Vec a, double ang) {
+        double c = Math.cos(ang), sn = Math.sin(ang);
+        return v.scale(c).add(a.cross(v).scale(sn)).add(a.scale(a.dot(v) * (1 - c)));
+    }
+
+    /**
+     * Ориентация моста: тело с единичной инерцией, нос на восток, цель слева-сверху (на северо-востоке, угол места 20°).
+     * Только рысканье - курс на цель, нос и крыло мост держит ровно; + тангаж - нос на угол места цели;
+     * + крен - в повороте влево крен влево (до предела 30°), когда нос на цели - крыло ровно. Предел тангажа 10° -
+     * нос поднимается только на 10°.
+     */
+    static boolean attitude(boolean yaw, boolean pitch, boolean roll, double maxPitch) {
+        Vec f = new Vec(1, 0, 0), u = Vec.UP, w = Vec.ZERO;
+        Vec dir = new Vec(Math.cos(Math.toRadians(20)) * Math.cos(Math.toRadians(60)), Math.sin(Math.toRadians(20)),
+                -Math.cos(Math.toRadians(20)) * Math.sin(Math.toRadians(60)));
+        double dt = 0.01, minBank = 0, maxBank = 0;
+        for (int i = 0; i < 100 * 20; i++) {
+            Vec a = Autopilot.attitudeAccel(f, u, w, dir, yaw, pitch, roll, maxPitch, 30);
+            w = w.addScaled(a, dt);
+            double wl = w.length();
+            if (wl > 1e-12) {
+                Vec ax = w.scale(1 / wl);
+                f = rot(f, ax, wl * dt).normalize();
+                u = rot(u, ax, wl * dt).normalize();
+            }
+            Vec side = f.cross(Vec.UP).normalize();
+            Vec level = Vec.UP.sub(f.scale(f.y())).normalize();
+            double bank = Math.toDegrees(Math.atan2(u.dot(side), u.dot(level)));
+            minBank = Math.min(minBank, bank);
+            maxBank = Math.max(maxBank, bank);
+        }
+        double yawErr = Math.toDegrees(Math.abs(Autopilot.yawError(f, dir)));
+        double elev = Math.toDegrees(Math.atan2(f.y(), f.horizontalLength()));
+        Vec side = f.cross(Vec.UP).normalize();
+        double bank = Math.toDegrees(Math.atan2(u.dot(side), u.dot(Vec.UP.sub(f.scale(f.y())).normalize())));
+        boolean ok = (!yaw || yawErr < 1)
+                && (pitch ? Math.abs(elev - Math.min(20, maxPitch)) < 1 : Math.abs(elev) < 1)
+                && (roll ? minBank < -10 && maxBank < 1 && Math.abs(bank) < 1 && minBank >= -33 : Math.abs(bank) < 1 && minBank > -10 && maxBank < 10);
+        System.out.printf(java.util.Locale.ROOT, "autopilot attitude yaw=%s pitch=%s roll=%s maxPitch=%.0f: heading err %.2f, elevation %.2f, bank now %.2f (turn %.1f..%.1f)%n",
+                yaw, pitch, roll, maxPitch, yawErr, elev, bank, minBank, maxBank);
+        return ok;
+    }
+
     /**
      * Автопилот моста Flight Control: знак ошибки курса; корабль (точка с инерцией, поворот вокруг +Y) гонится за целью,
      * идущей на 6 бл/с: нос к цели, дальность 48 по горизонтали, в режиме с высотой - высота +16 над целью.
@@ -599,6 +643,12 @@ public class SolverTest {
                     mode, maxErr, dist, mode == Autopilot.Mode.DISTANCE ? Math.abs(ship.y() - 70) : alt);
             ok &= m;
         }
+        ok &= attitude(true, false, false, 45);
+        ok &= attitude(true, true, false, 45);
+        ok &= attitude(true, true, true, 45);
+        ok &= attitude(true, true, true, 10);
+        ok &= attitude(false, true, false, 45);
+        ok &= Autopilot.attitudeAccel(new Vec(1, 0, 0), Vec.UP, new Vec(0.1, 0.2, 0.3), new Vec(0, 1, 1), false, false, false, 45, 30).length() == 0;
         if (!ok) failures++;
         System.out.println("autopilot: " + (ok ? "all checks passed" : "failed"));
     }
