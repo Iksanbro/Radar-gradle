@@ -14,5 +14,8 @@ public final class Mods {
     /** CBC: Firepower Components: компактные станки (обычный и для автопушек). */
     public static final boolean FIREPOWER = ModList.get().isLoaded("cbc_firepower_components");
 
+    /** Create: Flight Control: мост автопилота (блок есть только с ним). */
+    public static final boolean FLIGHT_CONTROL = ModList.get().isLoaded("create_flight_control");
+
     private Mods() {}
 }

@@ -42,4 +42,8 @@ public final class FcsClientHooks {
     public static void openGunSettings(dev.radarfcs.net.GunPayloads.Open p) {
         net.minecraft.client.Minecraft.getInstance().setScreen(new GunSettingsScreen(p));
     }
+
+    public static void openAutopilot(dev.radarfcs.net.AutopilotPayloads.Open p) {
+        net.minecraft.client.Minecraft.getInstance().setScreen(new AutopilotScreen(p));
+    }
 }

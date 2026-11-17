@@ -39,6 +39,13 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 - Build your own turret on **Swivel Bearings**: a **Sight**, **Gun Drives** (yaw and pitch from any shafts, gear ratio learned automatically), **Gun Rotators** and **Gun Links** that join all parts into one gun.
 - Gun settings: type (autocannon, medium, big, custom), auto-aim on/off, firing on/off, main cannon, name.
 
+### 🛩️ Autopilot Bridge (requires Create: Flight Control)
+- The block exists **only when Create: Flight Control is installed** and is crafted from its parts.
+- Flies a Flight Control ship to the **radar network's target**: the one designated on a monitor (own or Create: Radars), otherwise the fire control computer's target.
+- **Turns the hull nose onto the target** - the nose comes from the Flight Control **Forward Indicator** (linked with the tool gun).
+- Modes **"distance only"** and **"distance and altitude"** - distance, height above the target and speed limit are typed in.
+- Links to the **Flight Control Computer** with the Flight Control tool gun, like its own stabilizers; redstone pauses it.
+
 ### 💥 Shell & rocket interception (requires CBC Interception)
 - Shoots down incoming **big cannon shells** and **rockets** (CBC, CBC Advanced Technologies and other addons): threat filter, types and priorities, "first to arrive first".
 - **Requires the additional mod CBC Interception.** Without it CBC projectiles pass through each other, so interception is disabled and its settings tab is greyed out.
@@ -68,6 +75,7 @@ Done — the battery will engage hostile mobs and other targets you allow. Hold 
 ## 🔌 Optional
 - **Create Aeronautics / Sable** — ships as targets, transponders on ships, custom turrets on Swivel Bearings
 - **CBC Interception** — shooting down shells and rockets
+- **Create: Flight Control** — the Autopilot Bridge (0.8.3+)
 - **CBC Advanced Technologies** — rifled barrels, heavy/twin autocannons, rockets (its reworked cannon physics is taken into account)
 - **CBC Neo Warfare** — rotary and medium cannons
 - **CBC: Firepower Components** — compact mounts

@@ -368,4 +368,45 @@ final class FcsScenes {
         sayAt(s, 100, face(u, 3, 2, 2, Direction.WEST), true);                                    // 10 огонь станком, радарный линк
         s.markAsFinished();
     }
+
+    // ------------------------------------------------------------------ мост автопилота (Create: Flight Control)
+    static void flightBridge(SceneBuilder builder, SceneBuildingUtil u) {
+        CreateSceneBuilder s = new CreateSceneBuilder(builder);
+        s.title("flight_bridge", "");
+        s.configureBasePlate(0, 0, 7);
+        s.showBasePlate();
+        s.idle(10);
+        ElementLink<WorldSectionElement> ship = s.world().showIndependentSection(u.select().fromTo(1, 1, 1, 5, 1, 3), Direction.DOWN);
+        s.idle(5);
+        s.world().showSectionAndMerge(u.select().position(3, 2, 2), Direction.DOWN, ship);
+        s.idle(10);
+        Vec3 bridge = face(u, 3, 2, 2, Direction.NORTH);
+        sayAt(s, 100, bridge, true);                                                              // 1 мост
+        s.world().showSectionAndMerge(u.select().position(3, 3, 2), Direction.DOWN, ship);
+        show(s, u.select().fromTo(3, 1, 5, 3, 2, 5), Direction.DOWN, 10);
+        s.overlay().showLine(PonderPalette.GREEN, u.vector().topOf(3, 3, 2), u.vector().topOf(3, 2, 5), 110);
+        sayAt(s, 110, u.vector().topOf(3, 3, 2), true);                                          // 2 сеть и цель
+        s.world().showSectionAndMerge(u.select().position(1, 2, 2), Direction.DOWN, ship);
+        s.idle(10);
+        ItemStack gun = stack(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("create_flight_control", "flight_control_tool_gun")));
+        s.overlay().showControls(u.vector().topOf(1, 2, 2), Pointing.DOWN, 40).rightClick().withItem(gun);
+        s.idle(20);
+        s.overlay().showControls(u.vector().topOf(3, 3, 2), Pointing.DOWN, 40).rightClick().withItem(gun);
+        s.overlay().showLine(PonderPalette.OUTPUT, u.vector().centerOf(1, 2, 2), u.vector().centerOf(3, 2, 2), 110);
+        sayAt(s, 110, face(u, 1, 2, 2, Direction.NORTH), true);                                   // 3 индикатор
+        s.world().showSectionAndMerge(u.select().position(5, 2, 2), Direction.DOWN, ship);
+        s.idle(10);
+        s.overlay().showControls(face(u, 5, 2, 2, Direction.NORTH), Pointing.DOWN, 40).rightClick().withItem(gun);
+        s.overlay().showLine(PonderPalette.BLUE, u.vector().centerOf(3, 2, 2), u.vector().centerOf(5, 2, 2), 110);
+        sayAt(s, 110, face(u, 5, 2, 2, Direction.NORTH), true);                                   // 4 компьютер
+        s.overlay().showControls(bridge, Pointing.DOWN, 50).rightClick();
+        s.world().configureCenterOfRotation(ship, u.vector().centerOf(3, 1, 2));
+        s.world().rotateSection(ship, 0, -25, 0, 40);
+        sayAt(s, 110, bridge, true);                                                              // 5 поворот корпуса
+        s.world().rotateSection(ship, 0, 25, 0, 40);
+        sayAt(s, 130, bridge, false);                                                             // 6 режимы
+        sayAt(s, 90, u.vector().topOf(3, 3, 2), false);                                           // 7 редстоун, очки
+        s.markAsFinished();
+    }
 }

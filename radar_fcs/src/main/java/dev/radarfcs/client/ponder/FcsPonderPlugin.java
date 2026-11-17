@@ -58,6 +58,11 @@ public final class FcsPonderPlugin implements PonderPlugin {
         var rotator = helper.forComponents(id(FcsRegistry.GUN_ROTATOR.get()));
         if (swivel) rotator.addStoryBoard("swivel_turret", FcsScenes::swivelTurret, TAG);
         rotator.addStoryBoard("gun_rotator", FcsScenes::gunRotator, TAG);
+        // мост автопилота - только с Create: Flight Control
+        if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) {
+            helper.forComponents(id(dev.radarfcs.compat.flight.FlightBridge.ITEM.get()))
+                    .addStoryBoard("flight_bridge", FcsScenes::flightBridge, TAG);
+        }
     }
 
     @Override
@@ -82,5 +87,6 @@ public final class FcsPonderPlugin implements PonderPlugin {
                 .add(id(FcsRegistry.SIGHT.get()))
                 .add(id(FcsRegistry.GUN_LINK_ITEM.get()))
                 .add(id(FcsRegistry.GUN_DRIVE.get()));
+        if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) helper.addToTag(TAG).add(id(dev.radarfcs.compat.flight.FlightBridge.ITEM.get()));
     }
 }

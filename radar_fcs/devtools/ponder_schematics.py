@@ -248,7 +248,24 @@ def gun_drive():
     s.save('gun_drive')
 
 
+def flight_bridge():
+    """Мост автопилота на палубе корабля Create: Flight Control: индикатор направления (нос на север), компьютер
+    управления полётом, радарный линк; радарный монитор той же сети на земле."""
+    s = Schematic(7, 5, 7).plate()
+    for x in range(1, 6):
+        for z in range(1, 4):
+            s.set(x, 1, z, 'create:andesite_casing')
+    s.set(3, 2, 2, FCS + 'flight_bridge', facing='north')
+    link(s, 3, 3, 2, 'up')
+    s.set(1, 2, 2, 'create_flight_control:forward_indicator', facing='south')
+    s.set(5, 2, 2, 'create_flight_control:flight_control_computer', facing='north', top='up')
+    s.set(3, 1, 5, FCS + 'radar_monitor', facing='north')
+    link(s, 3, 2, 5, 'up')
+    s.save('flight_bridge')
+
+
 if __name__ == '__main__':
-    for f in (battery, computer, aim_controllers, network, radar_monitor, transponder, camera, swivel_turret, turret, gun_drive):
+    for f in (battery, computer, aim_controllers, network, radar_monitor, transponder, camera, swivel_turret, turret, gun_drive,
+              flight_bridge):
         f()
     sys.exit(0)

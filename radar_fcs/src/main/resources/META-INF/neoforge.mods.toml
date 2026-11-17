@@ -52,6 +52,14 @@ versionRange = "[2.0.0,)"
 ordering = "AFTER"
 side = "BOTH"
 
+# Create: Flight Control - мост автопилота (блок есть только с ним)
+[[dependencies.${mod_id}]]
+modId = "create_flight_control"
+type = "optional"
+versionRange = "[0.8.3,)"
+ordering = "AFTER"
+side = "BOTH"
+
 [[dependencies.${mod_id}]]
 modId = "cbc_at"
 type = "optional"

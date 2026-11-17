@@ -34,7 +34,9 @@ public enum LinkKind {
     /** Вращатель орудия: как прицел - подключает всё орудие его орудийной сети. */
     GUN_ROTATOR,
     /** Привод орудия (выдаёт управляемое вращение): как вращатель - подключает всё орудие. */
-    GUN_DRIVE;
+    GUN_DRIVE,
+    /** Мост автопилота Flight Control: ведёт корабль к цели сети. */
+    AUTOPILOT;
 
     /** Вид аппаратуры в точке или null (не аппаратура, чанк не загружен). */
     @Nullable
@@ -54,6 +56,7 @@ public enum LinkKind {
         if (be instanceof dev.radarfcs.block.SightBlockEntity) return SIGHT;
         if (be instanceof dev.radarfcs.block.GunRotatorBlockEntity) return GUN_ROTATOR;
         if (be instanceof dev.radarfcs.block.GunDriveBlockEntity) return GUN_DRIVE;
+        if (be instanceof dev.radarfcs.block.AutopilotBlockEntity) return AUTOPILOT;
         if (CbcMount.of(be) != null) return MOUNT;
         try {
             if (RadarLink.isRadar(be)) return RADAR;

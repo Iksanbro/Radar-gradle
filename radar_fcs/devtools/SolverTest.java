@@ -563,6 +563,46 @@ public class SolverTest {
         System.out.println("angle limits: " + (ok ? "all checks passed" : "failed"));
     }
 
+    /**
+     * Автопилот моста Flight Control: знак ошибки курса; корабль (точка с инерцией, поворот вокруг +Y) гонится за целью,
+     * идущей на 6 бл/с: нос к цели, дальность 48 по горизонтали, в режиме с высотой - высота +16 над целью.
+     */
+    static void autopilot() {
+        boolean ok = true;
+        // восток -> север: поворот против часовой (если смотреть сверху) = +90°
+        ok &= Math.abs(Autopilot.yawError(new Vec(1, 0, 0), new Vec(0, 0, -1)) - Math.PI / 2) < 1e-9;
+        ok &= Math.abs(Autopilot.yawError(new Vec(0, 0, -1), new Vec(1, 0, 0)) + Math.PI / 2) < 1e-9;
+        ok &= Double.isNaN(Autopilot.yawError(new Vec(0, 1, 0), new Vec(1, 0, 0)));
+        ok &= Autopilot.accel(Autopilot.Mode.OFF, 10, 0, 20, Vec.ZERO, Vec.ZERO, new Vec(100, 0, 0), Vec.ZERO).length() == 0;
+        for (Autopilot.Mode mode : new Autopilot.Mode[]{Autopilot.Mode.DISTANCE, Autopilot.Mode.DISTANCE_ALTITUDE}) {
+            Vec ship = new Vec(0, 70, 0), vel = Vec.ZERO, target = new Vec(150, 60, 90), tv = new Vec(6, 0, -2);
+            double yaw = 0, rate = 0, dt = 0.05;                     // нос: (cos yaw, 0, -sin yaw), сначала на восток
+            double maxErr = 0, dist = 0, alt = 0;
+            for (int i = 0; i < 20 * 60; i++) {
+                target = target.addScaled(tv, dt);
+                Vec fwd = new Vec(Math.cos(yaw), 0, -Math.sin(yaw));
+                double err = Autopilot.yawError(fwd, target.sub(ship));
+                rate += Autopilot.yawAccel(err, rate) * dt;
+                yaw += rate * dt;
+                Vec a = Autopilot.accel(mode, 48, 16, 20, ship, vel, target, tv);
+                if (mode == Autopilot.Mode.DISTANCE) a = new Vec(a.x(), 0, a.z());
+                vel = vel.addScaled(a, dt);
+                ship = ship.addScaled(vel, dt);
+                if (i > 20 * 40) {
+                    maxErr = Math.max(maxErr, Math.abs(Math.toDegrees(err)));
+                    dist = Math.max(dist, Math.abs(target.sub(ship).horizontalLength() - 48));
+                    alt = Math.max(alt, Math.abs(ship.y() - target.y() - 16));
+                }
+            }
+            boolean m = maxErr < 2 && dist < 1.5 && (mode == Autopilot.Mode.DISTANCE ? Math.abs(ship.y() - 70) < 1e-9 : alt < 0.5);
+            System.out.printf(java.util.Locale.ROOT, "autopilot %s: heading error %.2f deg, distance error %.2f, altitude error %.2f%n",
+                    mode, maxErr, dist, mode == Autopilot.Mode.DISTANCE ? Math.abs(ship.y() - 70) : alt);
+            ok &= m;
+        }
+        if (!ok) failures++;
+        System.out.println("autopilot: " + (ok ? "all checks passed" : "failed"));
+    }
+
     public static void main(String[] a) {
         ballisticCase("big cannon 4 charges", new Truth(8, -0.05, 0.01, false, 0, 0, 1, 1, 600), 300, false, 97);
         ballisticCase("big cannon 2 charges", new Truth(4, -0.05, 0.01, false, 0, 0, 1, 1, 600), 200, false, 97);
@@ -581,6 +621,7 @@ public class SolverTest {
         wheelSteps();
         mountTargets();
         angleLimits();
+        autopilot();
         if (failures > 0) {
             System.out.println("FAILURES: " + failures);
             System.exit(1);

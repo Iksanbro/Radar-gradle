@@ -330,6 +330,34 @@ SCENES = {
          'часть орудия',
          'The CBC mount of the gun fires on command; the computer does not lock its shafts. Put a Radar Link on any part of the gun'),
     ]),
+    'flight_bridge': (('Мост автопилота (Create: Flight Control)', 'Autopilot Bridge (Create: Flight Control)'), [
+        ('Мост автопилота связывает радарную сеть с Create: Flight Control. Он ставится на корабль Sable и есть, только '
+         'если установлен Flight Control',
+         'The Autopilot Bridge connects the radar network to Create: Flight Control. It goes on a Sable ship and exists '
+         'only when Flight Control is installed'),
+        ('В радарную сеть — радарным линком. Цель моста — назначенная на мониторе сети (своём или Create Radars), иначе '
+         'та, которую ведёт вычислитель сети',
+         'Add it to a radar network with a Radar Link. Its target is the one designated on a monitor of the network (own '
+         'or Create Radars), otherwise the one a fire control computer of the network is tracking'),
+        ('Инструментальный пистолет Flight Control: ПКМ по индикатору направления вперёд, затем по мосту — нос корабля '
+         'берётся с индикатора. Без индикатора нос — лицевая сторона моста',
+         'Flight Control tool gun: right-click the Forward Indicator, then the bridge - the ship nose comes from the '
+         'indicator. Without one, the nose is the front face of the bridge'),
+        ('Потом пистолетом ПКМ по мосту и по компьютеру управления полётом. Мост отдаёт компьютеру момент и силу, а тот '
+         'раздаёт их двигателям',
+         'Then right-click the bridge and the Flight Control Computer with the tool gun. The bridge gives the computer '
+         'torque and force, and the computer spreads them over the thrusters'),
+        ('ПКМ по мосту — настройки. «Поворот корпуса к цели» разворачивает корабль носом на цель; стабилизатор ориентации '
+         'лучше перевести в режим без удержания курса',
+         'Right-click the bridge for settings. "Turn the hull to the target" swings the ship nose onto the target; set the '
+         'Attitude Hold to a mode that does not hold the heading'),
+        ('«Только дальность»: корабль подходит и держит вписанную дальность до цели по горизонтали, высоту держат другие '
+         'блоки. «Дальность и высота»: ещё и вписанную высоту над целью. Предел скорости — тоже числом',
+         '"Distance only": the ship closes in and keeps the typed horizontal distance to the target; other blocks keep the '
+         'altitude. "Distance and altitude": also the typed height above the target. The speed limit is typed too'),
+        ('Сигнал редстоуна ставит мост на паузу. Очки инженера показывают цель, дальность и связи',
+         'A redstone signal pauses the bridge. Engineer\'s Goggles show the target, the distance and the links'),
+    ]),
 }
 
 

@@ -274,6 +274,11 @@ public final class DevScreenshots {
         if (tick == 400 && Boolean.getBoolean("radar_fcs.screenshot.camera")) tick = 690;   // только камера
         if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.swivel")) tick = 1100;  // только подшипник-шарнир
         if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.limits")) tick = 2000;  // только пределы поворота
+        if (tick == 60 && Boolean.getBoolean("radar_fcs.screenshot.bridge")) tick = 3000;  // только мост автопилота
+        if (tick >= 3000) {
+            bridgeUi(mc, server);
+            return;
+        }
         if (tick >= 2000) {
             limitUi(mc, server);
             return;
@@ -887,6 +892,31 @@ public final class DevScreenshots {
         if (tick == 2114) mc.stop();
     }
 
+    /** Мост автопилота Flight Control: блок рядом с индикатором и компьютером FC, очки инженера, экран настроек. */
+    private static void bridgeUi(Minecraft mc, net.minecraft.server.MinecraftServer server) {
+        BlockPos bridge = base.offset(-3, 5, -8);
+        if (tick == 3002) server.execute(() -> {
+            ServerLevel level = server.overworld();
+            var b = BuiltInRegistries.BLOCK.get(ResourceLocation.fromNamespaceAndPath(FcsMod.MODID, "flight_bridge"));
+            level.setBlock(bridge, b.defaultBlockState().setValue(net.minecraft.world.level.block.HorizontalDirectionalBlock.FACING, Direction.SOUTH), 3);
+            level.setBlock(bridge.west(), block("create_flight_control:forward_indicator").defaultBlockState(), 3);
+            level.setBlock(bridge.east(), block("create_flight_control:flight_control_computer").defaultBlockState(), 3);
+            placeLink(level, bridge, Direction.UP, bridge);
+            var p = server.getPlayerList().getPlayers().get(0);
+            p.setItemSlot(net.minecraft.world.entity.EquipmentSlot.HEAD,
+                    new net.minecraft.world.item.ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("create:goggles"))));
+            look(server, bridge.getCenter(), bridge.getCenter().add(0.6, 0.9, 2.6));
+        });
+        if (tick == 3080) shot(mc, "bridge_goggles");
+        if (tick == 3082 && mc.level != null && mc.level.getBlockEntity(bridge) instanceof dev.radarfcs.block.AutopilotBlockEntity be) {
+            be.mode = dev.radarfcs.core.Autopilot.Mode.DISTANCE_ALTITUDE;
+            dev.radarfcs.client.FcsClientHooks.openAutopilot(new dev.radarfcs.net.AutopilotPayloads.Open(bridge, be.writeSettings()));
+        }
+        if (tick == 3090) shot(mc, "bridge_screen");
+        if (tick == 3092) mc.setScreen(null);
+        if (tick == 3096) mc.stop();
+    }
+
     private static void openBoard(Minecraft mc, BlockPos pos, boolean second) {
         dev.radarfcs.block.AngleLimits all = mc.level == null ? null
                 : mc.level.getBlockEntity(pos) instanceof dev.radarfcs.block.AimControllerBlockEntity c ? c.limits
@@ -925,7 +955,8 @@ public final class DevScreenshots {
             {"fire_control_computer", "battery", "0"}, {"fire_control_computer", "computer_settings", "1"},
             {"yaw_controller", "aim_controllers", "0"}, {"radar_link", "network", "0"},
             {"radar_monitor", "radar_monitor", "0"}, {"iff_transponder", "transponder", "0"}, {"camera", "camera", "0"},
-            {"sight", "swivel_turret", "0"}, {"gun_rotator", "gun_rotator", "1"}, {"gun_drive", "gun_drive", "1"}};
+            {"sight", "swivel_turret", "0"}, {"gun_rotator", "gun_rotator", "1"}, {"gun_drive", "gun_drive", "1"},
+            {"flight_bridge", "flight_bridge", "0"}};
 
     private static void ponderTour(Minecraft mc) {
         int start = 60, step = 70;

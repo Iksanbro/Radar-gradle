@@ -13,6 +13,10 @@
     "radar_fcs:gun_rotator",
     "radar_fcs:sight",
     "radar_fcs:gun_link",
-    "radar_fcs:gun_drive"
+    "radar_fcs:gun_drive",
+    {
+      "id": "radar_fcs:flight_bridge",
+      "required": false
+    }
   ]
 }

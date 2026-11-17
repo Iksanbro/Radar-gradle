@@ -30,6 +30,7 @@ public final class FcsMod {
         modBus.addListener(dev.radarfcs.net.TransponderPayloads::register);
         modBus.addListener(dev.radarfcs.net.CameraPayloads::register);
         modBus.addListener(dev.radarfcs.net.GunPayloads::register);
+        modBus.addListener(dev.radarfcs.net.AutopilotPayloads::register);
         // обучающие сцены Ponder (как в Create) - только на клиенте
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) dev.radarfcs.client.ponder.FcsPonderPlugin.init();
         if (dev.radarfcs.compat.Mods.SABLE) dev.radarfcs.compat.sable.SableRotor.init(dev.radarfcs.block.GunRotatorBlockEntity::physicsStepAll);
