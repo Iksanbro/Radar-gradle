@@ -1,6 +1,8 @@
 # CLAUDE.md — Create: Radar Fire Control (radar_fcs)
 
 Контекст для Claude Code. Отвечай пользователю на русском.
+**Всегда давай ссылку на скачивание jar** после сборки (jar лежит в `radar_fcs/release/`, ветка запушена):
+`https://github.com/Iksanbro/Radar-gradle/raw/<ветка>/radar_fcs/release/radar_fcs-<версия>.jar`.
 
 ## 1. Цель
 Аддон для **Create** + **Create Big Cannons** + **Create: Radars** (NeoForge 1.21.1): вычислитель, контроллеры наводки,
