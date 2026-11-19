@@ -2,12 +2,12 @@
   "type": "minecraft:crafting_shaped",
   "category": "redstone",
   "pattern": [
-    " E ",
+    " G ",
     "SOS",
     " T "
   ],
   "key": {
-    "E": {"item": "minecraft:ender_eye"},
+    "G": {"item": "minecraft:glass_pane"},
     "S": {"item": "create:iron_sheet"},
     "O": {"item": "minecraft:observer"},
     "T": {"item": "create:electron_tube"}

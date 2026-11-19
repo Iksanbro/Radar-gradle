@@ -6,7 +6,7 @@
 Create (латунь, свет сверху-слева), экраны и лампы со свечением. Разметка UV моделей прежняя (координаты 0..16 -
 пиксели x2). radar_monitor_front не трогается (под рендер карты).
 
-Камера - «око Эндера в корпусе»: корпус тёмный (обсидиан) с латунью, наружу видно только зрачок ока в оправе.
+Камера - белая камера наблюдения (как в 1.0 Release), перерисованная в том же стиле.
 
 Запуск: python3 devtools/textures.py
 """
@@ -55,9 +55,6 @@ STEEL = [hx('0e1018'), hx('1a1d29'), hx('282c3b'), hx('3a3f52'), hx('535a70'), h
 SCREEN = [hx('020b08'), hx('061a12'), hx('0b2b1d'), hx('12432c')]
 PHOS = [hx('1a6b3c'), hx('2fb565'), hx('5cf09a'), hx('c8ffe0')]
 PCB = [hx('0b2618'), hx('123d26'), hx('1b5634'), hx('2a7446')]
-OBS = [hx('07050c'), hx('120c1c'), hx('1d142d'), hx('2b1f42'), hx('3e2d5e'), hx('5a4486')]
-EYE = [hx('03120d'), hx('0a3327'), hx('13604a'), hx('1f9470'), hx('47c99c'), hx('b0ffe4')]
-GLOW_END = [hx('3a1460'), hx('7a34b8'), hx('b86bff'), hx('f0d0ff')]
 BLUE = [hx('0c2448'), hx('1c4f8e'), hx('2f86d8'), hx('6cc0ff'), hx('d6f0ff')]
 ORANGE = [hx('4a1806'), hx('93380e'), hx('dc6e1c'), hx('ffa94a'), hx('ffe2b0')]
 RED = [hx('3a0a0a'), hx('8a1c16'), hx('e0402c'), hx('ff9a80')]
@@ -488,60 +485,87 @@ def sight_lens(firing):
     return t
 
 
-# --- камера: корпус-обсидиан с латунью, око Эндера внутри (виден только зрачок) ---
+# --- камера наблюдения: белый пластик (тени холодные, блики тёплые), чёрная панель с объективом ---
 
-def obsidian(t, x0=0, y0=0, x1=N - 1, y1=N - 1, top=0.62, bottom=0.3, seed=21):
-    for y in range(y0, y1 + 1):
-        for x in range(x0, x1 + 1):
-            k = top + (bottom - top) * (y - y0) / max(1, y1 - y0)
-            n = noise(x, y, seed)
-            c = ramp(OBS, k + (n - 0.5) * 0.1)
-            if n > 0.992:
-                c = ramp(GLOW_END, 0.55)          # искры Энда в камне
-            t.px(x, y, c)
+PLASTIC = [hx('4a5262'), hx('7b8597'), hx('a9b2c0'), hx('cdd3dc'), hx('e6e9ee'), hx('f5f6f7'), hx('fffdf8')]
+LENS = [hx('040814'), hx('0b1c3e'), hx('1a3f86'), hx('3672cc'), hx('8fc0ff'), hx('e8f4ff')]
+
+
+def plastic(t, top=0.8, bottom=0.62, seed=21):
+    for y in range(N):
+        for x in range(N):
+            k = top + (bottom - top) * y / (N - 1) + (noise(x, y, seed) - 0.5) * 0.025
+            t.px(x, y, ramp(PLASTIC, k))
 
 
 def camera_white():
     t = Tex()
-    obsidian(t)
+    plastic(t)
     for i in range(N):
-        t.px(i, 0, ramp(OBS, 0.9))
-        t.px(0, i, ramp(OBS, 0.8))
-        t.px(i, 31, ramp(OBS, 0.08))
-        t.px(31, i, ramp(OBS, 0.12))
+        t.px(i, 0, ramp(PLASTIC, 0.98))
+        t.px(0, i, ramp(PLASTIC, 0.94))
+        t.px(i, 31, ramp(PLASTIC, 0.45))
+        t.px(31, i, ramp(PLASTIC, 0.5))
     return t
+
+
+def screw(t, cx, cy):
+    """Винт в углублении: тёмная лунка, металлическая головка, шлиц."""
+    for y in range(cy - 2, cy + 3):
+        for x in range(cx - 2, cx + 3):
+            d = math.hypot(x - cx, y - cy)
+            if d < 2.6:
+                t.px(x, y, ramp(STEEL, 0.75 - 0.25 * (x - cx + y - cy) / 4 - 0.15 * d / 2.6))
+            elif d < 3.4:
+                t.blend(x, y, PLASTIC[0], 0.45 if x + y > 2 * cx else 0.2)
+    t.px(cx - 1, cy, ramp(STEEL, 0.25))
+    t.px(cx, cy, ramp(STEEL, 0.2))
+    t.px(cx + 1, cy, ramp(STEEL, 0.3))
 
 
 def camera_bracket():
     t = camera_white()
-    for x in range(1, 31):
-        t.px(x, 2, ramp(BRASS, 0.92))
-        t.px(x, 3, ramp(BRASS, 0.6))
-        t.px(x, 28, ramp(BRASS, 0.55))
-        t.px(x, 29, ramp(BRASS, 0.25))
-    for x, y in ((5, 7), (25, 7), (5, 23), (25, 23)):
-        rivet(t, x, y, BRASS)
-    t.glow(15.5, 15.5, 5, GLOW_END[2], 0.5)
-    for y in range(13, 19):
-        for x in range(13, 19):
-            if math.hypot(x - 15.5, y - 15.5) < 2.8:
-                t.px(x, y, ramp(GLOW_END, 1 - math.hypot(x - 14.5, y - 14.5) / 4))
+    # приподнятая пластина: блик сверху-слева, тень снизу-справа
+    for i in range(3, 29):
+        t.px(i, 3, ramp(PLASTIC, 1.0))
+        t.px(3, i, ramp(PLASTIC, 0.96))
+        t.px(i, 28, ramp(PLASTIC, 0.5))
+        t.px(28, i, ramp(PLASTIC, 0.55))
+    for x, y in ((7, 7), (24, 7), (7, 24), (24, 24)):
+        screw(t, x, y)
+    # прорезь под кабель
+    for y in range(18, 23):
+        for x in range(11, 21):
+            u = (x - 15.5) / 5.0
+            v = (y - 20.0) / 2.6
+            if u * u + v * v < 1:
+                t.px(x, y, ramp(STEEL, 0.08 + 0.2 * (y - 18) / 4))
+            elif u * u + v * v < 1.5 and y > 20:
+                t.px(x, y, ramp(PLASTIC, 0.98))
     return t
 
 
 def camera_pan_side():
     t = camera_white()
     for x in range(N):
-        for y, k in ((3, 0.95), (4, 0.75), (5, 0.45), (24, 0.85), (25, 0.6), (26, 0.3)):
-            t.px(x, y, ramp(BRASS, k + (noise(x, y, 3) - 0.5) * 0.05))
-    for x0 in (6, 14, 22):
-        t.rect(x0, 10, x0 + 3, 19, ramp(OBS, 0.05))
-        on = x0 == 14
-        for y in range(12, 18):
-            for x in range(x0 + 1, x0 + 3):
-                t.px(x, y, ramp(GLOW_END, (0.95 if on else 0.4) - 0.06 * abs(y - 14.5)))
-        if on:
-            t.glow(x0 + 2, 15, 5, GLOW_END[2], 0.35)
+        t.px(x, 2, ramp(PLASTIC, 1.0))
+        t.px(x, 3, ramp(PLASTIC, 0.9))
+        for y, k in ((22, 0.55), (23, 0.42), (24, 0.95), (25, 0.75)):
+            t.px(x, y, ramp(PLASTIC, k))
+        for y in range(26, 32):
+            t.px(x, y, ramp(PLASTIC, 0.66 - 0.02 * (y - 26)))
+    # вентиляционные прорези с тенью внутри
+    for x0 in (8, 11, 14, 17, 20):
+        for y in range(9, 18):
+            t.px(x0, y, ramp(PLASTIC, 0.18 + 0.02 * (y - 9)))
+            t.px(x0 + 1, y, ramp(PLASTIC, 0.32 + 0.02 * (y - 9)))
+        t.px(x0, 18, ramp(PLASTIC, 0.98))
+        t.px(x0 + 1, 18, ramp(PLASTIC, 0.98))
+    t.glow(25.5, 13.5, 3.5, GREEN[2], 0.5)
+    t.px(25, 13, GREEN[3])
+    t.px(26, 13, GREEN[2])
+    t.px(25, 14, GREEN[2])
+    t.px(26, 14, GREEN[1])
     return t
 
 
@@ -550,54 +574,74 @@ def camera_pan_top():
     for y in range(N):
         for x in range(N):
             d = math.hypot(x - 15.5, y - 15.5)
-            if 10 < d < 12.5:
-                t.px(x, y, ramp(BRASS, 0.85 - 0.5 * (x + y) / 62 - 0.1 * (d - 10)))
-            elif d < 4:
-                t.px(x, y, ramp(GLOW_END, 1 - d / 5))
-    t.glow(15.5, 15.5, 7, GLOW_END[2], 0.3)
+            side = (x + y - 31) / 44          # + снизу-справа
+            if 11.2 < d < 12.4 or 6.8 < d < 7.8:
+                t.px(x, y, ramp(PLASTIC, 0.55 + 0.25 * side))      # канавки
+            elif 12.4 <= d < 13.2 or 7.8 <= d < 8.6:
+                t.px(x, y, ramp(PLASTIC, 0.95 - 0.2 * side))
+            elif d < 3.6:
+                t.px(x, y, ramp(STEEL, 0.62 - 0.3 * side - 0.12 * d / 3.6))
+            elif d < 4.4:
+                t.px(x, y, ramp(PLASTIC, 0.4))
     return t
 
 
 def camera_ball():
-    """Корпус головы (UV 3..13 -> 6..25): обсидиан с латунным поясом посередине - закрывает око целиком."""
+    """Шар головы (UV 3..13 -> 6..25): белый пластик, светлое пятно сверху-слева, к краям темнее."""
     t = Tex()
-    obsidian(t, top=0.7, bottom=0.28, seed=33)
-    for x in range(N):
-        t.px(x, 14, ramp(BRASS, 0.95))
-        t.px(x, 15, ramp(BRASS, 0.7))
-        t.px(x, 16, ramp(BRASS, 0.45))
-        t.px(x, 17, ramp(BRASS, 0.2))
-    for x in (7, 15, 23):
-        rivet(t, x, 15, BRASS)
+    for y in range(N):
+        for x in range(N):
+            d = math.hypot(x - 13.5, y - 12.5) / 15
+            k = 0.98 - 0.42 * d ** 1.4 + (noise(x, y, 33) - 0.5) * 0.02
+            t.px(x, y, ramp(PLASTIC, k))
     return t
 
 
 def camera_face():
-    """Лицо головы: корпус, латунная оправа и в окошке - только зрачок ока Эндера со свечением."""
+    """Передняя панель: чёрная, объектив с синей линзой и бликом, две ИК-подсветки, малый объектив снизу."""
     t = Tex()
-    obsidian(t, top=0.6, bottom=0.25, seed=44)
+    t.grad(0, 0, 31, 31, STEEL, 0.2, 0.08, jitter=0.02, seed=44)
+    for i in range(N):
+        t.px(i, 0, ramp(STEEL, 0.42))
+        t.px(0, i, ramp(STEEL, 0.36))
+        t.px(i, 31, ramp(STEEL, 0.02))
+        t.px(31, i, ramp(STEEL, 0.04))
+    cx, cy = 15.5, 11.5
     for y in range(N):
         for x in range(N):
-            d = math.hypot(x - 15.5, y - 15.5)
-            if d < 6.5:
-                t.px(x, y, ramp(EYE, 0.3 - 0.25 * d / 6.5))       # радужка в глубине окошка почти не видна
-            elif d < 9.8:
-                t.px(x, y, ramp(BRASS, (0.9 if x + y < 31 else 0.35) - 0.2 * (d - 6.5) / 3.3))
-            elif d < 10.8:
-                t.px(x, y, ramp(OBS, 0.02))
-    # зрачок ока: светящийся миндаль с узкой тёмной щелью посередине
-    for y in range(10, 22):
-        half = 3.0 * math.sqrt(max(0.0, 1 - ((y - 15.5) / 6.0) ** 2))
-        for x in range(11, 21):
-            dx = abs(x - 15.5)
-            if dx < half:
-                k = 1 - dx / half
-                t.px(x, y, ramp(EYE, 0.35 + 0.6 * k - 0.15 * abs(y - 15.5) / 6))
-        if half > 1.4:
-            t.px(15, y, ramp(EYE, 0.02))
-            t.px(16, y, ramp(EYE, 0.06))
-    t.glow(15.5, 15.5, 7, EYE[4], 0.12)
-    t.blend(12, 11, (255, 255, 255), 0.7)
+            d = math.hypot(x - cx, y - cy)
+            side = (x - cx + y - cy) / 16
+            if d < 4.6:
+                light = 1 - math.hypot(x - (cx - 1.5), y - (cy - 1.5)) / 6.5
+                t.px(x, y, ramp(LENS, 0.2 + 0.6 * light))
+            elif d < 5.6:
+                t.px(x, y, ramp(LENS, 0.05))
+            elif d < 7.6:
+                t.px(x, y, ramp(STEEL, 0.6 - 0.35 * side - 0.08 * (d - 5.6)))
+            elif d < 8.4:
+                t.px(x, y, ramp(STEEL, 0.05))
+    # зрачок и блики линзы
+    t.rect(15, 11, 16, 12, LENS[0])
+    t.px(13, 9, LENS[5])
+    t.px(14, 9, LENS[4])
+    t.px(13, 10, LENS[4])
+    t.blend(17, 13, LENS[4], 0.5)
+    # ИК-подсветка по бокам
+    for lx in (4, 26):
+        t.glow(lx + 0.5, 11.5, 4.2, (255, 250, 235), 0.35)
+        t.rect(lx - 1, 10, lx + 1, 12, (240, 240, 236))
+        t.px(lx - 1, 10, (255, 255, 255))
+        t.px(lx + 1, 12, (196, 198, 204))
+    # малый объектив снизу и индикатор
+    for y in range(21, 28):
+        for x in range(12, 20):
+            d = math.hypot(x - 15.5, y - 24.0)
+            if d < 2.2:
+                t.px(x, y, ramp(LENS, 0.15 + 0.25 * (1 - d / 2.2)))
+            elif d < 3.4:
+                t.px(x, y, ramp(STEEL, 0.4 - 0.2 * (x - 15.5 + y - 24) / 6))
+    t.px(26, 25, RED[2])
+    t.glow(26.5, 25.5, 2.2, RED[2], 0.35)
     return t
 
 
