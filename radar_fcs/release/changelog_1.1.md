@@ -8,7 +8,7 @@
 - Linked with the Flight Control Tool Gun; redstone pauses it; Engineer's Goggles show the state, the target and what is missing.
 - Ponder scene for the bridge.
 - Reworked English and Russian texts: Flight Control block names as in that mod, "ships" instead of "sublevels", consistent terms and wording. Russian block names: «Передатчик радарной сети» / «Передатчик орудийной сети» (was «линк»), «Механизм горизонтальной/вертикальной наводки» (was «контроллер»).
-- New 16x16 textures in the Minecraft / Create style (brass and andesite casings, simple pixel art); the camera now looks like an Eye of Ender and its recipe uses one.
+- Redrawn 32x32 textures in the Create style with smooth gradients and a richer palette; the camera is an Eye of Ender enclosed in an obsidian-and-brass housing (only the pupil shows), and its recipe uses an Eye of Ender.
 - Minor optimizations: fewer block updates from the bridge, cached ship lookup.
 
 ## Русский
@@ -19,5 +19,5 @@
 - Связь — инструментальным пистолетом Flight Control; редстоун — пауза; очки инженера показывают состояние, цель и чего не хватает.
 - Обучающая сцена Ponder для моста.
 - Переписаны тексты на русском и английском: названия блоков Flight Control — как в самом моде, «корабли» вместо «сублевелов», единые термины и формулировки. Новые русские названия блоков: «Передатчик радарной сети» и «Передатчик орудийной сети» (были «линки»), «Механизм горизонтальной/вертикальной наводки» (были «контроллеры»).
-- Новые текстуры 16x16 в стиле Minecraft и Create (латунь и андезит, простая пиксельная графика); камера теперь в виде ока Эндера, и око Эндера входит в её рецепт.
+- Перерисованы текстуры 32x32 в стиле Create — с плавными градиентами и более богатой палитрой; камера — око Эндера в корпусе из обсидиана и латуни (снаружи виден только зрачок), око Эндера входит в её рецепт.
 - Мелкие оптимизации: меньше обновлений блока у моста, кэш поиска корабля.
