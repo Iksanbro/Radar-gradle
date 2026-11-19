@@ -7,7 +7,7 @@
 - Modes **"turn only"**, **"distance only"** (keeps the altitude at which the target was acquired) and **"distance and altitude"** with typed distance, height above the target and speed limit.
 - Linked with the Flight Control Tool Gun; redstone pauses it; Engineer's Goggles show the state, the target and what is missing.
 - Ponder scene for the bridge.
-- Reworked English and Russian texts: Flight Control block names as in that mod, "ships" instead of "sublevels", consistent terms and wording.
+- Reworked English and Russian texts: Flight Control block names as in that mod, "ships" instead of "sublevels", consistent terms and wording. Russian block names: «Передатчик радарной сети» / «Передатчик орудийной сети» (was «линк»), «Механизм горизонтальной/вертикальной наводки» (was «контроллер»).
 - Minor optimizations: fewer block updates from the bridge, cached ship lookup.
 
 ## Русский
@@ -17,5 +17,5 @@
 - Режимы **«только поворот»**, **«только дальность»** (держит высоту, на которой взята цель) и **«дальность и высота»** с вписываемыми дальностью, высотой над целью и пределом скорости.
 - Связь — инструментальным пистолетом Flight Control; редстоун — пауза; очки инженера показывают состояние, цель и чего не хватает.
 - Обучающая сцена Ponder для моста.
-- Переписаны тексты на русском и английском: названия блоков Flight Control — как в самом моде, «корабли» вместо «сублевелов», единые термины и формулировки.
+- Переписаны тексты на русском и английском: названия блоков Flight Control — как в самом моде, «корабли» вместо «сублевелов», единые термины и формулировки. Новые русские названия блоков: «Передатчик радарной сети» и «Передатчик орудийной сети» (были «линки»), «Механизм горизонтальной/вертикальной наводки» (были «контроллеры»).
 - Мелкие оптимизации: меньше обновлений блока у моста, кэш поиска корабля.

@@ -19,7 +19,7 @@ SCENES_JAVA = os.path.join(ROOT, 'src', 'main', 'java', 'dev', 'radarfcs', 'clie
 TAG = {
     'fire_control': (
         ('Управление огнём', 'Fire Control'),
-        ('Вычислитель, линки, контроллеры наводки, мониторы, камеры и орудия',
+        ('Вычислитель, передатчики, механизмы наводки, мониторы, камеры и орудия',
          'Fire control computer, links, aim controllers, monitors, cameras and guns'),
     ),
 }
@@ -31,8 +31,8 @@ SCENES = {
          'компактном станке CBC: Firepower Components; подходят большие пушки, автопушки и пушки аддонов',
          'The Fire Control Computer aims Create Big Cannons and fires on its own. The cannon sits on a CBC mount or a '
          'compact mount from CBC: Firepower Components; big cannons, autocannons and addon guns all work'),
-        ('Станку нужны контроллеры наводки: горизонтальной — под станком, вертикальной — сбоку. Вращение подаётся в '
-         'контроллеры, а не в станок: от скорости вала зависит, как быстро пушка поворачивается',
+        ('Станку нужны механизмы наводки: горизонтальной — под станком, вертикальной — сбоку. Вращение подаётся в '
+         'механизмы наводки, а не в станок: от скорости вала зависит, как быстро пушка поворачивается',
          'The mount needs aim controllers: yaw below it, pitch on its side. Feed rotation into the controllers, not the '
          'mount: shaft speed sets how fast the cannon turns'),
         ('Цели дают радары Create: Radars — плоский радар, радарный подшипник и другие. Без работающего радара в сети '
@@ -41,7 +41,7 @@ SCENES = {
          'network there is no fire (except a manually designated target)'),
         ('Вычислитель можно поставить где угодно. Ему нужно электричество — 1024 FE/т; без энергии он не видит целей',
          'The computer can stand anywhere. It needs 1024 FE/t of electricity; without power it sees no targets'),
-        ('Всё соединяется радарными линками одной сети — как складские передатчики Create. Расстояние не важно',
+        ('Всё соединяется передатчиками одной радарной сети — как складские передатчики Create. Расстояние не важно',
          'Everything connects with Radar Links of one network, like Create Stock Links. Distance does not matter'),
         ('Вычислитель выбирает цель, считает упреждение по баллистике CBC (заряды, стволы, снаряд), поворачивает пушку '
          'и стреляет. Баллистика уточняется по каждому выстрелу',
@@ -100,26 +100,26 @@ SCENES = {
          'Shift+right-click holds or allows fire. Create\'s Engineer\'s Goggles show the same summary, a Display Link has a '
          '"Fire control targets" source, a comparator reads the target count'),
     ]),
-    'aim_controllers': (('Контроллеры наводки', 'Aim Controllers'), [
-        ('Контроллер горизонтальной наводки ставится вплотную под станком (у подвесного — над ним). Вал подаётся в него снизу',
+    'aim_controllers': (('Механизмы наводки', 'Aim Controllers'), [
+        ('Механизм горизонтальной наводки ставится вплотную под станком (у подвесного — над ним). Вал подаётся в него снизу',
          'The Yaw Controller goes right below the mount (above a hanging one). Its shaft comes in from below'),
-        ('Контроллер вертикальной наводки — сбоку станка, вал — с противоположной от станка стороны',
+        ('Механизм вертикальной наводки — сбоку станка, вал — с противоположной от станка стороны',
          'The Pitch Controller goes on the side of the mount, with its shaft on the far side'),
-        ('Контроллер поворачивает пушку ровно на нужный угол по команде вычислителя. Скорость — как от валов CBC: '
+        ('Механизм поворачивает пушку ровно на нужный угол по команде вычислителя. Скорость — как от валов CBC: '
          '0,0375° за тик на 1 об/мин',
          'The controller turns the cannon by exactly the commanded angle. Speed works like CBC shafts: 0.0375° per tick for '
          'each RPM'),
         ('256 об/мин — 9,6° за тик (192° в секунду), 64 об/мин — 2,4°. Для быстрых целей подавайте 128–256 об/мин',
          '256 RPM gives 9.6° per tick (192° per second), 64 RPM gives 2.4°. For fast targets use 128-256 RPM'),
         ('Нагрузка — 4 единицы стресса на 1 об/мин. Валы самого станка вычислитель блокирует, пока управляет им. '
-         'Выходной полувал контроллера показывает угол пушки',
+         'Выходной полувал механизма показывает угол пушки',
          'Load: 4 stress units per RPM. While the computer controls the mount, its own shafts are locked. The output '
          'half-shaft shows the cannon angle'),
-        ('Без контроллера («нет контроллера наводки») или без вращения пушка не наводится и не стреляет. Очки инженера '
+        ('Без механизма («нет механизма наводки») или без вращения пушка не наводится и не стреляет. Очки инженера '
          'показывают скорость поворота',
          'Without a controller ("no aim controller") or rotation the cannon neither aims nor fires. Engineer\'s Goggles show '
          'the turn speed'),
-        ('Предел поворота — два значка на боковой грани контроллера, по одному на направление (удерживать ПКМ — ползунок, '
+        ('Предел поворота — два значка на боковой грани механизма, по одному на направление (удерживать ПКМ — ползунок, '
          'как у торсионной пружины). Курс — влево и вправо от направления ствола при сборке, наклон — вверх и вниз от горизонта, 1–360°; '
          'правый край — без предела. Цель за пределом пушка пропускает, а если других нет — стоит у предела («вне сектора»)',
          'Rotation limit: two boxes on the side of the controller, one per direction (hold right-click for a slider like the '
@@ -127,34 +127,34 @@ SCENES = {
          'end means no limit. Targets beyond the limit are skipped; with no others the cannon waits at the limit ("out of arc")'),
     ]),
     'network': (('Радарная сеть и блок памяти', 'Radar networks and the Memory Block'), [
-        ('Вычислитель, станки, радары, мониторы, камеры и части орудий соединяются только радарными линками — автоматического '
+        ('Вычислитель, станки, радары, мониторы, камеры и части орудий соединяются только передатчиками радарной сети — автоматического '
          'подключения по радиусу нет',
          'Computers, mounts, radars, monitors, cameras and gun parts connect only through Radar Links; nothing connects by '
          'range on its own'),
-        ('Поставьте линк на аппаратуру. Ненастроенный линк начинает новую радарную сеть (в чате — её имя, например «#3F2A»)',
+        ('Поставьте передатчик на аппаратуру. Ненастроенный передатчик начинает новую радарную сеть (в чате — её имя, например «#3F2A»)',
          'Place a link on a device. An untuned link starts a new radar network (its name, like "#3F2A", appears in chat)'),
-        ('ПКМ линком в руке по стоящему линку — предмет настроен на его сеть и светится. Следующие линки встают в эту сеть',
+        ('ПКМ передатчиком в руке по стоящему передатчику — предмет настроен на его сеть и светится. Следующие передатчики встают в эту сеть',
          'Right-click a placed link with a link item to tune the item to its network; it glows. Next links join that network'),
-        ('Вся аппаратура одной сети связана, расстояние не ограничено (в пределах измерения). Взгляд на линк подсвечивает '
+        ('Вся аппаратура одной сети связана, расстояние не ограничено (в пределах измерения). Взгляд на передатчик подсвечивает '
          'его сеть',
          'All devices of one network are connected at any distance within a dimension. Looking at a link highlights its network'),
-        ('ПКМ по линку и очки инженера — имя сети и сколько в ней вычислителей, пушек, радаров и мониторов. Аппаратура может '
-         'стоять в нескольких сетях — по линку на разных гранях',
+        ('ПКМ по передатчику и очки инженера — имя сети и сколько в ней вычислителей, пушек, радаров и мониторов. Аппаратура может '
+         'стоять в нескольких сетях — по передатчику на разных гранях',
          'Right-clicking a link and Engineer\'s Goggles show the network name and how many computers, guns, radars and monitors '
          'it has. A device can join several networks with links on different faces'),
-        ('В сети — 16 линков аппаратуры и ещё 16 за каждый блок памяти с питанием (240 FE/т). Блок памяти также добавляет 16 '
-         'записей каждому списку вычислителя. Лишние линки пишут «сеть переполнена»',
+        ('В сети — 16 передатчиков аппаратуры и ещё 16 за каждый блок памяти с питанием (240 FE/т). Блок памяти также добавляет 16 '
+         'записей каждому списку вычислителя. Лишние передатчики пишут «сеть переполнена»',
          'A network holds 16 device links plus 16 per powered Memory Block (240 FE/t). Each Memory Block also adds 16 entries '
          'to every list of the computer. Extra links report "network full"'),
-        ('Сигнал редстоуна силы 15 отключает линк; снимите сигнал — линк снова в сети',
+        ('Сигнал редстоуна силы 15 отключает передатчик; снимите сигнал — передатчик снова в сети',
          'A redstone signal of strength 15 disables a link; remove the signal to bring it back'),
-        ('Shift+ПКМ в воздух или сетка крафта — сбросить настройку линка в руке',
+        ('Shift+ПКМ в воздух или сетка крафта — сбросить настройку передатчика в руке',
          'Shift+right-click in the air or the crafting grid resets the link item'),
     ]),
     'radar_monitor': (('Радарный монитор', 'Radar Monitor'), [
         ('Мониторы ставятся стеной до 6×6 — стена складывается в один экран',
          'Place monitors as a wall up to 6x6: it forms a single screen'),
-        ('Линк — на любой блок экрана. Монитор рисует карту целей и радаров своей радарной сети; монитор — в центре, вверх — '
+        ('Передатчик — на любой блок экрана. Монитор рисует карту целей и радаров своей радарной сети; монитор — в центре, вверх — '
          'направление от вас, буква «С» — север',
          'Put a link on any screen block. The monitor draws a map of targets and radars of its network: the monitor is in '
          'the center, up points away from you, "N" marks north'),
@@ -183,7 +183,7 @@ SCENES = {
         ('Питание — 32 FE/т за каждый блок экрана, энергию можно подать в любой блок стены',
          'Power: 32 FE/t per screen block, fed into any block of the wall'),
     ]),
-    'transponder': (('Транспондер «свой-чужой»', 'IFF Transponder'), [
+    'transponder': (('Транспондер „свой-чужой“', 'IFF Transponder'), [
         ('Транспондер помечает своих: вычислитель не стреляет по тому, что в его зоне, и не стреляет через неё',
          'The transponder marks friends: computers do not fire at anything in its zone or through it'),
         ('ПКМ — экран транспондера. Имя (до 32 символов) подписывает цель и отметку на мониторе. Код — 1–8 цифр: по нему '
@@ -209,7 +209,7 @@ SCENES = {
         ('Камера ставится на стену, потолок или пол. Голова поворачивается туда, куда через неё смотрят, и остаётся в '
          'последнем положении',
          'A camera goes on a wall, ceiling or floor. Its head turns where you look through it and keeps its last position'),
-        ('Подключение — радарным линком или без него: ПКМ предметом камеры по радарному линку (или по камере в сети) '
+        ('Подключение — передатчиком радарной сети или без него: ПКМ предметом камеры по передатчику (или по камере в сети) '
          'настраивает предмет на сеть. Shift+ПКМ в воздух — сброс',
          'Connect it with a Radar Link or without one: right-click a Radar Link (or a networked camera) with the camera item '
          'to tune it. Shift+right-click in the air resets it'),
@@ -255,11 +255,11 @@ SCENES = {
          'форма постройки не важна',
          'The barrel can be any blocks. Place the Sight facing along the barrel: the computer aims the sight direction, so '
          'the shape does not matter'),
-        ('Орудийные линки на приводах и прицеле объединяют их в одно орудие (ненастроенный линк — новое орудие, ПКМ им по '
+        ('Передатчики орудийной сети на приводах и прицеле объединяют их в одно орудие (ненастроенный передатчик — новое орудие, ПКМ им по '
          'стоящему — настроить предмет)',
          'Gun Links on the drives and the sight join them into one gun (an untuned link starts a new gun, right-click a '
          'placed one to tune the item)'),
-        ('Радарный линк — на любую часть орудия: всё орудие подключается к вычислителю одним линком. Своя постройка '
+        ('Передатчик радарной сети — на любую часть орудия: всё орудие подключается к вычислителю одним передатчиком. Своя постройка '
          'орудия — не цель и не помеха огню',
          'Put a Radar Link on any part of the gun: one link connects the whole gun. The gun\'s own structure is neither a '
          'target nor an obstacle'),
@@ -271,14 +271,14 @@ SCENES = {
          'стреляют сами по команде',
          'When it is time to fire, the sight emits redstone 15 — wire it to your weapon. CBC mounts in the gun fire on '
          'command by themselves'),
-        ('Shift+ПКМ по орудийному линку — настройки орудия. Для своего оружия выберите тип: автопушка, среднее, большая '
+        ('Shift+ПКМ по передатчику орудийной сети — настройки орудия. Для своего оружия выберите тип: автопушка, среднее, большая '
          '(баллистика и вид сигнала) или «кастом» — наводится прямо на цель, без упреждения',
          'Shift+right-click a Gun Link for gun settings. For a custom weapon pick its type: autocannon, medium, big '
          '(ballistics and signal kind) or "custom" — aims straight at the target without lead'),
     ]),
     'gun_rotator': (('Вращатель орудия', 'Gun Rotator'), [
         ('Вращатель орудия (нужен Sable) — свой подшипник мода: поворачивает постройку перед выходом. Вращение — валом сзади, '
-         'скорость поворота — как у контроллеров наводки',
+         'скорость поворота — как у механизмов наводки',
          'The Gun Rotator (needs Sable) is the mod\'s own bearing: it turns the structure in front of its output. Feed '
          'rotation from behind; turn speed works like aim controllers'),
         ('ПКМ пустой рукой — собрать (по правилам клея Create), повторно — показать угол. Схема: горизонтальный вращатель, '
@@ -287,7 +287,7 @@ SCENES = {
          'rotator carrying a vertical one. Assemble the inner one first'),
         ('Прицел ставится объективом вдоль ствола: вычислитель наводит направление прицела',
          'Place the Sight facing along the barrel: the computer aims the sight direction'),
-        ('Орудийные линки объединяют прицел и вращатели в одно орудие, радарный линк на любой части подключает его к вычислителю',
+        ('Передатчики орудийной сети объединяют прицел и вращатели в одно орудие, передатчик радарной сети на любой части подключает его к вычислителю',
          'Gun Links join the sight and rotators into one gun; a Radar Link on any part connects it to the computer'),
         ('Вращатель держит угол сам. С Create Aeronautics можно строить и на подшипниках-шарнирах с приводами орудия — '
          'см. сцену «Своё орудие на подшипниках-шарнирах»',
@@ -296,7 +296,7 @@ SCENES = {
     ]),
     'gun_drive': (('Привод орудия и настройки орудия', 'Gun Drive and gun settings'), [
         ('Привод орудия — как коробка передач: вход сзади, выход спереди (от −100 % до 100 % входа). Выход задаёт вычислитель. '
-         'Здесь привод крутит вал поворота станка вместо контроллера наводки',
+         'Здесь привод крутит вал поворота станка вместо механизма наводки',
          'The Gun Drive works like a gearbox: input behind, output in front (-100% to 100% of input). The computer sets the '
          'output. Here it turns the yaw shaft of the mount instead of an aim controller'),
         ('ПКМ пустой рукой — режим привода: курс (↔) или наклон (↕)',
@@ -309,9 +309,9 @@ SCENES = {
          'Rotation limit: two boxes on the side of the drive, one per direction (hold right-click for a slider), 1-360°, the right end '
          'means no limit. Yaw counts from where the gun pointed when the limit was enabled, pitch from the horizon. The gun '
          'never turns through the forbidden arc — it goes the other way round'),
-        ('Приводы, станки и прицелы связываются орудийными линками в одно орудие',
+        ('Приводы, станки и прицелы связываются передатчиками орудийной сети в одно орудие',
          'Gun Links join drives, mounts and sights into one gun'),
-        ('Shift+ПКМ по орудийному линку — настройки орудия (общие для всех его линков). Имя — видно в отчёте вычислителя и в '
+        ('Shift+ПКМ по передатчику орудийной сети — настройки орудия (общие для всех его передатчиков). Имя — видно в отчёте вычислителя и в '
          'мониторе камер',
          'Shift+right-click a Gun Link for gun settings (shared by all its links). The name shows in the computer report and '
          'the camera monitor'),
@@ -323,10 +323,10 @@ SCENES = {
          'стреляет (ЛКМ с камеры работает)',
          'Auto aim off: the gun aims only from a camera. Firing off: the gun aims but never fires by itself (camera '
          'left-click still works)'),
-        ('На линке, стоящем на станке CBC, есть «Основная пушка»: её ствол наводится, если в орудии нет прицела, и по ней '
+        ('На передатчике, стоящем на станке CBC, есть «Основная пушка»: её ствол наводится, если в орудии нет прицела, и по ней '
          'считается баллистика',
          'A link on a CBC mount also has "Main cannon": its barrel is aimed when the gun has no sight, and its ballistics are used'),
-        ('Станок CBC в орудии стреляет по команде вычислителя, его валы вычислитель не блокирует. Радарный линк — на любую '
+        ('Станок CBC в орудии стреляет по команде вычислителя, его валы вычислитель не блокирует. Передатчик радарной сети — на любую '
          'часть орудия',
          'The CBC mount of the gun fires on command; the computer does not lock its shafts. Put a Radar Link on any part of the gun'),
     ]),
@@ -335,7 +335,7 @@ SCENES = {
          'если установлен Flight Control',
          'The Autopilot Bridge connects the radar network to Create: Flight Control. It goes on a Sable ship and exists '
          'only when Flight Control is installed'),
-        ('В радарную сеть — радарным линком. Цель моста — назначенная на мониторе сети (своём или Create: Radars), иначе '
+        ('В радарную сеть — передатчиком. Цель моста — назначенная на мониторе сети (своём или Create: Radars), иначе '
          'та, которую ведёт вычислитель сети, иначе ближайшая чужая цель радаров',
          'Add it to a radar network with a Radar Link. Its target is the one designated on a monitor of the network (own '
          'or Create: Radars), otherwise the one a fire control computer is tracking, otherwise the nearest hostile radar contact'),
