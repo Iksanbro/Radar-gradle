@@ -77,16 +77,18 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
 
     private static final EngageSettings ALL = allTargets();
 
+    /** Все типы целей, кроме снарядов и ракет: мосту они не нужны, а их прогноз полёта дорог. */
     private static EngageSettings allTargets() {
         EngageSettings s = new EngageSettings();
         java.util.Arrays.fill(s.enabled, true);
+        s.enabled[EngageSettings.Category.SHELLS.ordinal()] = false;
+        s.enabled[EngageSettings.Category.ROCKETS.ordinal()] = false;
         s.hostileOnly = false;
-        s.threat = EngageSettings.Threat.ALL;
         return s;
     }
 
     // настройки (экран моста)
-    /** Оси ведения цели: рысканье (курс), тангаж (нос на угол места цели), крен (в сторону поворота). */
+    /** Оси ведения цели: рыскание (курс), тангаж (нос на угол места цели), крен (в сторону поворота). */
     public boolean heading = true, pitch, roll;
     public double maxPitch = Autopilot.PITCH_DEFAULT, maxRoll = Autopilot.ROLL_DEFAULT;
     public Autopilot.Mode mode = Autopilot.Mode.DISTANCE;
@@ -106,6 +108,9 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     private String targetName = "";
     private double targetDistance = -1;
     private long lastSync = Long.MIN_VALUE / 2;
+    private String lastSummary = "";
+    /** Цель, выбранная без назначения (ближайшая): держится, пока другая не станет заметно ближе. */
+    @Nullable private String fallback;
 
     protected AutopilotBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState blockState) {
         super(type, pos, blockState);
@@ -149,10 +154,11 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         drive(level, level.hasNeighborSignal(worldPosition) ? null : goal);
         if (now - lastSync >= 10) {
             lastSync = now;
-            State s = computeState(level);
-            if (s != state || now % 20 == 0) {
-                state = s;
-                setChanged();
+            // клиенту (очки инженера) - только когда сводка изменилась; состояние не сохраняется - чанк не трогаем
+            state = computeState(level);
+            String summary = state + "|" + targetName + "|" + Math.round(targetDistance);
+            if (!summary.equals(lastSummary)) {
+                lastSummary = summary;
                 level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
             }
         }
@@ -193,12 +199,13 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     }
 
     private void sense(ServerLevel level, long now) {
-        String id = targetId(level, now);
         if (level.hasNeighborSignal(worldPosition)) {
             sensor.clear();
+            fallback = null;
             setGoal(null, "", -1);
             return;
         }
+        String id = targetId(level, now);
         List<BlockEntity> live = new ArrayList<>();
         for (BlockEntity r : radars) if (!r.isRemoved() && RadarLink.isRunning(r)) live.add(r);
         UUID ship = SableCompat.containingId(level, worldPosition);
@@ -213,9 +220,16 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         }
         TargetSensor.Context ctx = new TargetSensor.Context(owner, ownerTeam, iff, ship == null ? Set.of() : Set.of(ship), origin);
         sensor.sense(level, live, ctx, now, ALL, t -> false, id);
-        // ничего не назначено и вычислители не стреляют - ближайшая чужая цель с радаров сети
-        if (id == null) id = nearest(origin, ship);
         Track t = id == null ? null : sensor.get(id);
+        // за снарядом (вычислитель сети его перехватывает) корабль не гоняем
+        if (t != null && t.kind == Track.Kind.PROJECTILE) t = null;
+        // ничего не назначено и вычислители не стреляют - ближайшая чужая цель с радаров сети
+        if (t == null) {
+            id = nearest(level, origin, ship);
+            t = id == null ? null : sensor.get(id);
+        } else {
+            fallback = null;
+        }
         if (t == null || (ship != null && id.equals(ship.toString()))) {
             setGoal(null, "", -1);
             return;
@@ -225,22 +239,38 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
                 t.pos.sub(origin).horizontalLength());
     }
 
-    /** Ближайшая чужая цель сенсора: враждебный моб, игрок, корабль или контрапшен (не снаряд, не свой корабль). */
+    /**
+     * Ближайшая чужая цель сенсора: враждебный моб, игрок или корабль (не снаряд, не контрапшен - антенны радаров
+     * тоже контрапшены, - не свой корабль, не исключённая на мониторе сети). Прежняя такая цель держится, пока новая
+     * не ближе её в 1.3 раза, - корабль не мечется между почти равными целями.
+     */
     @Nullable
-    private String nearest(Vec origin, @Nullable UUID ship) {
-        Track best = null;
+    private String nearest(ServerLevel level, Vec origin, @Nullable UUID ship) {
+        Set<UUID> excluded = new java.util.HashSet<>();
+        for (BlockPos p : monitors) {
+            if (level.isLoaded(p) && level.getBlockEntity(p) instanceof RadarMonitorBlockEntity m) excluded.addAll(m.exclusions());
+        }
+        Track best = null, kept = null;
         double bestD = Double.POSITIVE_INFINITY;
         for (Track t : sensor.all()) {
-            if (t.friendly || t.kind == Track.Kind.PROJECTILE || t.kind == Track.Kind.EXTERNAL) continue;
+            if (t.friendly || (t.kind != Track.Kind.MOB && t.kind != Track.Kind.PLAYER && t.kind != Track.Kind.SHIP)) continue;
             if (t.kind == Track.Kind.MOB && !t.hostile) continue;
             if (ship != null && t.id.equals(ship.toString())) continue;
+            try {
+                if (excluded.contains(UUID.fromString(t.id))) continue;
+            } catch (IllegalArgumentException ignored) {
+                // id не UUID - не исключается
+            }
+            if (t.id.equals(fallback)) kept = t;
             double d = t.pos.distanceSqr(origin);
             if (d < bestD) {
                 bestD = d;
                 best = t;
             }
         }
-        return best == null ? null : best.id;
+        if (kept != null && kept.pos.distanceSqr(origin) <= bestD * 1.69) best = kept;
+        fallback = best == null ? null : best.id;
+        return fallback;
     }
 
     private void setGoal(@Nullable Goal g, String name, double dist) {

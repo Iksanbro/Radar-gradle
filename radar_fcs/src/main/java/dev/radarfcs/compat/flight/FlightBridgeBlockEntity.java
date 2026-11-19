@@ -36,7 +36,7 @@ import org.joml.Vector3d;
 /**
  * Мост Flight Control: связывается с компьютером управления полётом инструментальным пистолетом (как его регуляторы) и
  * с индикатором направления вперёд. Сам силу не отдаёт - как навигационный терминал Flight Control берёт у компьютера
- * аренду регулятора скорости (движение к цели, дальность, высота) и регулятора угловой скорости (рысканье, крен,
+ * аренду регулятора скорости (движение к цели, дальность, высота) и регулятора угловой скорости (рыскание, крен,
  * тангаж) и каждый тик задаёт им цели; спорящие регуляторы на это время выключены. Класс грузится только при
  * установленном Create: Flight Control.
  */
@@ -56,6 +56,8 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
     private long revision, epoch;
     @Nullable private FlightControlComputerBlockEntity leaseComputer;
     private State driveState = State.NO_TARGET;
+    @Nullable private Object cachedSub;
+    private long cachedSubAt;
 
     public FlightBridgeBlockEntity(BlockPos pos, BlockState state) {
         super(FlightBridge.BE.get(), pos, state);
@@ -225,7 +227,7 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             return needVel && needAng ? State.NEED_COUPLERS : needVel ? State.NEED_VELOCITY : needAng ? State.NEED_ANGULAR : State.ACTIVE;
         }
         // положение корабля, нос и «верх» в мире
-        Object sub = AttitudeTargetUtil.getContainingSubLevel(level, worldPosition, this);
+        Object sub = subLevel(level);
         Vector3d p = AttitudeTargetUtil.getLogicalPosition(sub);
         Vec ship = new Vec(p.x, p.y, p.z);
         Vec target = g.posAt(level.getGameTime());
@@ -288,6 +290,19 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             leaseComputer = cc;
         }
         return needVel ? State.NEED_VELOCITY : needAng ? State.NEED_ANGULAR : State.ACTIVE;
+    }
+
+    /**
+     * Постройка Sable, на которой стоит мост. Поиск у Flight Control идёт рефлексией - на каждый тик дорого, поэтому
+     * найденная постройка держится, пока жива (проверка раз в секунду).
+     */
+    private Object subLevel(ServerLevel level) throws Exception {
+        long now = level.getGameTime();
+        if (cachedSub == null || now - cachedSubAt >= 20 || cachedSub instanceof dev.ryanhcode.sable.sublevel.SubLevel s && s.isRemoved()) {
+            cachedSub = AttitudeTargetUtil.getContainingSubLevel(level, worldPosition, this);
+            cachedSubAt = now;
+        }
+        return cachedSub;
     }
 
     /** Регулятор связан с компьютером, загружен, умеет участвовать в навигации и не занят редстоун-прокси. */

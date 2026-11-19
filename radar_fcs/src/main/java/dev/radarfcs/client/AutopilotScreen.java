@@ -15,7 +15,7 @@ import net.minecraft.network.chat.Component;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
- * Экран моста Flight Control: оси ведения цели (рысканье, крен, тангаж) и пределы крена и тангажа, режим (выкл, только дальность, дальность и высота),
+ * Экран моста Flight Control: оси ведения цели (рыскание, крен, тангаж) и пределы крена и тангажа, режим (выкл, только дальность, дальность и высота),
  * дальность, высота над целью и предел скорости - числами с клавиатуры.
  */
 public final class AutopilotScreen extends Screen {
@@ -54,7 +54,7 @@ public final class AutopilotScreen extends Screen {
         left = (width - W) / 2;
         top = (height - H) / 2;
         int x = left + 170, w = W - 180;
-        // оси ведения цели: рысканье, крен, тангаж
+        // оси ведения цели: рыскание, крен, тангаж
         int bw = (W - 24) / 3;
         addRenderableWidget(Button.builder(axis("yaw", heading), b -> {
             heading = !heading;

@@ -26,7 +26,7 @@ Title — Description (EN) · Заголовок — описание (RU)
 | 20_ponder_battery | Ponder tutorials | Hold W over any item for an animated tutorial | Обучающие сцены | Удерживайте W над предметом — анимированная обучалка |
 | 21_ponder_custom_gun | Ponder: custom gun | Tutorial for building your own gun on swivel bearings | Обучалка: своё орудие | Как собрать своё орудие на подшипниках-шарнирах |
 | 22_ponder_autopilot_bridge | Autopilot Bridge (Create: Flight Control) | Flies a Flight Control ship to the radar network's target: nose on target, distance or distance + altitude | Мост автопилота (Create: Flight Control) | Ведёт корабль Flight Control к цели радарной сети: нос на цель, дальность или дальность + высота |
-| 23_autopilot_bridge_settings | Autopilot Bridge settings | Yaw, roll and pitch toggles for tracking the target, roll/pitch limits, mode, typed distance, height above the target and speed limit | Настройки моста автопилота | Рысканье, крен и тангаж для ведения цели, пределы крена и тангажа, режим, дальность, высота над целью и предел скорости числами |
+| 23_autopilot_bridge_settings | Autopilot Bridge settings | Yaw, roll and pitch toggles for tracking the target, roll/pitch limits, mode, typed distance, height above the target and speed limit | Настройки моста автопилота | Рыскание, крен и тангаж для ведения цели, пределы крена и тангажа, режим, дальность, высота над целью и предел скорости числами |
 
 Recommended order: 01, 03, 02, 13, 11 first (the first image becomes the featured one).
 Рекомендуемый порядок: сначала 01, 03, 02, 13, 11 (первая картинка — главная).

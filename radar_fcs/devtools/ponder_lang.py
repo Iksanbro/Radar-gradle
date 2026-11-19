@@ -76,21 +76,21 @@ SCENES = {
          'движущиеся, после N выстрелов — каждое орудие делает по цели свои N выстрелов. Сохранение настроек возвращает '
          'сброшенные цели',
          'Drop tab: when to give up a target: static ones (standing longer than the "standing time"; a short stop does not '
-         'count), moving ones, or after N shots - each gun fires its own N shots. Saving the settings restores dropped targets'),
+         'count), moving ones, or after N shots — each gun fires its own N shots. Saving the settings restores dropped targets'),
         ('Вкладка «Выбор» — какая цель главная: ближайшая, наиболее ранняя, дальняя, крупнейшая, наименьшая, быстрая, '
          'медленная. «Переключаться на цель выше по приоритету» и правило смены цели: после N выстрелов, через время, '
          'при остановке или никогда',
          'Pick tab: which target comes first: nearest, earliest, farthest, largest, smallest, fastest or slowest. "Switch '
          'to a higher priority target" and the switching rule: after N shots, after a time, when it stops, or never'),
         ('Вкладка «Свой-чужой» — белый или чёрный список кодов транспондеров: какие транспондеры считать своими',
-         'IFF tab: a whitelist or blacklist of transponder codes - which transponders count as friendly'),
+         'IFF tab: a whitelist or blacklist of transponder codes — which transponders count as friendly'),
         ('Вкладка «Перехват» — сбивать снаряды больших пушек и ракеты (нужен мод CBC Interception). Фильтр угрозы: '
          'угрожающие (упадут рядом со своими), приближающиеся или все чужие; «раньше долетит — раньше цель»',
          'Intercept tab: shoot down big cannon shells and rockets (needs the CBC Interception mod). Threat filter: '
          'threatening (landing near friends), approaching or all hostile; "earlier impact first"'),
         ('Вкладка «Пушки» — свои цели для отдельной пушки: какие типы и с какими уровнями она берёт, например одна — '
          'по кораблям, другая — по мобам',
-         'Guns tab: targets for a single gun - which types and levels it engages, e.g. one gun for ships, another for mobs'),
+         'Guns tab: targets for a single gun — which types and levels it engages, e.g. one gun for ships, another for mobs'),
         ('Вкладка «Состояние» — сводка: радары, пушки и их статус, промах и разброс ствола, цели. Кнопки «Собрать пушки» и '
          '«Разобрать пушки» — для перезарядки и перестройки',
          'Status tab: a summary of radars, guns and their status, miss and barrel spread, targets. The "Assemble cannons" '
@@ -123,7 +123,7 @@ SCENES = {
          'как у торсионной пружины). Курс — влево и вправо от направления ствола при сборке, наклон — вверх и вниз от горизонта, 1–360°; '
          'правый край — без предела. Цель за пределом пушка пропускает, а если других нет — стоит у предела («вне сектора»)',
          'Rotation limit: two boxes on the side of the controller, one per direction (hold right-click for a slider like the '
-         'Torsion Spring). Yaw - left and right of the barrel\'s assembled direction, pitch - up and down from the horizon, 1-360°; the right '
+         'Torsion Spring). Yaw — left and right of the barrel\'s assembled direction, pitch — up and down from the horizon, 1-360°; the right '
          'end means no limit. Targets beyond the limit are skipped; with no others the cannon waits at the limit ("out of arc")'),
     ]),
     'network': (('Радарная сеть и блок памяти', 'Radar networks and the Memory Block'), [
@@ -165,7 +165,7 @@ SCENES = {
         ('Shift+ПКМ — окно монитора. Вкладка «Экран» — та же карта: клик по цели назначает её, сторона карты вводится числом '
          '(16 – 1 000 000 блоков)',
          'Shift+right-click opens the monitor window. The Screen tab shows the same map: click a target to designate it, type '
-         'the map size (16 - 1,000,000 blocks)'),
+         'the map size (16 — 1,000,000 blocks)'),
         ('Назначенную цель вычислители сети ведут вне очереди, в обход типов и скорости. Вкладка «Цели» — список целей с '
          'назначением и снятием',
          'Computers of the network engage a designated target first, ignoring types and speed. The Targets tab lists targets '
@@ -173,7 +173,7 @@ SCENES = {
         ('Вкладка «Вид»: фильтры показа (свои, угрозы, мирные, неактивные, радары, зоны, транспондеры, метки), значки для '
          'каждого типа — форма, цвет, размер — и подписи имён: всегда или при наведении',
          'The View tab: display filters (friendly, threats, peaceful, inactive, radars, zones, transponders, pins), icons for '
-         'each type - shape, color, size - and name labels: always or on hover'),
+         'each type — shape, color, size — and name labels: always or on hover'),
         ('Метки — ПКМ по карте в окне или вкладка «Метки»: координаты, имя и цвет. Метки только рисуются, на огонь не влияют',
          'Pins: right-click the map in the window or use the Pins tab: coordinates, name and color. Pins are only drawn and '
          'do not affect fire'),
@@ -192,16 +192,16 @@ SCENES = {
          'The code (1-8 digits) tells computers whether it is friendly'),
         ('Режим «радиус» — шар заданного радиуса вокруг транспондера; на корабле зона едет вместе с ним',
          'Radius mode: a sphere of the set radius around the transponder; on a ship the zone moves with it'),
-        ('Режим «сублевел» — корабль Sable или контрапшен, на котором стоит транспондер (границы + 2 блока); «сублевел и '
+        ('Режим «корабль» — корабль Sable или контрапшен, на котором стоит транспондер (границы + 2 блока); «корабль и '
          'расстояние» — корабль и заданное расстояние вокруг. По умолчанию — по месту',
-         'Sub-level mode: the Sable ship or contraption it stands on (bounds + 2 blocks); "sub-level and distance": the ship '
+         'Ship mode: the Sable ship or contraption it stands on (bounds + 2 blocks); "ship and distance": the ship '
          'plus a set distance around. The default depends on where it stands'),
         ('Вкладка «Наследование» — кто в зоне защищён: игроки, враждебные и мирные мобы, корабли, контрапшены, снаряды, '
          'прочие. Списки «всегда» и «никогда» — как списки целей вычислителя',
          'The Inheritance tab sets who in the zone is protected: players, hostile and peaceful mobs, ships, contraptions, '
          'projectiles, others. "Always" and "never" lists work like the computer target lists'),
         ('У вычислителя на вкладке «Свой-чужой» — белый или чёрный список кодов: какие транспондеры свои',
-         'The computer IFF tab holds a whitelist or blacklist of codes - which transponders are friendly'),
+         'The computer IFF tab holds a whitelist or blacklist of codes — which transponders are friendly'),
         ('Коды видят и меняют только владелец, его команда и операторы. Питание — 64 FE/т; без энергии транспондер не защищает',
          'Only the owner, their team and operators see and change codes. Power: 64 FE/t; without it the transponder protects nothing'),
     ]),
@@ -269,12 +269,12 @@ SCENES = {
          'settles within seconds'),
         ('Когда пора стрелять, прицел выдаёт сигнал редстоуна 15 — подведите его к своему оружию. Станки CBC в орудии '
          'стреляют сами по команде',
-         'When it is time to fire, the sight emits redstone 15 - wire it to your weapon. CBC mounts in the gun fire on '
+         'When it is time to fire, the sight emits redstone 15 — wire it to your weapon. CBC mounts in the gun fire on '
          'command by themselves'),
         ('Shift+ПКМ по орудийному линку — настройки орудия. Для своего оружия выберите тип: автопушка, среднее, большая '
          '(баллистика и вид сигнала) или «кастом» — наводится прямо на цель, без упреждения',
          'Shift+right-click a Gun Link for gun settings. For a custom weapon pick its type: autocannon, medium, big '
-         '(ballistics and signal kind) or "custom" - aims straight at the target without lead'),
+         '(ballistics and signal kind) or "custom" — aims straight at the target without lead'),
     ]),
     'gun_rotator': (('Вращатель орудия', 'Gun Rotator'), [
         ('Вращатель орудия (нужен Sable) — свой подшипник мода: поворачивает постройку перед выходом. Вращение — валом сзади, '
@@ -291,7 +291,7 @@ SCENES = {
          'Gun Links join the sight and rotators into one gun; a Radar Link on any part connects it to the computer'),
         ('Вращатель держит угол сам. С Create Aeronautics можно строить и на подшипниках-шарнирах с приводами орудия — '
          'см. сцену «Своё орудие на подшипниках-шарнирах»',
-         'The rotator holds its angle itself. With Create Aeronautics you can also build on Swivel Bearings with Gun Drives - '
+         'The rotator holds its angle itself. With Create Aeronautics you can also build on Swivel Bearings with Gun Drives — '
          'see the "custom gun on Swivel Bearings" scene'),
     ]),
     'gun_drive': (('Привод орудия и настройки орудия', 'Gun Drive and gun settings'), [
@@ -308,7 +308,7 @@ SCENES = {
          'горизонта. Через запретный сектор орудие не поворачивает — идёт в обход',
          'Rotation limit: two boxes on the side of the drive, one per direction (hold right-click for a slider), 1-360°, the right end '
          'means no limit. Yaw counts from where the gun pointed when the limit was enabled, pitch from the horizon. The gun '
-         'never turns through the forbidden arc - it goes the other way round'),
+         'never turns through the forbidden arc — it goes the other way round'),
         ('Приводы, станки и прицелы связываются орудийными линками в одно орудие',
          'Gun Links join drives, mounts and sights into one gun'),
         ('Shift+ПКМ по орудийному линку — настройки орудия (общие для всех его линков). Имя — видно в отчёте вычислителя и в '
@@ -317,8 +317,8 @@ SCENES = {
          'the camera monitor'),
         ('Тип задаёт баллистику и сигнал орудия без станка CBC: автопушка — сигнал держится, пока орудие на цели; среднее и '
          'большая — импульсами; кастом — наводится прямо на цель, без упреждения. Со станком CBC баллистика — по станку',
-         'The type sets ballistics and the signal for guns without a CBC mount: autocannon - the signal holds while on target; '
-         'medium and big - pulses; custom - aims straight at the target without lead. With a CBC mount, ballistics come from it'),
+         'The type sets ballistics and the signal for guns without a CBC mount: autocannon — the signal holds while on target; '
+         'medium and big — pulses; custom — aims straight at the target without lead. With a CBC mount, ballistics come from it'),
         ('«Автоприцеливание» выключено — орудие наводится только с камеры. «Стрельба» выключена — орудие наводится, но само не '
          'стреляет (ЛКМ с камеры работает)',
          'Auto aim off: the gun aims only from a camera. Firing off: the gun aims but never fires by itself (camera '
@@ -335,25 +335,25 @@ SCENES = {
          'если установлен Flight Control',
          'The Autopilot Bridge connects the radar network to Create: Flight Control. It goes on a Sable ship and exists '
          'only when Flight Control is installed'),
-        ('В радарную сеть — радарным линком. Цель моста — назначенная на мониторе сети (своём или Create Radars), иначе '
+        ('В радарную сеть — радарным линком. Цель моста — назначенная на мониторе сети (своём или Create: Radars), иначе '
          'та, которую ведёт вычислитель сети, иначе ближайшая чужая цель радаров',
          'Add it to a radar network with a Radar Link. Its target is the one designated on a monitor of the network (own '
-         'or Create Radars), otherwise the one a fire control computer is tracking, otherwise the nearest hostile radar contact'),
+         'or Create: Radars), otherwise the one a fire control computer is tracking, otherwise the nearest hostile radar contact'),
         ('Инструментальный пистолет Flight Control: ПКМ по индикатору направления вперёд, затем по мосту — нос корабля '
          'берётся с индикатора. Без индикатора нос — лицевая сторона моста',
-         'Flight Control tool gun: right-click the Forward Indicator, then the bridge - the ship nose comes from the '
+         'Flight Control tool gun: right-click the Forward Indicator, then the bridge — the ship nose comes from the '
          'indicator. Without one, the nose is the front face of the bridge'),
         ('Потом пистолетом ПКМ по мосту и по компьютеру управления полётом. Как навигационный терминал, мост ведёт корабль '
          'через регулятор скорости (движение) и регулятор угловой скорости (повороты), связанные с тем же компьютером, а '
          'стабилизаторы ориентации и высоты на это время выключает',
          'Then right-click the bridge and the Flight Control Computer with the tool gun. Like the Navigation Terminal, the '
          'bridge flies the ship through a Velocity Coupler (movement) and an Angular Velocity Coupler (turning) linked to '
-         'the same computer and switches off the Attitude and Altitude Holds meanwhile'),
-        ('ПКМ по мосту — настройки. Отклонения для ведения цели: рысканье — нос на цель по курсу, крен — в сторону '
+         'the same computer and switches off the Attitude and Altitude Stabilizers meanwhile'),
+        ('ПКМ по мосту — настройки. Отклонения для ведения цели: рыскание — нос на цель по курсу, крен — в сторону '
          'поворота, тангаж — нос на угол места цели; пределы крена и тангажа — числами. Выключенные крен и тангаж мост '
          'держит ровно. Скорость поворота и полёта ограничивают пределы самих регуляторов',
-         'Right-click the bridge for settings. Deflections used to track the target: yaw - nose on its bearing, roll - '
-         'bank into the turn, pitch - nose on its elevation; roll and pitch limits are typed. The bridge keeps disabled '
+         'Right-click the bridge for settings. Deflections used to track the target: yaw — nose on its bearing, roll — '
+         'bank into the turn, pitch — nose on its elevation; roll and pitch limits are typed. The bridge keeps disabled '
          'roll and pitch level. Turn and flight speeds are capped by the couplers\' own limits'),
         ('«Только дальность»: корабль подходит и держит вписанную дальность до цели по горизонтали, высоту держат другие '
          'блоки. «Дальность и высота»: ещё и вписанную высоту над целью. Предел скорости — тоже числом',
