@@ -159,6 +159,13 @@ public class DockingGameTests {
                 case 2 -> {                                                 // бронь снята - задвинут
                     if (t - since.get() < 30) return;
                     if (DockingPorts.isPowered(level, con) || DockingPorts.isPowered(level, con2)) h.fail("connectors still extended after the reservation ended");
+                    level.removeBlock(con2, false);                         // сломали второй порт - связь снимается сама
+                    phase.set(20);
+                    since.set(t);
+                }
+                case 20 -> {
+                    if (t - since.get() < 25) return;
+                    if (be.connectorCount() != 1) h.fail("broken connector still linked: " + be.connectorCount());
                     CompoundTag s = new CompoundTag();
                     s.putString("Role", Docking.Role.PLUG.name());
                     s.putInt("Number", 5);
@@ -178,7 +185,7 @@ public class DockingGameTests {
                 }
                 case 4 -> {                                                 // блок убран - порт задвинут, реестр пуст
                     if (t - since.get() < 3) return;
-                    if (DockingPorts.isPowered(level, con) || DockingPorts.isPowered(level, con2)) h.fail("connectors stay extended after the controller was removed");
+                    if (DockingPorts.isPowered(level, con)) h.fail("connector stays extended after the controller was removed");
                     if (DockingRegistry.get(level, pos) != null) h.fail("removed controller still registered");
                     h.succeed();
                 }
@@ -618,6 +625,17 @@ public class DockingGameTests {
                     if (!FlightTestSupport.working(level, cc)) h.fail("flight control computer not restored after undocking");
                     if (dev.radarfcs.dock.DockHold.held(level, shipId, now)) h.fail("ship still held after undocking");
                     if (plug[0].locked()) h.fail("still locked after docking was switched off");
+                    // отход от порта (порт на земле смотрит вверх) - вверх, до дистанции обхода
+                    Map<String, Object> c = FlightTestSupport.commands(level, cc, at[0]);
+                    if (b.state() != AutopilotBlockEntity.State.DOCK_DEPART) h.fail("expected DOCK_DEPART after undocking, got " + b.state());
+                    if (!(num(c, VEL + "BODY_VELOCITY_Y") >= Docking.DEPART_SPEED - 0.01)) h.fail("expected backing away up from the port: " + c);
+                    level.removeBlock(cc, false);                           // сломали компьютер - мост отвязывается сам
+                    phase.set(5);
+                    since.set(t);
+                }
+                case 5 -> {
+                    if (t - since.get() < 25) return;
+                    if (b.computerLinked()) h.fail("bridge still linked to the broken flight control computer");
                     h.succeed();
                 }
                 default -> { }

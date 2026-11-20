@@ -83,7 +83,7 @@
   "radar_fcs.gui.server_forbids": "Forbidden by the server config",
   "radar_fcs.gui.server_no_projectiles": "The server forbids projectiles and rockets (allowProjectiles)",
   "radar_fcs.gui.server_no_contraptions": "The server forbids contraptions (allowContraptions)",
-  "radar_fcs.gui.drop_static": "Drop static targets",
+  "radar_fcs.gui.drop_static": "Drop static targets (except ships)",
   "radar_fcs.gui.drop_moving": "Drop moving targets",
   "radar_fcs.gui.drop_after": "Drop after shots",
   "radar_fcs.gui.drop_hint": "A dropped target is no longer engaged. Static means slower than the server's minSpeed for longer than the standing time (a short stop such as a turn does not count; a target that has never moved is static at once). Drop after N shots counts per gun: after its own N shots a gun leaves the target. Saving the settings brings dropped targets back.",

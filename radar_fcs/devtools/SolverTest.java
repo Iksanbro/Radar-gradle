@@ -802,6 +802,11 @@ public class SolverTest {
             System.out.printf(Locale.ROOT, "    min distance before final approach %.1f (clearance %.0f)%n", minClear, clear);
             ok &= cb.phase() == Docking.Phase.FINAL && lastWorst < 0.3 && minClear >= clear * 0.85;
         }
+        // отход после расстыковки: по оси порта до дистанции обхода, дальше - свободен
+        Vec dep = Docking.depart(new Vec(1, 64.5, 0.5), new Vec(0.5, 64.5, 0.5), new Vec(1, 0, 0), 12, 20);
+        ok &= dep != null && dep.x() >= Docking.DEPART_SPEED - 1e-9 && Math.abs(dep.y()) < 1e-9;
+        ok &= Docking.depart(new Vec(13, 64.5, 0.5), new Vec(0.5, 64.5, 0.5), new Vec(1, 0, 0), 12, 20) == null;
+        System.out.println("  depart: " + dep);
         // расстановки разные (6 бл у корабля, 8 у порта) - предупреждение
         Docking.Port pad8 = multiPort(new Vec(60.5, 64.5, 60.5), Vec.UP, new Vec(-4, 0, 0), new Vec(4, 0, 0));
         Docking.Command cx = dockFlight("layout mismatch", new Vec(40, 95, 40), new Vec(0, 0, -1), Vec.UP,

@@ -195,6 +195,7 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         Direction facing = connectorFacing();
         boolean extend = false;
         boolean sync = now - lastSync >= 10;
+        if (now % 20 == 0) dropBrokenConnectors(level);
         if (facing == null) {
             if (role == Docking.Role.PORT) DockingRegistry.remove(level, worldPosition);
             if (forced) for (BlockPos c : connectorPositions()) DockingPorts.unforce(level, c);
@@ -237,6 +238,20 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
                 level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
             }
         }
+    }
+
+    /** Сломанные порты Simulated (чанк загружен, а порта нет) - убрать из связей. */
+    private void dropBrokenConnectors(ServerLevel level) {
+        boolean changed = false;
+        for (java.util.Iterator<BlockPos> it = connectorOffsets.iterator(); it.hasNext(); ) {
+            BlockPos p = worldPosition.offset(it.next());
+            if (level.isLoaded(p) && !DockingPorts.isConnector(level, p)) {
+                DockingPorts.unforce(level, p);
+                it.remove();
+                changed = true;
+            }
+        }
+        if (changed) changed();
     }
 
     /** Порт для реестра: мировая середина концов, направление, расстановка и скорость (у порта на корабле - через его позу). */

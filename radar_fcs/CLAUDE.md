@@ -20,7 +20,7 @@
 - `docs/dev/features.md` — все требования пользователя и история функций по версиям (≈560 строк);
 - `docs/dev/dependencies.md` — проверенные особенности API CBC, CBC-AT, Neo Warfare, Create Radars, Sable;
 - `docs/dev/test-status.md` — что покрыто игровыми тестами и какие комбинации модов проверены;
-- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test, итог — `features.md` п. 43-48).
+- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test, итог — `features.md` п. 43-49).
 
 Эти файлы и `README.md` большие: **не выводи их целиком** (`cat`), ищи нужное через `grep -n` и читай куски.
 

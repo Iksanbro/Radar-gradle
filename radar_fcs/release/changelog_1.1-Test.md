@@ -7,6 +7,8 @@
 - **While docked** the ship's Flight Control Computer is switched off (engines without thrust) and the guns on the ship are inactive ("Ship docked"); after undocking everything is restored and the ship backs away from the port for 3 s. A redstone pause no longer undocks a docked ship.
 - **The bridge no longer chases the nearest radar contact.** With no target it **hovers** in place or flies an **orbit** around a point or a new **Orbit Beacon** (in the bridge's radar network; a code picks the beacon). Orbit radius, height above the center, direction, **orbit speed** and **where the nose points** (along the path, backward, to the center, outward, keep heading).
 - Bridge screen split into **"Target"** and **"No target"** tabs.
+- **Fix:** "Drop static targets" (on by default) also dropped ships that hover, stand or keep their distance (below 0.6 blocks/s) — ships are never dropped as static now. Note: a ship carrying guns of the same fire control computer is its own platform and is never a target.
+- After undocking the ship backs away along the port axis to the clearance distance. Broken equipment linked with the Flight Control Tool Gun (docking connectors, Flight Control Computer, Forward Indicator) is unlinked automatically.
 - Optimizations: the bridge does not run its target sensor when there is no target; docking status and network lookups are throttled.
 
 ## Русский
@@ -16,4 +18,6 @@
 - **Пока корабль пристыкован**, компьютер Flight Control выключен (двигатели без тяги), пушки на корабле неактивны («Корабль пристыкован»); после расстыковки всё возвращается, корабль 3 с отходит от порта. Пауза редстоуном больше не расстыковывает.
 - **Мост больше не ведёт «ближайшую чужую цель радаров».** Без цели корабль **висит** на месте или летит по **орбите** вокруг координаты или нового **маяка орбиты** (в радарной сети моста; маяк выбирается кодом). Радиус, высота над центром, направление, **скорость по орбите** и **куда смотрит нос** (по ходу, против хода, к центру, наружу, не поворачивать).
 - Экран моста разделён на вкладки **«Цель»** и **«Без цели»**.
+- **Исправлено:** «Сбрасывать статичные» (включено по умолчанию) отсеивало и корабли, которые висят, стоят или держат дистанцию (медленнее 0,6 бл/с), — корабли больше не сбрасываются как статичные. Напоминание: корабль с пушками того же вычислителя — его своя платформа и целью не бывает.
+- После расстыковки корабль отходит по оси порта на дистанцию обхода. Сломанное оборудование, подключённое пистолетом Flight Control (стыковочные порты, компьютер Flight Control, индикатор направления), отключается само.
 - Оптимизации: без цели мост не запускает сенсор; проверки сцепки и поиск сетей при стыковке — реже.

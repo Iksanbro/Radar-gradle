@@ -174,8 +174,12 @@ public final class EngageSettings {
         return t.lastMovingTick == Long.MIN_VALUE || t.lastTick - t.lastMovingTick >= staticTicks;
     }
 
-    /** Подходит ли цель по движению: статичные и движущиеся можно сбрасывать отдельно. */
+    /**
+     * Подходит ли цель по движению: статичные и движущиеся можно сбрасывать отдельно. Корабль Sable статичным не
+     * сбрасывается: висящий или стоящий корабль - такая же цель (иначе корабли без хода не атакуют друг друга).
+     */
     public boolean motionAllowed(Track t) {
+        if (t.kind == Track.Kind.SHIP && isStatic(t)) return true;
         return isStatic(t) ? !dropStatic : !dropMoving;
     }
 

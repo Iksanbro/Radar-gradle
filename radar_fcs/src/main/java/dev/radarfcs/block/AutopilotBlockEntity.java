@@ -186,6 +186,7 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         if (now - lastDiscover >= 20) {
             lastDiscover = now;
             discover(level);
+            maintainLinks(level);
         }
         boolean signal = level.hasNeighborSignal(worldPosition);
         // стыковка по редстоуну: сигнал - на стыковку, а не пауза
@@ -457,6 +458,9 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         writeClientExtra(t);
         return t;
     }
+
+    /** Раз в секунду: связи с оборудованием, которого больше нет (сломано), снять. */
+    protected void maintainLinks(ServerLevel level) {}
 
     /** Наследник добавляет в данные клиента своё (связи с Flight Control). */
     protected void writeClientExtra(CompoundTag t) {}

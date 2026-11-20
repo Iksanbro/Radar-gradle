@@ -46,9 +46,24 @@ public final class Docking {
     public static final int NUMBER_MAX = 9999;
     /** Бронь порта держится столько тиков без продления. */
     public static final long RESERVE_TICKS = 40;
-    /** После расстыковки корабль отходит от порта столько тиков со скоростью DEPART_SPEED (бл/с). */
-    public static final long DEPART_TICKS = 60;
+    /**
+     * После расстыковки корабль отходит по оси порта, пока середина его портов не окажется дальше дистанции обхода
+     * (не дольше DEPART_TICKS); скорость отхода - не меньше DEPART_SPEED (бл/с), не больше предела моста.
+     */
+    public static final long DEPART_TICKS = 400;
     public static final double DEPART_SPEED = 3;
+
+    /** Скорость отхода: от конца порта вдоль его направления до дистанции обхода (+1 бл); null - отошёл. */
+    public static Vec depart(Vec plugTip, Vec portTip, Vec portFacing, double clearance, double maxSpeed) {
+        Vec fp = portFacing.normalize();
+        Vec r = plugTip.sub(portTip);
+        double ax = r.dot(fp);
+        if (ax >= clearance) return null;
+        // назад по оси порта; сбоку - на ось не стягивать, только наружу
+        double need = clearance + 1 - ax;
+        double speed = Math.min(maxSpeed, Math.max(DEPART_SPEED, Autopilot.POS_GAIN * need));
+        return fp.scale(speed);
+    }
     /** Без цели столько тиков - пора на стыковку (цель мигнула - не срываться). */
     public static final long NO_TARGET_DELAY = 40;
 

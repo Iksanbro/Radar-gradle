@@ -1275,6 +1275,100 @@ public class FcsGameTests {
         });
     }
 
+    /**
+     * Неподвижный корабль (висит на месте, без транспондера) - тоже цель: при «сбрасывать статичные» (по умолчанию)
+     * вычислитель не должен его пропускать, иначе корабли, стоящие или висящие, не атакуют друг друга.
+     */
+    @GameTest(template = ARENA, batch = "ship", timeoutTicks = 500)
+    public static void staticShipIsEngaged(GameTestHelper h) {
+        if (!ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        bigCannon(h, new BlockPos(10, 1, 32), Direction.EAST, 2, 4, true);
+        FireControlBlockEntity be = fcs(h, new BlockPos(6, 1, 28));
+        Object sub = SableTestSupport.ship(h, new BlockPos(46, 9, 22), 3, Vec3.ZERO, 0, false);
+        logEvery(h, be, "static_ship", 40);
+        AtomicInteger hits = SableTestSupport.watchShipHits(h, sub, "static_ship");
+        h.succeedWhen(() -> {
+            if (hits.get() == 0) throw new GameTestAssertException("static ship not hit yet");
+            FcsMod.LOG.info("[radar_fcs test] static_ship: HIT");
+        });
+    }
+
+    /**
+     * Корабль против корабля: вся батарея (станок с механизмами наводки и моторами, пушка, вычислитель, передатчики)
+     * собрана в постройку Sable (неподвижную) и стреляет по движущемуся кораблю без транспондера.
+     */
+    @GameTest(template = ARENA, batch = "ship", timeoutTicks = 700)
+    public static void shipBatteryEngagesShip(GameTestHelper h) {
+        if (!ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        for (int x = 5; x <= 15; x++) for (int z = 27; z <= 35; z++) h.setBlock(new BlockPos(x, 2, z), Blocks.IRON_BLOCK.defaultBlockState());
+        bigCannon(h, new BlockPos(10, 5, 32), Direction.EAST, 2, 4, true);
+        FireControlBlockEntity be0 = fcs(h, new BlockPos(6, 3, 28));
+        BlockPos fcsAbs = be0.getBlockPos();
+        Object battery = SableTestSupport.staticSub(h, new BlockPos(5, 2, 27), new BlockPos(15, 8, 35));
+        java.util.UUID batteryShip = SableTestSupport.subId(battery);
+        Object sub = SableTestSupport.ship(h, new BlockPos(46, 12, 22), 3, new Vec3(0, 0, 0.12), 14, false);
+        java.util.UUID targetShip = SableTestSupport.subId(sub);
+        AtomicInteger hits = SableTestSupport.watchShipHits(h, sub, "ship_vs_ship");
+        FireControlBlockEntity[] be = new FireControlBlockEntity[1];
+        AtomicInteger tick = new AtomicInteger();
+        h.onEachTick(() -> {
+            int t = tick.getAndIncrement();
+            ServerLevel level = h.getLevel();
+            if (be[0] == null) {
+                // вычислитель уехал в плот постройки: ищем по сети его передатчиков
+                java.util.Set<BlockPos> seen = new java.util.HashSet<>();
+                for (BlockPos p : allLinkedEquipment(level)) {
+                    if (seen.add(p) && level.getBlockEntity(p) instanceof FireControlBlockEntity f
+                            && batteryShip.equals(dev.radarfcs.compat.SableCompat.containingId(level, p))) be[0] = f;
+                }
+                if (be[0] == null) {
+                    if (t > 100) h.fail("fire control computer not found on the battery ship");
+                    return;
+                }
+            }
+            if (t % 40 == 0) {
+                StringBuilder sb = new StringBuilder();
+                for (MountState m : be[0].mountStates()) {
+                    sb.append(String.format(" [%s %s target=%s yaw=%.1f pitch=%.1f err=%.2f dist=%.1f note=%s]", m.mount == null ? "?" : m.mount.typeName(),
+                            m.status, m.targetId, m.cmdYaw, m.cmdPitch, m.aimError, m.distance, m.note));
+                }
+                StringBuilder tr = new StringBuilder();
+                for (var tk : be[0].sensor().all()) tr.append(String.format(" {%s %s friendly=%s active=%s moving=%s}", tk.kind, tk.id.equals(targetShip.toString())
+                        ? "TARGET" : tk.id.equals(batteryShip.toString()) ? "OWN" : tk.id, tk.friendly, tk.active, tk.moving));
+                FcsMod.LOG.info("[radar_fcs test] ship_vs_ship t={} mounts={}{} tracks:{}", t, be[0].mountStates().size(), sb, tr);
+            }
+            if (hits.get() > 0) {
+                FcsMod.LOG.info("[radar_fcs test] ship_vs_ship: HIT");
+                h.succeed();
+            }
+        });
+    }
+
+    /** Вся аппаратура на радарных линках загруженных чанков (для поиска блоков, уехавших в плот постройки Sable). */
+    static java.util.List<BlockPos> allLinkedEquipment(ServerLevel level) {
+        java.util.List<BlockPos> out = new java.util.ArrayList<>();
+        try {
+            var f = dev.radarfcs.link.LinkRegistry.class.getDeclaredField("LINKS");
+            f.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            var all = (java.util.Map<net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>,
+                    java.util.Map<BlockPos, java.util.List<dev.radarfcs.link.LinkRegistry.Member>>>) f.get(null);
+            var m = all.get(level.dimension());
+            if (m != null) for (var l : m.values()) for (var mb : l) out.add(mb.equipment());
+        } catch (ReflectiveOperationException e) {
+            throw new GameTestAssertException(e.toString());
+        }
+        return out;
+    }
+
     /** Транспондер на корабле: весь корабль свой, огня нет. */
     @GameTest(template = ARENA, batch = "shipiff", timeoutTicks = 260)
     public static void shipWithTransponderIsFriendly(GameTestHelper h) {

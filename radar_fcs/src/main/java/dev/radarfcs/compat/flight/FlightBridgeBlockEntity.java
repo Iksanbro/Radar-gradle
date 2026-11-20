@@ -72,7 +72,8 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
     private Docking.Phase dockPhase = Docking.Phase.TRANSIT;
     private double cruiseY = Double.NaN;
     private long plugKey, departUntil = Long.MIN_VALUE;
-    @Nullable private Vec departDir;
+    @Nullable private Vec departDir, departTip;
+    private double departClear = Docking.APPROACH_DIST;
     /** Без цели: точка, в которой корабль висит (где кончилась цель или стыковка). */
     @Nullable private Vec hold;
     private Set<UUID> dockNets = Set.of();
@@ -217,8 +218,11 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             if (paused && wasLocked && holdDocked(level, now)) return;
             endDock(level, now);
             if (now < departUntil && cc != null && departDir != null) {        // отход от порта после расстыковки
-                driveState = depart(level, cc);
-                return;
+                State ds = depart(level, cc);
+                if (ds != null) {
+                    driveState = ds;
+                    return;
+                }
             }
             if (g == null && cc != null && !paused && mode != Autopilot.Mode.OFF) {
                 driveState = idleSteer(level, cc);                         // цели нет - висеть или орбита
@@ -238,6 +242,24 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             if (t - lastError > 60_000) {                                // API Flight Control изменилось - мост молчит
                 lastError = t;
                 FcsMod.LOG.warn("[radar_fcs] flight bridge at {}: {}", worldPosition, e.toString());
+            }
+        }
+    }
+
+    /** Компьютер или индикатор сломаны - связь с ними снять (как у блоков самого Flight Control). */
+    @Override
+    protected void maintainLinks(ServerLevel level) {
+        BlockPos c = getLinkedComputerPos();
+        if (c != null && level.isLoaded(c) && !(level.getBlockEntity(c) instanceof FlightControlComputerBlockEntity)) {
+            release();
+            poweredDown = false;
+            clearLinkedComputer();
+        }
+        if (indicatorOffset != null) {
+            try {
+                validateForwardIndicatorLink();
+            } catch (Throwable ignored) {
+                // API Flight Control изменилось - связь остаётся
             }
         }
     }
@@ -391,8 +413,15 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
                 DockingRegistry.PortInfo pi = DockingRegistry.get(level, dockTarget);
                 if (pi != null) {
                     departDir = pi.facing();
+                    departTip = pi.tip();
+                    departClear = Math.max(pi.clearance(), plug.approach);
                     summary(pi, tip);
                 }
+            }
+            if (dockTarget == null || departTip == null) {                  // пристыкован не нами (порт неизвестен) - ось штекера
+                departDir = new Vec(-wd.x, -wd.y, -wd.z).normalize();
+                departTip = tip;
+                departClear = plug.approach;
             }
             wasLocked = true;
             // пристыкован: компьютер управления полётом выключен (тяга двигателей Flight Control снята), пушки корабля
@@ -507,16 +536,32 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
         cruiseY = Double.NaN;
     }
 
-    /** Отход от порта по его направлению, корпус ровно. */
+    /**
+     * Отход от порта по его оси, корпус ровно, пока середина портов корабля не выйдет за дистанцию обхода; отошёл
+     * (или штекера нет) - обычный полёт.
+     */
+    @Nullable
     private State depart(ServerLevel level, FlightControlComputerBlockEntity cc) throws Exception {
         Ready r = ready(level, cc);
         if (r == null) {
             release();
             return State.COMPUTER_OFF;
         }
+        DockingControllerBlockEntity plug = plug(level);
+        Vec3 lt = plug == null ? null : plug.localTip();
+        if (lt == null || departTip == null) {
+            departUntil = Long.MIN_VALUE;
+            return null;
+        }
+        Vec3 w = SableCompat.toWorld(level, lt);
+        Vec v = Docking.depart(new Vec(w.x, w.y, w.z), departTip, departDir, departClear, maxSpeed);
+        if (v == null) {                                                    // отошёл на дистанцию обхода
+            departUntil = Long.MIN_VALUE;
+            return null;
+        }
         Object sub = subLevel(level);
         Vector3d up = AttitudeTargetUtil.rotateBodyToWorld(sub, new Vector3d(0, 1, 0));
-        State s = lease(cc, r, sub, departDir.scale(Docking.DEPART_SPEED), Docking.levelRates(new Vec(up.x, up.y, up.z)), false);
+        State s = lease(cc, r, sub, v, Docking.levelRates(new Vec(up.x, up.y, up.z)), false);
         return s == State.ACTIVE ? State.DOCK_DEPART : s;
     }
 
