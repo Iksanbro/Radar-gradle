@@ -65,14 +65,6 @@ public class OrbitBeaconBlock extends BaseEntityBlock {
         return new OrbitBeaconBlockEntity(DockingBlocks.BEACON_BE.get(), pos, state);
     }
 
-    @org.jetbrains.annotations.Nullable
-    @Override
-    public <T extends BlockEntity> net.minecraft.world.level.block.entity.BlockEntityTicker<T> getTicker(net.minecraft.world.level.Level level,
-            BlockState state, net.minecraft.world.level.block.entity.BlockEntityType<T> type) {
-        if (level.isClientSide || type != DockingBlocks.BEACON_BE.get()) return null;
-        return (l, p, s, be) -> OrbitBeaconBlockEntity.serverTick(l, p, s, (OrbitBeaconBlockEntity) be);
-    }
-
     /** ПКМ - экран кода маяка. */
     @Override
     protected net.minecraft.world.InteractionResult useWithoutItem(BlockState state, net.minecraft.world.level.Level level, BlockPos pos,

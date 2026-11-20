@@ -1,9 +1,6 @@
 package dev.radarfcs.block;
 
 import com.simibubi.create.api.equipment.goggles.IHaveGoggleInformation;
-import dev.radarfcs.compat.SableCompat;
-import dev.radarfcs.core.Vec;
-import dev.radarfcs.dock.BeaconRegistry;
 import java.util.List;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
@@ -13,20 +10,17 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.Vec3;
 
 /**
- * Маяк орбиты: центр орбиты, по которой корабль летает без цели (режим моста «орбита вокруг маяка»). Мост находит
- * маяк по коду (в любом месте измерения, {@link BeaconRegistry}), а без кода в мосту - первый маяк своей радарной сети.
+ * Маяк орбиты: центр орбиты, по которой корабль летает без цели (режим моста «орбита вокруг маяка»). Маяк - в
+ * радарной сети моста (передатчиком); мост с кодом берёт маяк сети с этим кодом, без кода - первый маяк сети.
  * Может стоять и на корабле - тогда орбита идёт за ним. Радиус, высота и направление - в мосту.
  */
 public class OrbitBeaconBlockEntity extends BlockEntity implements IHaveGoggleInformation {
     private String code = "";
-    private boolean unloading;
 
     public OrbitBeaconBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
@@ -37,36 +31,16 @@ public class OrbitBeaconBlockEntity extends BlockEntity implements IHaveGoggleIn
     }
 
     public void setCode(String c) {
-        code = BeaconRegistry.clean(c);
-        if (level != null && !level.isClientSide) publish();
+        code = cleanCode(c);
         setChanged();
         if (level != null) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
     }
 
-    public static void serverTick(Level level, BlockPos pos, BlockState st, OrbitBeaconBlockEntity be) {
-        // маяк на корабле движется - положение каждые 5 тиков; на земле - раз в секунду
-        if (level.getGameTime() % (SableCompat.containingId(level, pos) != null ? 5 : 20) == 0) be.publish();
-    }
-
-    /** Сообщить реестру мировую точку и скорость маяка. */
-    private void publish() {
-        if (level == null) return;
-        Vec3 local = Vec3.atCenterOf(worldPosition);
-        Vec3 w = SableCompat.toWorld(level, local);
-        Vec3 v = SableCompat.pointVelocity(level, SableCompat.containing(level, worldPosition), local).scale(20);
-        BeaconRegistry.put(level, new BeaconRegistry.Beacon(worldPosition, code, new Vec(w.x, w.y, w.z), new Vec(v.x, v.y, v.z)));
-    }
-
-    @Override
-    public void onChunkUnloaded() {
-        unloading = true;
-        super.onChunkUnloaded();
-    }
-
-    @Override
-    public void setRemoved() {
-        if (level != null && !level.isClientSide && !unloading) BeaconRegistry.remove(level, worldPosition);
-        super.setRemoved();
+    /** Код маяка: без пробелов по краям и служебных символов, не длиннее 16. */
+    public static String cleanCode(@org.jetbrains.annotations.Nullable String c) {
+        if (c == null) return "";
+        String s = c.replaceAll("\\p{Cntrl}", "").trim();
+        return s.length() > 16 ? s.substring(0, 16) : s;
     }
 
     @Override
@@ -78,7 +52,7 @@ public class OrbitBeaconBlockEntity extends BlockEntity implements IHaveGoggleIn
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
-        code = BeaconRegistry.clean(tag.getString("Code"));
+        code = cleanCode(tag.getString("Code"));
     }
 
     @Override

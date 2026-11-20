@@ -15,7 +15,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 /** Экран стыковочного контроллера: роль (порт / штекер), номер, связь с портом Simulated и состояние. */
 public final class DockingControllerScreen extends Screen {
-    private static final int W = 280, H = 190;
+    private static final int W = 280, H = 214;
 
     private final BlockPos pos;
     private Docking.Role role;
@@ -23,7 +23,8 @@ public final class DockingControllerScreen extends Screen {
     private final int linked;
     private final DockingControllerBlockEntity.Status status;
     private int left, top;
-    private EditBox numberField;
+    private EditBox numberField, approachField;
+    private final double approach0;
 
     public DockingControllerScreen(DockingPayloads.Open p) {
         super(Component.translatable("radar_fcs.docking.title"));
@@ -37,6 +38,7 @@ public final class DockingControllerScreen extends Screen {
         }
         role = r;
         number0 = DockingControllerBlockEntity.cleanNumber(t.getInt("Number"));
+        approach0 = dev.radarfcs.core.Docking.cleanApproach(t.contains("Approach") ? t.getDouble("Approach") : Double.NaN);
         linked = t.getInt("Connectors");
         DockingControllerBlockEntity.Status s;
         try {
@@ -61,6 +63,12 @@ public final class DockingControllerScreen extends Screen {
         numberField.setFilter(s -> s.matches("[0-9]*"));
         numberField.setValue(keep);
         addRenderableWidget(numberField);
+        String keepA = approachField != null ? approachField.getValue() : dev.radarfcs.block.AutopilotBlockEntity.fmt(approach0);
+        approachField = new EditBox(font, left + 170, top + 68, W - 178, 16, Component.empty());
+        approachField.setMaxLength(5);
+        approachField.setFilter(s -> s.matches("[0-9]*([.,][0-9]*)?"));
+        approachField.setValue(keepA);
+        addRenderableWidget(approachField);
         addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gun.save"), b -> {
             CompoundTag t = new CompoundTag();
             t.putString("Role", role.name());
@@ -71,6 +79,13 @@ public final class DockingControllerScreen extends Screen {
                 n = number0;
             }
             t.putInt("Number", DockingControllerBlockEntity.cleanNumber(n));
+            double a;
+            try {
+                a = Double.parseDouble(approachField.getValue().replace(',', '.'));
+            } catch (NumberFormatException e) {
+                a = approach0;
+            }
+            t.putDouble("Approach", dev.radarfcs.core.Docking.cleanApproach(a));
             PacketDistributor.sendToServer(new DockingPayloads.Save(pos, t));
             onClose();
         }).bounds(left + W / 2 - 104, top + H - 26, 100, 20).build());
@@ -94,11 +109,12 @@ public final class DockingControllerScreen extends Screen {
         super.render(g, mouseX, mouseY, partialTick);
         g.drawString(font, title, left + 8, top + 8, 0xFFD27F, false);
         g.drawString(font, Component.translatable("radar_fcs.docking.number"), left + 8, top + 52, 0xC0C0C0, false);
+        g.drawString(font, Component.translatable("radar_fcs.docking.approach"), left + 8, top + 72, 0xC0C0C0, false);
         g.drawString(font, linked > 0 ? Component.translatable("radar_fcs.docking.connector_linked", linked)
                         : Component.translatable("radar_fcs.docking.connector_none"),
-                left + 8, top + 72, linked > 0 ? 0x7FE07F : 0xE07F7F, false);
-        g.drawString(font, Component.translatable(status.key()), left + 8, top + 84, 0xA0A8B0, false);
-        g.drawWordWrap(font, Component.translatable(role.key() + ".hint"), left + 8, top + 100, W - 16, 0x8A9098);
+                left + 8, top + 92, linked > 0 ? 0x7FE07F : 0xE07F7F, false);
+        g.drawString(font, Component.translatable(status.key()), left + 8, top + 104, 0xA0A8B0, false);
+        g.drawWordWrap(font, Component.translatable(role.key() + ".hint"), left + 8, top + 120, W - 16, 0x8A9098);
     }
 
     @Override

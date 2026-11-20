@@ -70,6 +70,12 @@ public final class Docking {
     public static final double TILT_MISMATCH_DEG = 20;
     /** Конец штекера в этих блоках от конца порта - выдвигать порты. */
     public static final double EXTEND_DIST = APPROACH_DIST + 2;
+    /** Дистанция обхода (настройка стыковочного контроллера), бл. */
+    public static final double APPROACH_MIN = 3, APPROACH_MAX = 64;
+
+    public static double cleanApproach(double v) {
+        return Double.isFinite(v) ? Autopilot.clamp(v, APPROACH_MIN, APPROACH_MAX) : APPROACH_DIST;
+    }
 
     private Docking() {}
 
@@ -80,14 +86,23 @@ public final class Docking {
      * Порт стыковки: середина концов его портов (мир), направление «наружу» (единичное), скорость (бл/с; у порта на
      * земле - ноль) и концы всех его портов (мир; один порт - только tip).
      */
-    public record Port(Vec tip, Vec facing, Vec vel, List<Vec> tips) {
+    public record Port(Vec tip, Vec facing, Vec vel, List<Vec> tips, double clearance) {
         public Port(Vec tip, Vec facing, Vec vel) {
-            this(tip, facing, vel, List.of(tip));
+            this(tip, facing, vel, List.of(tip), APPROACH_DIST);
         }
 
-        /** Точка подхода. */
+        public Port(Vec tip, Vec facing, Vec vel, List<Vec> tips) {
+            this(tip, facing, vel, tips, APPROACH_DIST);
+        }
+
+        /** Тот же порт с другой дистанцией обхода. */
+        public Port withClearance(double d) {
+            return new Port(tip, facing, vel, tips, cleanApproach(d));
+        }
+
+        /** Точка подхода: на дистанции обхода перед портом, на его оси. */
         public Vec approach() {
-            return tip.addScaled(facing, APPROACH_DIST);
+            return tip.addScaled(facing, clearance);
         }
 
         /** Цель ближнего подхода. */
@@ -158,20 +173,51 @@ public final class Docking {
             phase = Phase.TRANSIT;                                          // унесло далеко - снова перелёт
         }
         Vec v;
+        // обход: сзади или сбоку от порта ближе дистанции обхода к точке подхода не лететь напрямую - сначала в
+        // точку сбоку-спереди на дистанции обхода; ближе дистанции обхода к порту (кроме ближнего подхода) - отталкивание
+        Vec goal = phase == Phase.TRANSIT ? new Vec(a.x(), Math.max(cruiseY, a.y()), a.z()) : a;
+        Vec around = detour(plugTip, port);
+        if (around != null && phase != Phase.FINAL) goal = around;
         switch (phase) {
-            case TRANSIT -> {
-                Vec goal = new Vec(a.x(), Math.max(cruiseY, a.y()), a.z());
-                v = toward(plugTip, goal, maxSpeed);
-            }
+            case TRANSIT -> v = toward(plugTip, goal, maxSpeed);
             case FINAL -> {
                 Vec latV = rel.sub(fp.scale(axial)).scale(-Autopilot.POS_GAIN * 2);
                 if (latV.length() > 2) latV = latV.scale(2 / latV.length());
                 double in = Autopilot.clamp(Autopilot.POS_GAIN * axial, -FINAL_SPEED, Math.min(FINAL_SPEED, maxSpeed));
                 v = latV.add(fp.scale(-in));
             }
-            default -> v = toward(plugTip, a, maxSpeed);
+            default -> v = toward(plugTip, goal, maxSpeed);
         }
+        if (phase != Phase.FINAL) v = v.add(keepOut(plugTip, port, maxSpeed));
         return new Command(v.add(port.vel()), rates, phase, err, dist, compatible, lay.error(), lay.ok());
+    }
+
+    /**
+     * Точка обхода или null (путь к точке подхода свободен): корабль сзади или сбоку от порта (вдоль оси - меньше
+     * 0.7 дистанции обхода). Сзади - сначала вбок, в плоскость порта на 1.3 дистанции от оси; сбоку - вперёд, на
+     * дистанцию обхода перед портом, оставаясь в стороне; дальше - по прямой к точке подхода.
+     */
+    static Vec detour(Vec plugTip, Port port) {
+        Vec fp = port.facing().normalize();
+        double d = port.clearance();
+        Vec r = plugTip.sub(port.tip());
+        double ax = r.dot(fp);
+        if (ax >= d * 0.7) return null;
+        Vec perp = r.sub(fp.scale(ax));
+        if (perp.length() < 1e-3) {
+            // ровно за портом - обходить сверху (или вбок, если порт вертикальный)
+            Vec side = Vec.UP.sub(fp.scale(Vec.UP.dot(fp)));
+            perp = side.length() > 0.1 ? side : new Vec(1, 0, 0).sub(fp.scale(fp.x()));
+        }
+        return port.tip().addScaled(perp.normalize(), d * 1.3).addScaled(fp, ax < d * 0.2 ? Math.max(ax, 0) + d * 0.25 : d);
+    }
+
+    /** Отталкивание от порта, если ближе дистанции обхода (до ближнего подхода). */
+    static Vec keepOut(Vec plugTip, Port port, double maxSpeed) {
+        Vec r = plugTip.sub(port.tip());
+        double l = r.length(), d = port.clearance();
+        if (l >= d * 0.9 || l < 1e-6) return Vec.ZERO;
+        return r.scale(Math.min(maxSpeed, Autopilot.POS_GAIN * 2 * (d * 0.9 - l)) / l);
     }
 
     public static Vec centroid(List<Vec> pts) {

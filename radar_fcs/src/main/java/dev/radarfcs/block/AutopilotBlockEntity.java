@@ -382,7 +382,7 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         orbitRadius = Autopilot.cleanRadius(t.contains("OrbitRadius") ? t.getDouble("OrbitRadius") : Double.NaN);
         orbitHeight = Autopilot.cleanHeight(t.contains("OrbitHeight") ? t.getDouble("OrbitHeight") : 24);
         orbitClockwise = t.getBoolean("OrbitCW");
-        orbitCode = dev.radarfcs.dock.BeaconRegistry.clean(t.getString("OrbitCode"));
+        orbitCode = OrbitBeaconBlockEntity.cleanCode(t.getString("OrbitCode"));
     }
 
     public static <E extends Enum<E>> E enumOr(Class<E> c, String name, E fallback) {

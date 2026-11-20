@@ -709,6 +709,7 @@ public class SolverTest {
         Docking.Phase ph = Docking.Phase.TRANSIT;
         Docking.Command c = null;
         double cruise = Double.NaN;
+        minClear = Double.POSITIVE_INFINITY;
         for (int i = 0; i < seconds * 20; i++) {
             List<Vec> tips = tips(ship, f, u, plugOffs);
             Vec r = f.cross(u).normalize();
@@ -716,6 +717,7 @@ public class SolverTest {
             if (Double.isNaN(cruise)) cruise = Docking.centroid(tips).y();
             c = Docking.steer(ph, port, tips, pd, u, 15, cruise, mayEnter);
             ph = c.phase();
+            if (ph != Docking.Phase.FINAL) minClear = Math.min(minClear, Docking.centroid(tips).distance(port.tip()));
             Vec wc = new Vec(Autopilot.clamp(c.rates().x(), -0.4, 0.4), Autopilot.clamp(c.rates().y(), -0.4, 0.4),
                     Autopilot.clamp(c.rates().z(), -0.4, 0.4));
             w = w.add(wc.sub(w).scale(dt / 0.2));
@@ -752,7 +754,7 @@ public class SolverTest {
         return out;
     }
 
-    static double lastWorst;
+    static double lastWorst, minClear;
 
     /** Порт из нескольких портов: середина, направление, концы = середина + смещения. */
     static Docking.Port multiPort(Vec center, Vec facing, Vec... offs) {
@@ -791,6 +793,15 @@ public class SolverTest {
         Docking.Command cw = dockFlight("two wall ports, stacked", new Vec(-60, 95, 50), new Vec(0, 0, -1), Vec.UP,
                 List.of(new Vec(0, 2, 3), new Vec(0, -2, 3)), new Vec(0, 0, 1), wall2, true, 90);
         ok &= cw.phase() == Docking.Phase.FINAL && lastWorst < 0.3 && cw.layoutOk();
+        // корабль за стеной порта (порт смотрит на восток, корабль с запада на той же высоте): облетает, не подходя
+        // ближе дистанции обхода, пока не выйдет на ось
+        for (double clear : new double[]{8, 16}) {
+            Docking.Port wallPort = new Docking.Port(new Vec(0.5, 64.5, 0.5), new Vec(1, 0, 0), Vec.ZERO).withClearance(clear);
+            Docking.Command cb = dockFlight("behind the wall, clearance " + (int) clear, new Vec(-25, 64, 3), new Vec(0, 0, -1), Vec.UP,
+                    List.of(new Vec(0, 0, 3)), new Vec(0, 0, 1), wallPort, true, 120);
+            System.out.printf(Locale.ROOT, "    min distance before final approach %.1f (clearance %.0f)%n", minClear, clear);
+            ok &= cb.phase() == Docking.Phase.FINAL && lastWorst < 0.3 && minClear >= clear * 0.85;
+        }
         // расстановки разные (6 бл у корабля, 8 у порта) - предупреждение
         Docking.Port pad8 = multiPort(new Vec(60.5, 64.5, 60.5), Vec.UP, new Vec(-4, 0, 0), new Vec(4, 0, 0));
         Docking.Command cx = dockFlight("layout mismatch", new Vec(40, 95, 40), new Vec(0, 0, -1), Vec.UP,

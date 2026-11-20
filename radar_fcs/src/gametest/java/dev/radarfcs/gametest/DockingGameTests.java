@@ -470,7 +470,7 @@ public class DockingGameTests {
                     FcsMod.LOG.info("[radar_fcs test] docking: orbit beacon - {} {}", b.state(), c);
                     if (b.state() != AutopilotBlockEntity.State.IDLE_ORBIT) h.fail("expected IDLE_ORBIT around the beacon, got " + b.state());
                     if (!(vx < 0)) h.fail("expected toward the beacon (-X): " + c);
-                    // маяк с кодом ALPHA к востоку, не в сети моста; мост с кодом ALPHA - к нему
+                    // маяк с кодом ALPHA к востоку, пока не в сети моста; мост с кодом alpha
                     h.setBlock(new BlockPos(40, 2, 31), DockingBlocks.BEACON.get().defaultBlockState());
                     FcsGameTests.CREATED.add(h.absolutePos(new BlockPos(40, 2, 31)));
                     if (level.getBlockEntity(h.absolutePos(new BlockPos(40, 2, 31))) instanceof dev.radarfcs.block.OrbitBeaconBlockEntity ob) {
@@ -481,16 +481,23 @@ public class DockingGameTests {
                     phase.set(5);
                     since.set(t);
                 }
-                case 5 -> {                                                 // по коду (без учёта регистра) - к восточному
+                case 5 -> {                                                 // маяк с кодом не в сети - не берётся, висит
+                    if (t - since.get() < 12) return;
+                    if (b.state() != AutopilotBlockEntity.State.IDLE_NO_BEACON) h.fail("beacon outside the network used, got " + b.state());
+                    FcsGameTests.placeLink(h, new BlockPos(40, 2, 31), Direction.UP, net);
+                    phase.set(6);
+                    since.set(t);
+                }
+                case 6 -> {                                                 // в сети - по коду (без учёта регистра), к восточному
                     if (t - since.get() < 30) return;
                     FcsMod.LOG.info("[radar_fcs test] docking: orbit beacon by code - {} {}", b.state(), c);
                     if (b.state() != AutopilotBlockEntity.State.IDLE_ORBIT) h.fail("expected IDLE_ORBIT around the coded beacon, got " + b.state());
                     if (!(vx > 0)) h.fail("expected toward the coded beacon (+X): " + c);
                     b.orbitCode = "BRAVO";
-                    phase.set(6);
+                    phase.set(7);
                     since.set(t);
                 }
-                case 6 -> {                                                 // кода нет ни у одного маяка - висит
+                case 7 -> {                                                 // кода нет ни у одного маяка сети - висит
                     if (t - since.get() < 12) return;
                     if (b.state() != AutopilotBlockEntity.State.IDLE_NO_BEACON) h.fail("expected IDLE_NO_BEACON for an unknown code, got " + b.state());
                     h.succeed();
@@ -603,6 +610,9 @@ public class DockingGameTests {
         plugBe.toggleConnector(h.absolutePos(new BlockPos(12, 3, 31)));
         SableTestSupport.staticSub(h, new BlockPos(10, 3, 30), new BlockPos(12, 7, 32));
         DockingControllerBlockEntity station = dock(h, new BlockPos(41, 1, 21), Docking.Role.PORT, 4, new BlockPos(40, 1, 20), Direction.UP, net);
+        CompoundTag st = station.writeSettings();
+        st.putDouble("Approach", 20);
+        station.applySettings(st);
         h.setBlock(new BlockPos(40, 1, 22), connector(Direction.UP));
         station.toggleConnector(h.absolutePos(new BlockPos(40, 1, 22)));
         AtomicInteger since = new AtomicInteger();
@@ -630,6 +640,7 @@ public class DockingGameTests {
             if (!(Math.abs(wy) > 0.1)) h.fail("expected a yaw command to match the port layout: " + c);
             DockingRegistry.PortInfo pi = DockingRegistry.get(level, station.getBlockPos());
             if (pi == null || pi.count() != 2) h.fail("station port not registered with 2 connectors: " + pi);
+            if (pi != null && Math.abs(pi.clearance() - 20) > 1e-9) h.fail("station clearance not 20: " + pi.clearance());
             h.succeed();
         });
     }

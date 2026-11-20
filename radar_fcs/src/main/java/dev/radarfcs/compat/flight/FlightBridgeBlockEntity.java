@@ -306,16 +306,11 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
         Vec center = null, centerVel = Vec.ZERO;
         if (idle == Autopilot.Idle.ORBIT_POINT) {
             center = new Vec(orbitX, orbitY, orbitZ);
-        } else if (idle == Autopilot.Idle.ORBIT_BEACON && !orbitCode.isEmpty()) {
-            // маяк по коду - в любом месте измерения (ближайший с этим кодом)
-            dev.radarfcs.dock.BeaconRegistry.Beacon b = dev.radarfcs.dock.BeaconRegistry.find(level, orbitCode, ship);
-            if (b != null) {
-                center = b.center();
-                centerVel = b.vel();
-            }
         } else if (idle == Autopilot.Idle.ORBIT_BEACON) {
+            // маяк своей радарной сети: с кодом моста (без учёта регистра), без кода - первый
             for (BlockPos b : beacons) {
-                if (!level.isLoaded(b) || !(level.getBlockEntity(b) instanceof OrbitBeaconBlockEntity)) continue;
+                if (!level.isLoaded(b) || !(level.getBlockEntity(b) instanceof OrbitBeaconBlockEntity ob)) continue;
+                if (!orbitCode.isEmpty() && !orbitCode.equalsIgnoreCase(ob.code())) continue;
                 Vec3 local = Vec3.atCenterOf(b);
                 Vec3 w = SableCompat.toWorld(level, local);
                 Vec3 v = SableCompat.pointVelocity(level, SableCompat.containing(level, b), local).scale(20);
@@ -431,7 +426,9 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             dockTarget = target;
             dockPhase = Docking.Phase.TRANSIT;
         }
-        Docking.Command c = Docking.steer(dockPhase, ch.port().port(), tips, new Vec(wd.x, wd.y, wd.z), new Vec(wu.x, wu.y, wu.z),
+        // дистанция обхода - большая из настроек порта и штекера
+        Docking.Port port = ch.port().port().withClearance(Math.max(ch.port().clearance(), plug.approach));
+        Docking.Command c = Docking.steer(dockPhase, port, tips, new Vec(wd.x, wd.y, wd.z), new Vec(wu.x, wu.y, wu.z),
                 maxSpeed, cruiseY, ch.free());
         dockPhase = c.phase();
         boolean extend = c.phase() == Docking.Phase.FINAL;

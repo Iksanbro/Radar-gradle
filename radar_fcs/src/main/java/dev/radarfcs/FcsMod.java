@@ -68,7 +68,6 @@ public final class FcsMod {
             dev.radarfcs.dock.DockingRegistry.clear();
             dev.radarfcs.compat.DockingPorts.clear();
             dev.radarfcs.dock.DockHold.clear();
-            dev.radarfcs.dock.BeaconRegistry.clear();
         });
         NeoForge.EVENT_BUS.addListener(dev.radarfcs.compat.DockingPorts::onLevelTick);
         NeoForge.EVENT_BUS.addListener(dev.radarfcs.compat.DockingPorts::onLevelTickEnd);
@@ -79,6 +78,8 @@ public final class FcsMod {
             if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
                 NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.client.event.ClientTickEvent.Post.class,
                         dev.radarfcs.compat.flight.DockingToolClient::onTick);
+                NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.client.event.RenderLevelStageEvent.class,
+                        dev.radarfcs.compat.flight.DockingToolClient::onRender);
             }
         }
     }

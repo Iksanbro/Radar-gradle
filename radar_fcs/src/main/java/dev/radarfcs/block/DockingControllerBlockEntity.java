@@ -51,6 +51,8 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
 
     public Docking.Role role = Docking.Role.PORT;
     public int number = 1;
+    /** Дистанция обхода, бл: точка выхода на прямую перед портом; ближе корабль не подходит, пока не выйдет на ось. */
+    public double approach = Docking.APPROACH_DIST;
     /** Порты Simulated - смещения от контроллера. */
     private final List<BlockPos> connectorOffsets = new ArrayList<>();
     public static final int MAX_CONNECTORS = 8;
@@ -251,7 +253,7 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         }
         Vec3 v = SableCompat.pointVelocity(level, ship, tip).scale(20);
         return new DockingRegistry.PortInfo(worldPosition, number, networks, new Vec(w.x, w.y, w.z), new Vec(f.x, f.y, f.z).normalize(),
-                new Vec(v.x, v.y, v.z), ship == null ? null : ship.getUniqueId(), locked(), true, List.copyOf(wt));
+                new Vec(v.x, v.y, v.z), ship == null ? null : ship.getUniqueId(), locked(), true, List.copyOf(wt), approach);
     }
 
     @Override
@@ -279,6 +281,7 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         CompoundTag t = new CompoundTag();
         t.putString("Role", role.name());
         t.putInt("Number", number);
+        t.putDouble("Approach", approach);
         return t;
     }
 
@@ -289,6 +292,7 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
             role = Docking.Role.PORT;
         }
         number = cleanNumber(t.getInt("Number"));
+        approach = Docking.cleanApproach(t.contains("Approach") ? t.getDouble("Approach") : Double.NaN);
     }
 
     public static int cleanNumber(int n) {
@@ -378,6 +382,8 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         tooltip.add(Component.literal("    ").append(Component.translatable("block.radar_fcs.docking_controller")).withStyle(ChatFormatting.GOLD));
         tooltip.add(Component.literal("    ").append(Component.translatable(role.key())).append(" ")
                 .append(Component.translatable("radar_fcs.docking.number_short", number)).withStyle(ChatFormatting.AQUA));
+        tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.docking.approach_short",
+                AutopilotBlockEntity.fmt(approach))).withStyle(ChatFormatting.GRAY));
         tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.docking.connectors", connectorOffsets.size()))
                 .withStyle(ChatFormatting.GRAY));
         ChatFormatting c = switch (status) {
