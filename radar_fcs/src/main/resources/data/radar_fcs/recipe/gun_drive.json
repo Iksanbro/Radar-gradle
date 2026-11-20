@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "pattern": [
+    " E ",
+    "CGC",
+    " M "
+  ],
+  "key": {
+    "E": {"item": "create:electron_tube"},
+    "C": {"item": "create:brass_casing"},
+    "G": {"item": "create:gearshift"},
+    "M": {"item": "create:precision_mechanism"}
+  },
+  "result": {"id": "radar_fcs:gun_drive", "count": 1}
+}

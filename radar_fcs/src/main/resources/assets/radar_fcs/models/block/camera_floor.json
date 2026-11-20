@@ -1,0 +1,87 @@
+{
+ "parent": "minecraft:block/block",
+ "textures": {
+  "white": "radar_fcs:block/camera_white",
+  "bracket": "radar_fcs:block/camera_bracket",
+  "pan_side": "radar_fcs:block/camera_pan_side",
+  "pan_top": "radar_fcs:block/camera_pan_top",
+  "ball": "radar_fcs:block/camera_ball",
+  "face": "radar_fcs:block/camera_face",
+  "particle": "radar_fcs:block/camera_white"
+ },
+ "elements": [
+  {
+   "from": [
+    4,
+    0,
+    4
+   ],
+   "to": [
+    12,
+    1,
+    12
+   ],
+   "faces": {
+    "north": {
+     "texture": "#white"
+    },
+    "south": {
+     "texture": "#white"
+    },
+    "east": {
+     "texture": "#white"
+    },
+    "west": {
+     "texture": "#white"
+    },
+    "up": {
+     "texture": "#bracket",
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ]
+    },
+    "down": {
+     "texture": "#bracket",
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ]
+    }
+   }
+  },
+  {
+   "from": [
+    6.5,
+    1,
+    6.5
+   ],
+   "to": [
+    9.5,
+    3,
+    9.5
+   ],
+   "faces": {
+    "north": {
+     "texture": "#white"
+    },
+    "south": {
+     "texture": "#white"
+    },
+    "east": {
+     "texture": "#white"
+    },
+    "west": {
+     "texture": "#white"
+    },
+    "up": {
+     "texture": "#white"
+    }
+   }
+  }
+ ]
+}

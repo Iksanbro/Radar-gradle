@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "pattern": [
+    " G ",
+    "SOS",
+    " T "
+  ],
+  "key": {
+    "G": {"item": "minecraft:glass_pane"},
+    "S": {"item": "create:iron_sheet"},
+    "O": {"item": "minecraft:observer"},
+    "T": {"item": "create:electron_tube"}
+  },
+  "result": {"id": "radar_fcs:camera", "count": 1}
+}

@@ -1,0 +1,34 @@
+{
+  "variants": {
+    "engaged=false,facing=north": {
+      "model": "radar_fcs:block/fire_control_computer"
+    },
+    "engaged=false,facing=east": {
+      "model": "radar_fcs:block/fire_control_computer",
+      "y": 90
+    },
+    "engaged=false,facing=south": {
+      "model": "radar_fcs:block/fire_control_computer",
+      "y": 180
+    },
+    "engaged=false,facing=west": {
+      "model": "radar_fcs:block/fire_control_computer",
+      "y": 270
+    },
+    "engaged=true,facing=north": {
+      "model": "radar_fcs:block/fire_control_computer_engaged"
+    },
+    "engaged=true,facing=east": {
+      "model": "radar_fcs:block/fire_control_computer_engaged",
+      "y": 90
+    },
+    "engaged=true,facing=south": {
+      "model": "radar_fcs:block/fire_control_computer_engaged",
+      "y": 180
+    },
+    "engaged=true,facing=west": {
+      "model": "radar_fcs:block/fire_control_computer_engaged",
+      "y": 270
+    }
+  }
+}

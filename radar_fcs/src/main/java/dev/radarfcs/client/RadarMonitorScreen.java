@@ -1,0 +1,738 @@
+package dev.radarfcs.client;
+
+import dev.radarfcs.block.MonitorIcons;
+import dev.radarfcs.block.RadarMonitorBlockEntity;
+import dev.radarfcs.block.RadarMonitorBlockEntity.Blip;
+import dev.radarfcs.block.RadarMonitorBlockEntity.Mark;
+import dev.radarfcs.block.RadarMonitorBlockEntity.Show;
+import dev.radarfcs.core.TargetCategory;
+import dev.radarfcs.core.Track;
+import dev.radarfcs.net.MonitorCommandPayload;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.network.PacketDistributor;
+import org.jetbrains.annotations.Nullable;
+
+/**
+ * Окно радарного монитора (Shift+ПКМ). Вкладки: «Экран» - развёртка как на мониторе (наведение курсора - сведения
+ * о цели, клик по отметке - назначить или снять цель), «Цели» - список, «Вид» - фильтры показа, значки по типам
+ * (форма, цвет, размер), подписи имён с транспондеров (всегда / при наведении), масштаб.
+ */
+public final class RadarMonitorScreen extends Screen {
+    private enum Tab { SCOPE, LIST, PINS, VIEW }
+
+    /** Строк меток на вкладке «Метки». */
+    private static final int PIN_ROWS = 9, PIN_ROW = 18;
+
+    private static final int W = 420, H = 272, ROW = 12, R = 92, MAP = 2 * R;
+    private static final int LIST_TOP = 42, LIST_ROWS = (H - LIST_TOP - 34) / ROW;
+
+    private final BlockPos pos;
+    private Tab tab = Tab.SCOPE;
+    private int left, top, scroll;
+    private String state = "";
+    @Nullable private Blip hovered;
+    @Nullable private Mark hoveredMark;
+    /** Метка игрока под курсором на карте окна (-1 - нет). */
+    private int hoveredPin = -1;
+    private int pinScroll;
+    /** Где подписать поле стороны карты (x, y) или null. */
+    @Nullable private int[] sideLabel;
+
+    public RadarMonitorScreen(BlockPos masterPos) {
+        super(Component.translatable("radar_fcs.monitor_gui.title"));
+        this.pos = masterPos;
+    }
+
+    @Nullable
+    private RadarMonitorBlockEntity monitor() {
+        return minecraft != null && minecraft.level != null && minecraft.level.getBlockEntity(pos) instanceof RadarMonitorBlockEntity m
+                ? m : null;
+    }
+
+    /** Состояние настроек с сервера: изменилось - виджеты перестраиваются. */
+    private static String stateOf(@Nullable RadarMonitorBlockEntity m) {
+        if (m == null) return "";
+        int[] ic = new int[MonitorIcons.COUNT];
+        for (int i = 0; i < ic.length; i++) ic[i] = m.icon(i);
+        StringBuilder pins = new StringBuilder();
+        for (RadarMonitorBlockEntity.Pin pin : m.pins()) pins.append(pin.spec()).append('|');
+        return pins + "/" + m.show() + "/" + m.mapSide() + "/" + m.labels() + "/" + Arrays.toString(ic) + "/" + m.designatedName().isEmpty();
+    }
+
+    @Override
+    protected void init() {
+        sideLabel = null;
+        left = (width - W) / 2;
+        top = (height - H) / 2;
+        RadarMonitorBlockEntity m = monitor();
+        state = stateOf(m);
+        int tw = (W - 8) / Tab.values().length;
+        for (Tab t : Tab.values()) {
+            Button b = addRenderableWidget(Button.builder(Component.translatable("radar_fcs.monitor_gui.tab." + t.name().toLowerCase(Locale.ROOT)),
+                    x -> { tab = t; rebuildWidgets(); }).bounds(left + 4 + t.ordinal() * tw, top + 4, tw - 2, 18).build());
+            b.active = t != tab;
+        }
+        if (tab == Tab.SCOPE) {
+            int x = left + 2 * R + 20, w = W - 2 * R - 28;
+            Button clear = addRenderableWidget(Button.builder(Component.translatable("radar_fcs.monitor_gui.clear"),
+                    b -> send(MonitorCommandPayload.CLEAR, 0, "")).bounds(x, top + 30, w, 18).build());
+            clear.active = m != null && !m.designatedName().isEmpty();
+            sideField(m, x, top + 52, w);
+            labelsButton(m, x, top + 74, w);
+        } else if (tab == Tab.VIEW) {
+            viewTab(m);
+        } else if (tab == Tab.PINS) {
+            pinsTab(m);
+        }
+        addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.close"), b -> onClose())
+                .bounds(left + W - 84, top + H - 24, 80, 20).build());
+    }
+
+    /** Подпись и поле стороны карты: число вводится (Enter или уход с поля), колесо мыши - шаги, Shift - через шаг. */
+    private void sideField(@Nullable RadarMonitorBlockEntity m, int x, int y, int w) {
+        Component label = Component.translatable("radar_fcs.monitor_gui.side");
+        int lw = font.width(label) + 4;
+        sideLabel = new int[]{x, y + 5};
+        SideField f = new SideField(x + lw, y, w - lw, 18, m == null ? RadarMonitorBlockEntity.DEFAULT_SIDE : m.mapSide());
+        addRenderableWidget(f);
+    }
+
+    /** Поле стороны карты, блоков. */
+    private final class SideField extends EditBox {
+        SideField(int x, int y, int w, int h, int value) {
+            super(RadarMonitorScreen.this.font, x, y, w, h, Component.translatable("radar_fcs.monitor_gui.side"));
+            setMaxLength(7);
+            setFilter(v -> v.matches("\\d{0,7}"));
+            setValue(Integer.toString(value));
+        }
+
+        private void apply() {
+            int v;
+            try {
+                v = Integer.parseInt(getValue());
+            } catch (NumberFormatException e) {
+                RadarMonitorBlockEntity m = monitor();
+                setValue(Integer.toString(m == null ? RadarMonitorBlockEntity.DEFAULT_SIDE : m.mapSide()));
+                return;
+            }
+            v = RadarMonitorBlockEntity.clampSide(v);
+            setValue(Integer.toString(v));
+            RadarMonitorBlockEntity m = monitor();
+            if (m == null || m.mapSide() != v) send(MonitorCommandPayload.SCALE, v, "");
+        }
+
+        @Override
+        public boolean keyPressed(int key, int scan, int mods) {
+            if (key == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER || key == org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER) {
+                apply();
+                return true;
+            }
+            return super.keyPressed(key, scan, mods);
+        }
+
+        @Override
+        public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+            if (!isMouseOver(mouseX, mouseY) || scrollY == 0) return false;
+            int v;
+            try {
+                v = Integer.parseInt(getValue());
+            } catch (NumberFormatException e) {
+                v = RadarMonitorBlockEntity.DEFAULT_SIDE;
+            }
+            int dir = scrollY > 0 ? 1 : -1;
+            v = RadarMonitorBlockEntity.stepSide(v, dir);
+            if (Screen.hasShiftDown()) v = RadarMonitorBlockEntity.stepSide(v, dir);
+            setValue(Integer.toString(v));
+            apply();
+            return true;
+        }
+
+        @Override
+        public void setFocused(boolean focused) {
+            if (isFocused() && !focused) apply();
+            super.setFocused(focused);
+        }
+    }
+
+    private void labelsButton(@Nullable RadarMonitorBlockEntity m, int x, int y, int w) {
+        boolean always = m != null && m.labels() == RadarMonitorBlockEntity.LABELS_ALWAYS;
+        addRenderableWidget(Button.builder(Component.translatable(always ? "radar_fcs.monitor_gui.labels_always" : "radar_fcs.monitor_gui.labels_hover"),
+                b -> send(MonitorCommandPayload.LABELS, always ? RadarMonitorBlockEntity.LABELS_HOVER : RadarMonitorBlockEntity.LABELS_ALWAYS, ""))
+                .bounds(x, y, w, 18).build());
+    }
+
+    /** Строки «Вид»: фильтр типа, значок (форма, цвет, размер); затем «свои», «неактивные», подписи, масштаб. */
+    private void viewTab(@Nullable RadarMonitorBlockEntity m) {
+        int y = top + 42;
+        for (int cat = 0; cat < MonitorIcons.COUNT; cat++) {
+            Show filter = cat < TargetCategory.values().length ? Show.values()[cat]
+                    : cat == MonitorIcons.RADAR ? Show.RADARS : cat == MonitorIcons.RADAR_ZONE ? Show.RADAR_ZONES : Show.TRANSPONDERS;
+            showButton(m, filter, left + 8, y, 140);
+            int icon = m == null ? MonitorIcons.defaults()[cat] : m.icon(cat);
+            int c = cat;
+            boolean zone = cat == MonitorIcons.RADAR_ZONE;
+            MonitorIcons.Shape sh = MonitorIcons.shape(icon);
+            int color = MonitorIcons.color(icon), size = MonitorIcons.size(icon);
+            if (zone) {
+                // зона: заливка или только контур; «размер» - яркость заливки
+                boolean filled = MonitorIcons.zoneFilled(icon);
+                addRenderableWidget(Button.builder(Component.translatable(filled ? "radar_fcs.monitor_gui.zone.filled" : "radar_fcs.monitor_gui.zone.outline"),
+                        b -> setIcon(c, MonitorIcons.pack(filled ? MonitorIcons.Shape.RING : MonitorIcons.Shape.CIRCLE, color, size)))
+                        .bounds(left + 170, y, 76, 15).build());
+            } else {
+                addRenderableWidget(Button.builder(Component.translatable("radar_fcs.monitor_gui.shape." + sh.name().toLowerCase(Locale.ROOT)),
+                        b -> setIcon(c, MonitorIcons.pack(MonitorIcons.Shape.values()[(sh.ordinal() + 1) % MonitorIcons.Shape.values().length], color, size)))
+                        .bounds(left + 170, y, 76, 15).build());
+            }
+            addRenderableWidget(Button.builder(Component.translatable("radar_fcs.monitor_gui.color." + MonitorIcons.COLOR_KEYS[color])
+                                    .withColor(color == 0 ? 0xFFFFFF : MonitorIcons.PALETTE[color] & 0xFFFFFF),
+                    b -> setIcon(c, MonitorIcons.pack(sh, (color + 1) % MonitorIcons.PALETTE.length, size)))
+                    .bounds(left + 250, y, 86, 15).build());
+            addRenderableWidget(Button.builder(Component.translatable((zone ? "radar_fcs.monitor_gui.zone.alpha." : "radar_fcs.monitor_gui.size.") + size),
+                    b -> setIcon(c, MonitorIcons.pack(sh, color, (size + 1) % MonitorIcons.SIZES.length)))
+                    .bounds(left + 340, y, 72, 15).build());
+            y += 16;
+        }
+        y += 2;
+        showButton(m, Show.FRIENDLY, left + 8, y, 140);
+        showButton(m, Show.INACTIVE, left + 152, y, 140);
+        showButton(m, Show.PINS, left + 296, y, 116);
+        y += 20;
+        labelsButton(m, left + 8, y, 200);
+        sideField(m, left + 212, y, 124);
+    }
+
+    /**
+     * Вкладка «Метки»: цвет (клик - следующий), имя, координаты X и Z (Enter или уход с поля - сохранить), удалить;
+     * «Добавить» - метка там, где стоит игрок.
+     */
+    private void pinsTab(@Nullable RadarMonitorBlockEntity m) {
+        List<RadarMonitorBlockEntity.Pin> pins = m == null ? List.of() : m.pins();
+        pinScroll = Math.max(0, Math.min(pinScroll, Math.max(0, pins.size() - PIN_ROWS)));
+        for (int row = 0; row < PIN_ROWS && pinScroll + row < pins.size(); row++) {
+            int i = pinScroll + row;
+            RadarMonitorBlockEntity.Pin pin = pins.get(i);
+            int y = top + 42 + row * PIN_ROW;
+            int col = MonitorIcons.PALETTE[pin.color()] & 0xFFFFFF;
+            CommitBox name = new CommitBox(left + 32, y, 150, 16, pin.name(), RadarMonitorBlockEntity.Pin.NAME_MAX, null);
+            CommitBox bx = new CommitBox(left + 186, y, 70, 16, Integer.toString(pin.x()), 9, "-?\\d{0,8}");
+            CommitBox bz = new CommitBox(left + 260, y, 70, 16, Integer.toString(pin.z()), 9, "-?\\d{0,8}");
+            Runnable save = () -> {
+                try {
+                    int x = Integer.parseInt(bx.getValue()), z = Integer.parseInt(bz.getValue());
+                    RadarMonitorBlockEntity.Pin np = new RadarMonitorBlockEntity.Pin(x, z,
+                            RadarMonitorBlockEntity.Pin.cleanName(name.getValue()), pin.color());
+                    if (!np.equals(pin)) send(MonitorCommandPayload.PIN_SET, i, np.spec());
+                } catch (NumberFormatException e) {
+                    bx.setValue(Integer.toString(pin.x()));
+                    bz.setValue(Integer.toString(pin.z()));
+                }
+            };
+            name.onCommit = save;
+            bx.onCommit = save;
+            bz.onCommit = save;
+            addRenderableWidget(Button.builder(Component.literal("■").withColor(col), b -> send(MonitorCommandPayload.PIN_SET, i,
+                    new RadarMonitorBlockEntity.Pin(pin.x(), pin.z(), pin.name(), pin.color() % (MonitorIcons.PALETTE.length - 1) + 1).spec()))
+                    .bounds(left + 8, y, 20, 16).build());
+            addRenderableWidget(name);
+            addRenderableWidget(bx);
+            addRenderableWidget(bz);
+            addRenderableWidget(Button.builder(Component.literal("✕").withStyle(ChatFormatting.RED), b -> send(MonitorCommandPayload.PIN_REMOVE, i, ""))
+                    .bounds(left + 334, y, 20, 16).build());
+        }
+        Button add = addRenderableWidget(Button.builder(Component.translatable("radar_fcs.monitor_gui.pin_add"), b -> {
+            if (minecraft == null || minecraft.player == null) return;
+            int n = pins.size();
+            send(MonitorCommandPayload.PIN_SET, -1, new RadarMonitorBlockEntity.Pin(minecraft.player.getBlockX(),
+                    minecraft.player.getBlockZ(), "", n % (MonitorIcons.PALETTE.length - 1) + 1).spec());
+        }).bounds(left + 8, top + 42 + PIN_ROWS * PIN_ROW + 4, 150, 18).build());
+        add.active = pins.size() < RadarMonitorBlockEntity.MAX_PINS;
+    }
+
+    /** Поле ввода, которое сохраняет значение по Enter или при уходе с поля. */
+    private final class CommitBox extends EditBox {
+        @Nullable Runnable onCommit;
+        private String committed;
+
+        CommitBox(int x, int y, int w, int h, String value, int max, @Nullable String regex) {
+            super(RadarMonitorScreen.this.font, x, y, w, h, Component.empty());
+            setMaxLength(max);
+            if (regex != null) setFilter(v -> v.matches(regex));
+            setValue(value);
+            committed = value;
+        }
+
+        private void commit() {
+            if (onCommit != null && !getValue().equals(committed)) {
+                committed = getValue();
+                onCommit.run();
+            }
+        }
+
+        @Override
+        public boolean keyPressed(int key, int scan, int mods) {
+            if (key == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER || key == org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER) {
+                commit();
+                return true;
+            }
+            return super.keyPressed(key, scan, mods);
+        }
+
+        @Override
+        public void setFocused(boolean focused) {
+            if (isFocused() && !focused) commit();
+            super.setFocused(focused);
+        }
+    }
+
+    private void showButton(@Nullable RadarMonitorBlockEntity m, Show s, int x, int y, int w) {
+        boolean on = m == null || (m.show() & s.bit) != 0;
+        addRenderableWidget(Button.builder(Component.literal(on ? "☑ " : "☐ ").append(Component.translatable(
+                                "radar_fcs.monitor_gui.show." + s.name().toLowerCase(Locale.ROOT))).withStyle(on ? ChatFormatting.WHITE : ChatFormatting.GRAY),
+                b -> {
+                    RadarMonitorBlockEntity mm = monitor();
+                    if (mm != null) send(MonitorCommandPayload.SHOW, mm.show() ^ s.bit, "");
+                }).bounds(x, y, w, 15).build());
+    }
+
+    private void setIcon(int category, int packed) {
+        send(MonitorCommandPayload.ICON, category << 16 | packed, "");
+    }
+
+    private void send(int action, int value, String id) {
+        PacketDistributor.sendToServer(new MonitorCommandPayload(pos, action, value, id));
+    }
+
+    @Override
+    public void tick() {
+        RadarMonitorBlockEntity m = monitor();
+        if (m == null) {
+            onClose();
+            return;
+        }
+        String s = stateOf(m);
+        if (!s.equals(state)) rebuildWidgets();                      // настройки пришли с сервера
+    }
+
+    // ------------------------------------------------------------------ отрисовка
+
+    @Override
+    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        super.render(g, mouseX, mouseY, partialTick);
+        RadarMonitorBlockEntity m = monitor();
+        if (m == null) return;
+        g.drawString(font, Component.translatable("radar_fcs.monitor_gui.targets", m.blips().size(), m.radarCount(),
+                m.mapSide()), left + 8, top + H - 16, 0x7FD4FF, false);
+        if (sideLabel != null) g.drawString(font, Component.translatable("radar_fcs.monitor_gui.side"), sideLabel[0], sideLabel[1], 0xC0C0C0, false);
+        switch (tab) {
+            case SCOPE -> renderScope(g, m, mouseX, mouseY);
+            case LIST -> renderList(g, m, mouseX, mouseY);
+            case VIEW -> renderView(g, m);
+            case PINS -> renderPins(g, m);
+        }
+    }
+
+    /** Карта окна: квадрат MAP x MAP, в центре - монитор, вверх - от зрителя у монитора (как на экране в мире). */
+    private MapCanvas canvas(GuiGraphics g, RadarMonitorBlockEntity m) {
+        float half = m.mapSide() / 2f;
+        int x0 = left + 8, y0 = top + 30;
+        return new MapCanvas(g.bufferSource(), MapCanvas.GUI, g.pose().last().pose(), m.facing(), x0 + R, y0 + R, R / half,
+                x0, y0, x0 + MAP, y0 + MAP, -1);
+    }
+
+    private void renderScope(GuiGraphics g, RadarMonitorBlockEntity m, int mouseX, int mouseY) {
+        MapCanvas map = canvas(g, m);
+        int cx = left + 8 + R, cy = top + 30 + R;
+        float half = m.mapSide() / 2f;
+        map.rect(map.x0, map.y0, map.x1, map.y1, 0xFF060D08);
+        if (!m.powered()) {
+            g.drawCenteredString(font, Component.translatable("radar_fcs.monitor.no_energy_short"), cx, cy - 4, 0xFF5050);
+            return;
+        }
+        RadarMonitorRenderer.drawGrid(map, half, 2f);
+        float partial = minecraft == null ? 0 : minecraft.getTimer().getGameTimeDeltaPartialTick(false);
+        RadarMonitorRenderer.drawRadars(map, m, partial, 3.5f, 1.2f);
+        g.fill(cx - 3, cy, cx + 4, cy + 1, 0xFFFFFFFF);
+        g.fill(cx, cy - 3, cx + 1, cy + 4, 0xFFFFFFFF);
+        boolean always = m.labels() == RadarMonitorBlockEntity.LABELS_ALWAYS;
+        List<LabelLayout.Label> labels = new ArrayList<>();
+        hovered = null;
+        hoveredMark = null;
+        hoveredPin = -1;
+        double best = 7;
+        if ((m.show() & Show.PINS.bit) != 0) {
+            List<RadarMonitorBlockEntity.Pin> pins = m.pins();
+            for (int i = 0; i < pins.size(); i++) {
+                RadarMonitorBlockEntity.Pin pin = pins.get(i);
+                float[] p = map.toScreen(RadarMonitorRenderer.pinDx(m, pin), RadarMonitorRenderer.pinDz(m, pin));
+                if (p == null) continue;
+                int col = MonitorIcons.PALETTE[pin.color()];
+                RadarMonitorRenderer.drawPin(map, p[0], p[1], 3.5f, col);
+                double d = Math.hypot(p[0] - mouseX, p[1] - mouseY);
+                if (d < best) {
+                    best = d;
+                    hoveredPin = i;
+                }
+                labels.add(label(pin.label(i), p[0] + 6, p[1], col, LabelLayout.RANK_ACTIVE));
+            }
+        }
+        int tIcon = m.icon(MonitorIcons.TRANSPONDER);
+        for (Mark mk : m.marks()) {
+            float[] p = map.toScreen(mk.dx(), mk.dz());
+            if (p == null) continue;
+            int col = MonitorIcons.color(tIcon) == 0 ? (mk.friendly() ? 0xFF40FF60 : 0xFFFFA020) : MonitorIcons.PALETTE[MonitorIcons.color(tIcon)];
+            icon(g, MonitorIcons.shape(tIcon), p[0], p[1], 3.5f * MonitorIcons.SIZES[MonitorIcons.size(tIcon)], col);
+            double d = Math.hypot(p[0] - mouseX, p[1] - mouseY);
+            if (d < best) {
+                best = d;
+                hoveredMark = mk;
+                hoveredPin = -1;
+            }
+            if (always && !mk.name().isEmpty()) labels.add(label(mk.name(), p[0] + 6, p[1], col, LabelLayout.RANK_MINOR));
+        }
+        for (Blip b : m.blips()) {
+            float[] p = map.toScreen(b.dx(), b.dz());
+            if (p == null) continue;
+            int ic = m.icon(b.category());
+            float sz = 3.5f * MonitorIcons.SIZES[MonitorIcons.size(ic)];
+            int col = RadarMonitorRenderer.iconColor(b, ic);
+            icon(g, MonitorIcons.shape(ic), p[0], p[1], sz, col);
+            if ((b.flags() & RadarMonitorBlockEntity.FLAG_EXCLUDED) != 0) RadarMonitorRenderer.crossOut(map, p[0], p[1], sz);
+            if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) {
+                g.renderOutline((int) (p[0] - sz - 3), (int) (p[1] - sz - 3), (int) (2 * sz + 7), (int) (2 * sz + 7), 0xFFFFFF40);
+            }
+            double d = Math.hypot(p[0] - mouseX, p[1] - mouseY);
+            if (d < best) {
+                best = d;
+                hovered = b;
+                hoveredMark = null;
+                hoveredPin = -1;
+            }
+            if (always && !b.tag().isEmpty()) {
+                boolean minor = (b.flags() & (RadarMonitorBlockEntity.FLAG_INACTIVE | RadarMonitorBlockEntity.FLAG_FRIENDLY)) != 0;
+                int rank = (b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0 ? LabelLayout.RANK_DESIGNATED
+                        : minor ? LabelLayout.RANK_MINOR : LabelLayout.RANK_ACTIVE;
+                labels.add(label(b.tag(), p[0] + sz + 3, p[1], col, rank));
+            }
+        }
+        // наведённая отметка: рамка, подпись (в режиме «при наведении») и сведения справа
+        List<Component> info = List.of();
+        if (hovered != null) {
+            float[] p = map.toScreen(hovered.dx(), hovered.dz());
+            if (p != null) g.renderOutline((int) p[0] - 6, (int) p[1] - 6, 13, 13, 0xFFFFFFFF);
+            if (!always && !hovered.tag().isEmpty() && p != null) labels.add(label(hovered.tag(), p[0] + 8, p[1], 0xFFFFFFFF, LabelLayout.RANK_HOVER));
+            info = describe(m, hovered);
+        } else if (hoveredMark != null) {
+            float[] p = map.toScreen(hoveredMark.dx(), hoveredMark.dz());
+            if (p != null) g.renderOutline((int) p[0] - 6, (int) p[1] - 6, 13, 13, 0xFFFFFFFF);
+            if (!always && !hoveredMark.name().isEmpty() && p != null) labels.add(label(hoveredMark.name(), p[0] + 8, p[1], 0xFFFFFFFF, LabelLayout.RANK_HOVER));
+            info = describeMark(m, hoveredMark);
+        } else if (hoveredPin >= 0) {
+            RadarMonitorBlockEntity.Pin pin = m.pins().get(hoveredPin);
+            float[] p = map.toScreen(RadarMonitorRenderer.pinDx(m, pin), RadarMonitorRenderer.pinDz(m, pin));
+            if (p != null) g.renderOutline((int) p[0] - 6, (int) p[1] - 6, 13, 13, 0xFFFFFFFF);
+            info = describePin(m, pin, hoveredPin);
+        } else {
+            for (Blip b : m.blips()) if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) info = describe(m, b);
+        }
+        // шкала дальности и север - у края карты
+        float sc = 0.75f;
+        String north = Component.translatable("radar_fcs.monitor.north").getString();
+        float[] nd = map.north();
+        float nw = font.width(north) * sc, nh = font.lineHeight * sc;
+        float nx = nd[0] > 0 ? map.x1 - 3 - nw : nd[0] < 0 ? map.x0 + 3 : cx - nw / 2;
+        float ny = nd[1] > 0 ? map.y1 - 3 - nh : nd[1] < 0 ? map.y0 + 3 : cy - nh / 2;
+        // шкала дальности на обеих осях (вправо и вверх - плюс, влево и вниз - минус), не налезает на север
+        List<float[]> blocked = new ArrayList<>();
+        blocked.add(new float[]{nx - 1, ny - 1, nx + nw + 1, ny + nh});
+        for (RadarMonitorRenderer.ScaleLabel sl : RadarMonitorRenderer.scale(map, half, 1.2f, txt -> font.width(txt) * sc, nh, 4, 1,
+                blocked)) {
+            smallText(g, sl.text(), sl.x() - sl.w() / 2, sl.y() - nh / 2, sc, 0xFF5FC878, 0xA0000000);
+        }
+        smallText(g, north, nx, ny, sc, 0xFF70FF90, 0xC0000000);
+        // подписи - поверх всех значков и без наложения
+        for (LabelLayout.Placed pl : LabelLayout.place(labels)) drawLabel(g, pl);
+        int x = left + 2 * R + 20, y = top + 100, w = W - 2 * R - 28;
+        if (info.isEmpty()) {
+            g.drawWordWrap(font, Component.translatable("radar_fcs.monitor_gui.scope_hint").withStyle(ChatFormatting.GRAY), x, y, w, 0xA0A0A0);
+        }
+        for (Component c : info) {
+            for (FormattedCharSequence part : font.split(c, w)) {
+                g.drawString(font, part, x, y, 0xFFFFFF, false);
+                y += 10;
+            }
+        }
+    }
+
+    /** Мелкая строка с подложкой: (x, y) - левый верхний угол. */
+    private void smallText(GuiGraphics g, String txt, float x, float y, float sc, int color, int bg) {
+        g.pose().pushPose();
+        g.pose().translate(x, y, 0);
+        g.pose().scale(sc, sc, 1f);
+        g.fill(-1, -1, font.width(txt) + 1, font.lineHeight, bg);
+        g.drawString(font, txt, 0, 0, color, false);
+        g.pose().popPose();
+    }
+
+    /** Значок фигуры shape с центром (x, y) и полуразмером size пикселей (y фигуры - вверх). */
+    private void icon(GuiGraphics g, MonitorIcons.Shape shape, float x, float y, float size, int color) {
+        int rows = Math.max(2, Math.round(2 * size));
+        for (float[] sp : MonitorIcons.spans(shape, rows)) {
+            int x0 = Math.round(x + sp[2] * size), x1 = Math.round(x + sp[3] * size);
+            int y0 = Math.round(y - sp[1] * size), y1 = Math.round(y - sp[0] * size);
+            if (x1 <= x0) x1 = x0 + 1;
+            if (y1 <= y0) y1 = y0 + 1;
+            g.fill(x0, y0, x1, y1, color);
+        }
+    }
+
+    private static final float LABEL_SCALE = 0.75f;
+
+    /** Подпись у значка: x - левый край текста, y - середина строки. */
+    private LabelLayout.Label label(String text, float x, float y, int color, int rank) {
+        return new LabelLayout.Label(x - LABEL_SCALE, y, (font.width(text) + 2) * LABEL_SCALE, (font.lineHeight + 1) * LABEL_SCALE,
+                text, color, rank);
+    }
+
+    private void drawLabel(GuiGraphics g, LabelLayout.Placed pl) {
+        LabelLayout.Label lb = pl.label();
+        g.pose().pushPose();
+        g.pose().translate(lb.x() + LABEL_SCALE, pl.y() - lb.h() / 2 + LABEL_SCALE, 0);
+        g.pose().scale(LABEL_SCALE, LABEL_SCALE, 1f);
+        g.fill(-1, -1, font.width(lb.text()) + 1, font.lineHeight, 0xA0000000);
+        g.drawString(font, lb.text(), 0, 0, lb.color(), false);
+        g.pose().popPose();
+    }
+
+    private void renderList(GuiGraphics g, RadarMonitorBlockEntity m, int mouseX, int mouseY) {
+        List<Blip> blips = m.blips();
+        int lx = left + 8, ly = top + LIST_TOP, lw = W - 16;
+        g.fill(lx, ly, lx + lw, ly + LIST_ROWS * ROW, 0x80000000);
+        scroll = Math.max(0, Math.min(scroll, Math.max(0, blips.size() - LIST_ROWS)));
+        Blip over = null;
+        for (int i = 0; i < LIST_ROWS && scroll + i < blips.size(); i++) {
+            Blip b = blips.get(scroll + i);
+            int y = ly + i * ROW;
+            boolean on = mouseX >= lx && mouseX < lx + lw && mouseY >= y && mouseY < y + ROW;
+            if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) g.fill(lx, y, lx + lw, y + ROW, 0x60FFFF40);
+            else if (on) g.fill(lx, y, lx + lw, y + ROW, 0x40FFFFFF);
+            if (on) over = b;
+            int ic = m.icon(b.category());
+            icon(g, MonitorIcons.shape(ic), lx + 6, y + 6, 3.5f, RadarMonitorRenderer.iconColor(b, ic));
+            boolean excl = (b.flags() & RadarMonitorBlockEntity.FLAG_EXCLUDED) != 0;
+            g.drawString(font, font.plainSubstrByWidth(b.name(), 150), lx + 14, y + 2, excl ? 0x909090 : 0xFFFFFF, false);
+            if (excl) g.fill(lx + 14, y + 6, lx + 14 + Math.min(150, font.width(b.name())), y + 7, 0xFFFF5A5A);
+            Track.Kind[] kinds = Track.Kind.values();
+            String kind = b.kind() >= 0 && b.kind() < kinds.length ? kinds[b.kind()].name().toLowerCase(Locale.ROOT) : "external";
+            g.drawString(font, Component.translatable("radar_fcs.monitor_gui.kind." + kind), lx + 170, y + 2, 0xA0A0A0, false);
+            String dist = Component.translatable("radar_fcs.monitor_gui.dist", String.format(Locale.ROOT, "%.0f", Math.hypot(b.dx(), b.dz())))
+                    .getString();
+            String spd = Component.translatable("radar_fcs.monitor_gui.speed", String.format(Locale.ROOT, "%.0f", b.speed())).getString();
+            g.drawString(font, dist, lx + 300 - font.width(dist), y + 2, 0xC0C0C0, false);
+            g.drawString(font, spd, lx + lw - 4 - font.width(spd), y + 2, 0xC0C0C0, false);
+        }
+        g.drawString(font, Component.translatable("radar_fcs.monitor_gui.list_hint").withStyle(ChatFormatting.GRAY), lx, top + 30, 0xA0A0A0, false);
+        if (blips.isEmpty()) {
+            g.drawString(font, Component.translatable(m.radarCount() == 0 ? "radar_fcs.monitor_gui.no_radar" : "radar_fcs.monitor_gui.empty")
+                    .withStyle(ChatFormatting.GRAY), lx + 6, ly + 6, 0xA0A0A0, false);
+        }
+        if (over != null) {
+            int y = top + H - 46;
+            for (Component c : describe(m, over)) {
+                g.drawString(font, c, lx, y, 0xFFFFFF, false);
+                y += 10;
+            }
+        }
+    }
+
+    private void renderPins(GuiGraphics g, RadarMonitorBlockEntity m) {
+        g.drawString(font, Component.translatable("radar_fcs.monitor_gui.pin_name"), left + 32, top + 30, 0xA0A0A0, false);
+        g.drawString(font, "X", left + 186, top + 30, 0xA0A0A0, false);
+        g.drawString(font, "Z", left + 260, top + 30, 0xA0A0A0, false);
+        List<RadarMonitorBlockEntity.Pin> pins = m.pins();
+        Vec3 c = m.center();
+        for (int row = 0; row < PIN_ROWS && pinScroll + row < pins.size(); row++) {
+            RadarMonitorBlockEntity.Pin pin = pins.get(pinScroll + row);
+            String d = Component.translatable("radar_fcs.monitor_gui.dist",
+                    String.format(Locale.ROOT, "%.0f", Math.hypot(pin.x() + 0.5 - c.x, pin.z() + 0.5 - c.z))).getString();
+            g.drawString(font, font.plainSubstrByWidth(d, W - 366), left + 358, top + 46 + row * PIN_ROW, 0xC0C0C0, false);
+        }
+        if (pins.isEmpty()) g.drawString(font, Component.translatable("radar_fcs.monitor_gui.pins_empty").withStyle(ChatFormatting.GRAY),
+                left + 8, top + 46, 0xA0A0A0, false);
+        int hy = top + 42 + PIN_ROWS * PIN_ROW + 4;
+        g.drawWordWrap(font, Component.translatable("radar_fcs.monitor_gui.pins_hint").withStyle(ChatFormatting.GRAY), left + 164, hy, W - 172, 0xA0A0A0);
+    }
+
+    private void renderView(GuiGraphics g, RadarMonitorBlockEntity m) {
+        g.drawString(font, Component.translatable("radar_fcs.monitor_gui.col_type"), left + 8, top + 30, 0xA0A0A0, false);
+        g.drawString(font, Component.translatable("radar_fcs.monitor_gui.col_icon"), left + 170, top + 30, 0xA0A0A0, false);
+        g.drawString(font, Component.translatable("radar_fcs.monitor_gui.col_color"), left + 250, top + 30, 0xA0A0A0, false);
+        g.drawString(font, Component.translatable("radar_fcs.monitor_gui.col_size"), left + 340, top + 30, 0xA0A0A0, false);
+        int y = top + 42;
+        for (int cat = 0; cat < MonitorIcons.COUNT; cat++) {
+            int ic = m.icon(cat);
+            int auto = cat == MonitorIcons.TRANSPONDER ? 0xFF40FF60 : cat >= MonitorIcons.RADAR ? 0xFF60FF80 : 0xFFFFA020;
+            int col = MonitorIcons.color(ic) == 0 ? auto : MonitorIcons.PALETTE[MonitorIcons.color(ic)];
+            if (cat == MonitorIcons.RADAR_ZONE) {
+                // образец зоны: заливка с выбранной яркостью и контур
+                if (MonitorIcons.zoneFilled(ic)) g.fill(left + 151, y + 2, left + 164, y + 13, MonitorIcons.zoneAlpha(ic) << 24 | col & 0xFFFFFF);
+                g.renderOutline(left + 151, y + 2, 13, 11, RadarMonitorRenderer.mix(0xFF060D08, col, 0.6f));
+            } else {
+                icon(g, MonitorIcons.shape(ic), left + 157, y + 7, 3.5f * MonitorIcons.SIZES[MonitorIcons.size(ic)], col);
+            }
+            y += 16;
+        }
+    }
+
+    /** Две строки о цели: имя, состояние, тип; координаты, дальность, высота, скорость. */
+    static List<Component> describe(RadarMonitorBlockEntity m, Blip b) {
+        Vec3 c = m.center();
+        String state = (b.flags() & RadarMonitorBlockEntity.FLAG_EXCLUDED) != 0 ? "excluded"
+                : (b.flags() & RadarMonitorBlockEntity.FLAG_ENGAGED) != 0 ? "engaged"
+                : (b.flags() & RadarMonitorBlockEntity.FLAG_FRIENDLY) != 0 ? "friendly"
+                : (b.flags() & RadarMonitorBlockEntity.FLAG_INACTIVE) != 0 ? "inactive"
+                : (b.flags() & RadarMonitorBlockEntity.FLAG_HOSTILE) != 0 ? "hostile" : "neutral";
+        Track.Kind[] kinds = Track.Kind.values();
+        String kind = b.kind() >= 0 && b.kind() < kinds.length ? kinds[b.kind()].name().toLowerCase(Locale.ROOT) : "external";
+        Component l1 = Component.literal(b.name()).withColor(RadarMonitorRenderer.blipColor(b) & 0xFFFFFF)
+                .append(Component.literal(" - ").withStyle(ChatFormatting.GRAY))
+                .append(Component.translatable("radar_fcs.monitor_gui.state." + state).withStyle(ChatFormatting.GRAY))
+                .append(Component.literal(", ").withStyle(ChatFormatting.GRAY))
+                .append(Component.translatable("radar_fcs.monitor_gui.kind." + kind).withStyle(ChatFormatting.GRAY));
+        Component l2 = Component.translatable("radar_fcs.monitor_gui.coords",
+                String.format(Locale.ROOT, "%.0f", c.x + b.dx()), String.format(Locale.ROOT, "%.0f", c.y + b.dy()),
+                String.format(Locale.ROOT, "%.0f", c.z + b.dz()), String.format(Locale.ROOT, "%.0f", Math.hypot(b.dx(), b.dz())),
+                String.format(Locale.ROOT, "%+d", Math.round(b.dy())), String.format(Locale.ROOT, "%.1f", b.speed())).withStyle(ChatFormatting.WHITE);
+        return List.of(l1, l2);
+    }
+
+    /** Две строки о метке игрока: имя; координаты и дальность. */
+    static List<Component> describePin(RadarMonitorBlockEntity m, RadarMonitorBlockEntity.Pin pin, int index) {
+        Vec3 c = m.center();
+        Component l1 = Component.literal(pin.label(index)).withColor(MonitorIcons.PALETTE[pin.color()] & 0xFFFFFF)
+                .append(Component.literal(" - ").withStyle(ChatFormatting.GRAY))
+                .append(Component.translatable("radar_fcs.monitor_gui.pin").withStyle(ChatFormatting.GRAY));
+        Component l2 = Component.translatable("radar_fcs.monitor_gui.mark_coords", Integer.toString(pin.x()), Integer.toString(pin.z()),
+                String.format(Locale.ROOT, "%.0f", Math.hypot(pin.x() + 0.5 - c.x, pin.z() + 0.5 - c.z))).withStyle(ChatFormatting.WHITE);
+        return List.of(l1, l2);
+    }
+
+    /** Две строки о наземном транспондере: имя и свой ли; координаты и дальность. */
+    static List<Component> describeMark(RadarMonitorBlockEntity m, Mark mk) {
+        Vec3 c = m.center();
+        Component name = mk.name().isEmpty() ? Component.translatable("radar_fcs.monitor_gui.transponder")
+                : Component.literal(mk.name());
+        Component l1 = name.copy().withStyle(mk.friendly() ? ChatFormatting.GREEN : ChatFormatting.GOLD)
+                .append(Component.literal(" - ").withStyle(ChatFormatting.GRAY))
+                .append(Component.translatable(mk.friendly() ? "radar_fcs.monitor_gui.mark_friendly" : "radar_fcs.monitor_gui.mark_foreign")
+                        .withStyle(ChatFormatting.GRAY));
+        Component l2 = Component.translatable("radar_fcs.monitor_gui.mark_coords", String.format(Locale.ROOT, "%.0f", c.x + mk.dx()),
+                String.format(Locale.ROOT, "%.0f", c.z + mk.dz()), String.format(Locale.ROOT, "%.0f", Math.hypot(mk.dx(), mk.dz())))
+                .withStyle(ChatFormatting.WHITE);
+        return List.of(l1, l2);
+    }
+
+    // ------------------------------------------------------------------ ввод
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        RadarMonitorBlockEntity m = monitor();
+        if (m != null && button == 1 && tab == Tab.SCOPE && m.powered()
+                && mouseX >= left + 8 && mouseX <= left + 8 + MAP && mouseY >= top + 30 && mouseY <= top + 30 + MAP) {
+            // ПКМ по карте: по метке - убрать её, мимо - поставить метку в этой точке
+            if (hoveredPin >= 0) {
+                send(MonitorCommandPayload.PIN_REMOVE, hoveredPin, "");
+            } else if (m.pins().size() < RadarMonitorBlockEntity.MAX_PINS) {
+                Direction f = m.facing(), right = f.getCounterClockWise();
+                double k = R / (m.mapSide() / 2.0);
+                double u = (mouseX - (left + 8 + R)) / k, v = ((top + 30 + R) - mouseY) / k;
+                double wx = m.center().x + right.getStepX() * u - f.getStepX() * v;
+                double wz = m.center().z + right.getStepZ() * u - f.getStepZ() * v;
+                send(MonitorCommandPayload.PIN_SET, -1, new RadarMonitorBlockEntity.Pin((int) Math.floor(wx), (int) Math.floor(wz), "",
+                        m.pins().size() % (MonitorIcons.PALETTE.length - 1) + 1).spec());
+            }
+            playClick();
+            return true;
+        }
+        if (m != null && (button == 0 || button == 2)) {
+            Blip target = null;
+            if (tab == Tab.SCOPE && mouseX >= left + 8 && mouseX <= left + 8 + MAP && mouseY >= top + 30 && mouseY <= top + 30 + MAP) {
+                target = hovered;
+            }
+            if (tab == Tab.LIST) {
+                int lx = left + 8, ly = top + LIST_TOP;
+                if (mouseX >= lx && mouseX < lx + W - 16 && mouseY >= ly && mouseY < ly + LIST_ROWS * ROW) {
+                    int i = scroll + (int) ((mouseY - ly) / ROW);
+                    if (i < m.blips().size()) target = m.blips().get(i);
+                }
+            }
+            if (target != null && button == 2) {
+                // нажатие колеса: исключить цель из огня или вернуть
+                if ((target.flags() & RadarMonitorBlockEntity.FLAG_FRIENDLY) == 0) send(MonitorCommandPayload.EXCLUDE, 0, target.id());
+                playClick();
+                return true;
+            }
+            if (target != null) {
+                if ((target.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) send(MonitorCommandPayload.CLEAR, 0, "");
+                else if ((target.flags() & RadarMonitorBlockEntity.FLAG_FRIENDLY) == 0) send(MonitorCommandPayload.DESIGNATE, 0, target.id());
+                playClick();
+                return true;
+            }
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    private void playClick() {
+        if (minecraft != null) {
+            minecraft.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                    net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0f));
+        }
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double dx, double dy) {
+        if (tab == Tab.LIST) {
+            scroll = Math.max(0, scroll - (int) Math.signum(dy) * 3);
+            return true;
+        }
+        if (tab == Tab.PINS && mouseY >= top + 42 && mouseY < top + 42 + PIN_ROWS * PIN_ROW) {
+            int before = pinScroll;
+            pinScroll = Math.max(0, pinScroll - (int) Math.signum(dy));
+            if (pinScroll != before || dy < 0) rebuildWidgets();
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, dx, dy);
+    }
+
+    @Override
+    public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        super.renderBackground(g, mouseX, mouseY, partialTick);
+        g.fill(left, top, left + W, top + H, 0xE0101418);
+        g.renderOutline(left, top, W, H, 0xFF5A6A7A);
+        g.drawCenteredString(font, title, width / 2, top - 12, 0x7FD4FF);
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
+
+    /** Открыть вкладку по номеру (скриншоты для документации). */
+    public void showTab(int index) {
+        tab = Tab.values()[Math.floorMod(index, Tab.values().length)];
+        rebuildWidgets();
+    }
+}

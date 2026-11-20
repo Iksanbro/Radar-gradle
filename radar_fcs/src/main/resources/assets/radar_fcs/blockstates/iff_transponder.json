@@ -1,0 +1,9 @@
+{
+  "multipart": [
+    {
+      "apply": {
+        "model": "radar_fcs:block/iff_transponder"
+      }
+    }
+  ]
+}

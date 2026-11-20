@@ -1,0 +1,6 @@
+{
+  "parent": "radar_fcs:block/sight",
+  "textures": {
+    "lens": "radar_fcs:block/sight_lens_firing"
+  }
+}

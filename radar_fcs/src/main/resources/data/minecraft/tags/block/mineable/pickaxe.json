@@ -1,0 +1,22 @@
+{
+  "replace": false,
+  "values": [
+    "radar_fcs:fire_control_computer",
+    "radar_fcs:iff_transponder",
+    "radar_fcs:radar_monitor",
+    "radar_fcs:radar_link",
+    "radar_fcs:yaw_controller",
+    "radar_fcs:pitch_controller",
+    "radar_fcs:memory_block",
+    "radar_fcs:camera",
+    "radar_fcs:camera_monitor",
+    "radar_fcs:gun_rotator",
+    "radar_fcs:sight",
+    "radar_fcs:gun_link",
+    "radar_fcs:gun_drive",
+    {
+      "id": "radar_fcs:flight_bridge",
+      "required": false
+    }
+  ]
+}

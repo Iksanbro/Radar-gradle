@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "radar_fcs:block/flight_bridge"
+    },
+    "facing=east": {
+      "model": "radar_fcs:block/flight_bridge",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "radar_fcs:block/flight_bridge",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "radar_fcs:block/flight_bridge",
+      "y": 270
+    }
+  }
+}

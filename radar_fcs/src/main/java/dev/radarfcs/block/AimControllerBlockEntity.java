@@ -1,0 +1,142 @@
+package dev.radarfcs.block;
+
+import com.simibubi.create.content.kinetics.base.DirectionalKineticBlock;
+import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
+import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
+import dev.radarfcs.core.AngleLimit;
+import dev.radarfcs.core.Aim;
+import dev.radarfcs.compat.CbcMount;
+import java.util.List;
+import java.util.Locale;
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.Nullable;
+
+/**
+ * Контроллер наводки: потребитель вращения. Скорость вала задаёт, насколько быстро вычислитель может поворачивать
+ * станок по своей оси - как от валов CBC: 0.0375 град/тик на об/мин (256 об/мин = 9.6 град/тик).
+ */
+public class AimControllerBlockEntity extends KineticBlockEntity {
+    /** Пределы поворота (ползунок на боковой грани): курс - влево/вправо от стороны станка, наклон - вверх/вниз от горизонта. */
+    public AngleLimits limits;
+    /** Курс станка от его нуля (накопительно, + вправо), только у контроллера курса; NaN - ещё не считали. */
+    private double turned = Double.NaN;
+    /** Ноль, от которого считан {@link #turned} (пушку пересобрали другим концом - ноль другой, счёт заново). */
+    private double turnedZero = Double.NaN;
+
+    public AimControllerBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
+        super(type, pos, state);
+    }
+
+    @Override
+    public void addBehaviours(List<BlockEntityBehaviour> behaviours) {
+        super.addBehaviours(behaviours);
+        limits = new AngleLimits(this, this::isPitch, () -> { });
+        limits.addTo(behaviours);
+    }
+
+    /**
+     * Накопленный курс станка от его «нуля» (стороны, куда смотрит станок): rel - текущий курс минус ноль (любой,
+     * берётся ветка, ближайшая к прошлой - так видно, что станок обошёл полный круг).
+     */
+    public double trackYaw(double yaw, double zero) {
+        double rel = yaw - zero;
+        boolean fresh = Double.isNaN(turned) || Math.abs(Aim.wrap180(zero - turnedZero)) > 0.5;
+        double t = fresh ? Aim.wrap180(rel) : AngleLimit.unwrap(turned, rel);
+        if (t != turned || fresh) {
+            turned = t;
+            turnedZero = zero;
+            setChanged();
+        }
+        return t;
+    }
+
+    /** Накопленный курс от этого нуля или NaN (не считали или ноль другой). */
+    public double turned(double zero) {
+        return Double.isNaN(turned) || Math.abs(Aim.wrap180(zero - turnedZero)) > 0.5 ? Double.NaN : turned;
+    }
+
+    public boolean isPitch() {
+        return getBlockState().getBlock() instanceof AimControllerBlock b && b.isPitch();
+    }
+
+    public Direction toMount() {
+        return getBlockState().getValue(DirectionalKineticBlock.FACING);
+    }
+
+    /** Станок, к которому приставлен контроллер (с правильной стороны), или null. */
+    @Nullable
+    public CbcMount mount() {
+        if (level == null || !(getBlockState().getBlock() instanceof AimControllerBlock b) || !b.validSide(toMount())) return null;
+        BlockPos p = worldPosition.relative(toMount());
+        return level.isLoaded(p) ? CbcMount.of(level.getBlockEntity(p)) : null;
+    }
+
+    /** Наибольшая скорость поворота станка от этого контроллера, градусов/тик (0 - нет вращения или перегрузка). */
+    public double degPerTick() {
+        if (isOverStressed()) return 0;
+        return Math.abs(convertToAngular(getSpeed())) * 0.125;
+    }
+
+    /** Контроллер нужной оси у станка в mountPos (или null). */
+    @Nullable
+    public static AimControllerBlockEntity find(Level level, BlockPos mountPos, boolean pitch) {
+        for (Direction d : Direction.values()) {
+            BlockPos p = mountPos.relative(d);
+            if (!level.isLoaded(p)) continue;
+            BlockEntity be = level.getBlockEntity(p);
+            if (be instanceof AimControllerBlockEntity c && c.isPitch() == pitch && c.toMount() == d.getOpposite()
+                    && c.getBlockState().getBlock() instanceof AimControllerBlock b && b.validSide(c.toMount())) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
+        tooltip.add(Component.literal("    ").append(Component.translatable(
+                isPitch() ? "block.radar_fcs.pitch_controller" : "block.radar_fcs.yaw_controller").withStyle(ChatFormatting.GRAY)));
+        if (mount() == null) {
+            tooltip.add(Component.literal("    ").append(Component.translatable(isPitch()
+                    ? "radar_fcs.controller.no_mount_pitch" : "radar_fcs.controller.no_mount_yaw").withStyle(ChatFormatting.RED)));
+        } else if (degPerTick() <= 0) {
+            tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.controller.no_rotation")
+                    .withStyle(ChatFormatting.GOLD)));
+        } else {
+            tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.controller.rate",
+                    String.format(Locale.ROOT, "%.1f", degPerTick() * 20)).withStyle(ChatFormatting.AQUA)));
+        }
+        if (limits.limited()) tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.angle_limit.goggles",
+                limits.formatValue()).withStyle(ChatFormatting.GRAY)));
+        super.addToGoggleTooltip(tooltip, isPlayerSneaking);
+        return true;
+    }
+
+    @Override
+    protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
+        super.write(tag, registries, clientPacket);
+        if (!clientPacket && !Double.isNaN(turned)) {
+            tag.putDouble("Turned", turned);
+            tag.putDouble("TurnedZero", turnedZero);
+        }
+    }
+
+    @Override
+    protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
+        super.read(tag, registries, clientPacket);
+        if (!clientPacket) {
+            // без нуля (2.3.0 считал от стороны станка) - счёт заново
+            turned = tag.contains("Turned") && tag.contains("TurnedZero") ? tag.getDouble("Turned") : Double.NaN;
+            turnedZero = tag.contains("TurnedZero") ? tag.getDouble("TurnedZero") : Double.NaN;
+        }
+    }
+}
