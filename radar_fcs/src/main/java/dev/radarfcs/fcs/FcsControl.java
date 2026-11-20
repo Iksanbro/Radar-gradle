@@ -156,6 +156,15 @@ public final class FcsControl {
             m.status = Status.CAMERA_SELF;
             return;
         }
+        // камера смотрит на корабль, на котором стоит сама пушка: не наводиться и не стрелять по своему кораблю
+        if (manual != null && manual.hit() != null && manual.hit().ship() != null && m.ownShips.contains(manual.hit().ship())) {
+            setTrigger(m, false);
+            m.targetId = null;
+            m.targetName = null;
+            m.aimError = Double.NaN;
+            m.status = Status.BLOCKED_FRIENDLY;
+            return;
+        }
         Vec platformVel = Vec.ZERO;
         if (ship != null && FcsConfig.INHERIT_PLATFORM_VELOCITY.get()) {
             Vec3 pv = SableCompat.pointVelocity(level, ship, pivotLocal);
@@ -203,7 +212,7 @@ public final class FcsControl {
             cands = List.of(pt);
         } else {
             List<Track> pool = new ArrayList<>(active);
-            pool.removeIf(t -> fcs.isDropped(t.id) || gunDropped(fcs, m, t.id));
+            pool.removeIf(t -> fcs.isDropped(t.id) || gunDropped(fcs, m, t.id) || onOwnShip(t, m.ownShips));
             // свои цели пушки: разрешённые типы и уровни (назначенная вручную и белый список - в обход типов)
             EngageSettings ms = fcs.effectiveSettings().forMount(m.pos.asLong());
             pool.removeIf(t -> !t.id.equals(designated) && !TargetLists.matches(ms.whitelist, t)
@@ -430,7 +439,7 @@ public final class FcsControl {
             if (now - m.safetyTick >= SAFETY_CACHE_TICKS || moved || !target.id.equals(m.safetyTarget)) {
                 List<Vec> path = new ArrayList<>();
                 BallisticSolver.trajectory(sol, model, 2, path::add);
-                m.safety = FireSafety.check(level, path, sensor.all(), target, iff, platform);
+                m.safety = FireSafety.check(level, path, sensor.all(), target, iff, m.ownShips);
                 m.safetyTick = now;
                 m.safetyTarget = target.id;
                 m.safetyAim = sol.aimPoint();
@@ -475,6 +484,32 @@ public final class FcsControl {
     }
 
     /** Направление dir (мир) в пределах поворота контроллеров наводки станка (курс - от стороны станка, наклон - от горизонта). */
+    /**
+     * Цель - корабль, на котором стоит пушка (или её поворотная часть), или кто-то на нём: по своему кораблю пушка не
+     * стреляет, даже если он без транспондера (по нему могут стрелять пушки на других кораблях).
+     */
+    static boolean onOwnShip(Track t, Set<UUID> ownShips) {
+        if (ownShips.isEmpty()) return false;
+        if (t.kind == Track.Kind.SHIP) {
+            UUID id = t.handle instanceof SableCompat.Ship s ? s.id() : uuidOrNull(t.id);
+            return id != null && ownShips.contains(id);
+        }
+        if (t.handle instanceof net.minecraft.world.entity.Entity e) {
+            UUID on = SableCompat.trackingShipId(e);
+            return on != null && ownShips.contains(on);
+        }
+        return false;
+    }
+
+    @Nullable
+    private static UUID uuidOrNull(String s) {
+        try {
+            return UUID.fromString(s);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     private static boolean mountInArc(ServerLevel level, MountState m, @Nullable CbcMount d, @Nullable SubLevelAccess ship, Vec3 dir) {
         if (d == null) return true;
         AimControllerBlockEntity yc = AimControllerBlockEntity.find(level, d.pos(), false);

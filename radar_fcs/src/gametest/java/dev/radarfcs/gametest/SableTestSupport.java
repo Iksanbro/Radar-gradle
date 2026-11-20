@@ -54,8 +54,8 @@ final class SableTestSupport {
             }
         }
         BlockPos min = h.absolutePos(minRel), max = min.offset(size - 1, size - 1, size - 1);
-        ServerSubLevel sub = SubLevelAssemblyHelper.assembleBlocks(h.getLevel(), min, BlockPos.betweenClosed(min, max),
-                new BoundingBox3i(min.getX(), min.getY(), min.getZ(), max.getX(), max.getY(), max.getZ()));
+        ServerSubLevel sub = track(SubLevelAssemblyHelper.assembleBlocks(h.getLevel(), min, BlockPos.betweenClosed(min, max),
+                new BoundingBox3i(min.getX(), min.getY(), min.getZ(), max.getX(), max.getY(), max.getZ())));
         double speed = velPerTick.length();
         int leg = speed < 1e-9 ? Integer.MAX_VALUE : Math.max(1, (int) Math.round(span / speed));
         org.joml.Vector3d p0 = new org.joml.Vector3d(sub.logicalPose().position());
@@ -89,8 +89,8 @@ final class SableTestSupport {
     /** Неподвижная постройка Sable из уже поставленных блоков minRel..maxRel (держится на месте каждый тик). */
     static Object staticSub(GameTestHelper h, BlockPos minRel, BlockPos maxRel) {
         BlockPos min = h.absolutePos(minRel), max = h.absolutePos(maxRel);
-        ServerSubLevel sub = SubLevelAssemblyHelper.assembleBlocks(h.getLevel(), min, BlockPos.betweenClosed(min, max),
-                new BoundingBox3i(min.getX(), min.getY(), min.getZ(), max.getX(), max.getY(), max.getZ()));
+        ServerSubLevel sub = track(SubLevelAssemblyHelper.assembleBlocks(h.getLevel(), min, BlockPos.betweenClosed(min, max),
+                new BoundingBox3i(min.getX(), min.getY(), min.getZ(), max.getX(), max.getY(), max.getZ())));
         org.joml.Vector3d p0 = new org.joml.Vector3d(sub.logicalPose().position());
         org.joml.Quaterniond q0 = new org.joml.Quaterniond(sub.logicalPose().orientation());
         h.onEachTick(() -> {
@@ -103,6 +103,25 @@ final class SableTestSupport {
             body.addLinearAndAngularVelocity(v.negate(), w.negate());
         });
         return sub;
+    }
+
+    /** Постройки, собранные тестами: убираются между пакетами (иначе стоящие корабли - цели в соседних тестах). */
+    private static final java.util.List<ServerSubLevel> CREATED = new java.util.ArrayList<>();
+
+    private static ServerSubLevel track(ServerSubLevel sub) {
+        if (sub != null) CREATED.add(sub);
+        return sub;
+    }
+
+    /** Убрать постройки, собранные тестами. */
+    static void removeAll(net.minecraft.server.level.ServerLevel level) {
+        var container = dev.ryanhcode.sable.api.sublevel.SubLevelContainer.getContainer(level);
+        for (ServerSubLevel sub : CREATED) {
+            if (container != null && !sub.isRemoved()) {
+                container.removeSubLevel(sub, dev.ryanhcode.sable.sublevel.storage.SubLevelRemovalReason.REMOVED);
+            }
+        }
+        CREATED.clear();
     }
 
     static java.util.UUID subId(Object handle) {

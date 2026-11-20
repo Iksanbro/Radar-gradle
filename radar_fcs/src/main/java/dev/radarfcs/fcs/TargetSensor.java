@@ -446,6 +446,9 @@ public final class TargetSensor {
         Track.Kind kind = t.kind;
         String id = t.id;
         IffRule iff = ctx.iff();
+        // корабли: свой - с транспондером своего кода или тот, на котором стоит сам монитор / мост (platformShips).
+        // Вычислитель передаёт пустой набор: для его пушек корабль со своими пушками - не «свой», пушки на нём по нему
+        // не стреляют - это решает каждая пушка (MountState.ownShips)
         if (handle instanceof SableCompat.Ship ship) {
             UUID sid = ship.id();
             if (ctx.platformShips().contains(sid)) return true;

@@ -83,6 +83,8 @@ public class FcsGameTests {
     }
 
     static void cleanup(ServerLevel level) {
+        // постройки Sable прошлых тестов (корабли-цели) - убрать: стоящий корабль - цель и отвлекал бы батареи
+        if (ModList.get().isLoaded("sable")) SableTestSupport.removeAll(level);
         // принудительную загрузку не снимаем: те же чанки могут уже принадлежать площадке следующего теста
         FORCED.clear();
         // блоки мода (вычислители, радары, мониторы): иначе они работают и в соседних тестах
@@ -1347,6 +1349,62 @@ public class FcsGameTests {
             }
             if (hits.get() > 0) {
                 FcsMod.LOG.info("[radar_fcs test] ship_vs_ship: HIT");
+                h.succeed();
+            }
+        });
+    }
+
+    /**
+     * Одна сеть, один вычислитель, два корабля (без транспондеров), на каждом своя пушка. Корабль со своими пушками -
+     * не «свой» сам по себе (свой-чужой для кораблей - только транспондер): пушка корабля A попадает по кораблю B, а
+     * пушка на B никогда не берёт целью свой корабль B (и пушка на A - корабль A).
+     */
+    @GameTest(template = ARENA, batch = "ship", timeoutTicks = 800)
+    public static void gunsNeverTargetTheirOwnShip(GameTestHelper h) {
+        if (!ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        for (int x = 5; x <= 15; x++) for (int z = 27; z <= 35; z++) h.setBlock(new BlockPos(x, 2, z), Blocks.IRON_BLOCK.defaultBlockState());
+        for (int x = 35; x <= 45; x++) for (int z = 27; z <= 35; z++) h.setBlock(new BlockPos(x, 2, z), Blocks.IRON_BLOCK.defaultBlockState());
+        bigCannon(h, new BlockPos(10, 5, 32), Direction.EAST, 2, 4, true);
+        bigCannon(h, new BlockPos(40, 5, 32), Direction.WEST, 2, 4, true);
+        fcs(h, new BlockPos(6, 3, 28));                                        // обе пушки - в сети вычислителя
+        Object shipA = SableTestSupport.staticSub(h, new BlockPos(5, 2, 27), new BlockPos(15, 8, 35));
+        Object shipB = SableTestSupport.staticSub(h, new BlockPos(35, 2, 27), new BlockPos(45, 8, 35));
+        java.util.UUID idA = SableTestSupport.subId(shipA), idB = SableTestSupport.subId(shipB);
+        AtomicInteger hitsB = SableTestSupport.watchShipHits(h, shipB, "own_ship_b");
+        FireControlBlockEntity[] be = new FireControlBlockEntity[1];
+        AtomicInteger tick = new AtomicInteger();
+        h.onEachTick(() -> {
+            int t = tick.getAndIncrement();
+            ServerLevel level = h.getLevel();
+            if (be[0] == null) {
+                for (BlockPos p : allLinkedEquipment(level)) {
+                    if (level.getBlockEntity(p) instanceof FireControlBlockEntity f && idA.equals(dev.radarfcs.compat.SableCompat.containingId(level, p))) {
+                        be[0] = f;
+                    }
+                }
+                if (be[0] == null) {
+                    if (t > 100) h.fail("fire control computer not found on ship A");
+                    return;
+                }
+            }
+            StringBuilder sb = new StringBuilder();
+            for (MountState m : be[0].mountStates()) {
+                java.util.UUID on = dev.radarfcs.compat.SableCompat.containingId(level, m.pos);
+                String tid = m.targetId;
+                if (tid != null && on != null && tid.equals(on.toString())) {
+                    h.fail("gun on ship " + (on.equals(idA) ? "A" : "B") + " targets its own ship (" + m.status + ")");
+                }
+                sb.append(String.format(" [on %s %s target=%s]", on == null ? "-" : on.equals(idA) ? "A" : on.equals(idB) ? "B" : on,
+                        m.status, tid == null ? "-" : tid.equals(idA.toString()) ? "A" : tid.equals(idB.toString()) ? "B" : tid));
+            }
+            if (t % 40 == 0) FcsMod.LOG.info("[radar_fcs test] own_ship t={} mounts={}{}", t, be[0].mountStates().size(), sb);
+            if (hitsB.get() > 0 && t > 60) {
+                if (be[0].mountStates().size() < 2) h.fail("expected two guns in the network, got " + be[0].mountStates().size());
+                FcsMod.LOG.info("[radar_fcs test] own_ship: ship B hit by the gun on ship A{}", sb);
                 h.succeed();
             }
         });

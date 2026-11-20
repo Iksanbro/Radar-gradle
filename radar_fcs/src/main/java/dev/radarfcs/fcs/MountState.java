@@ -25,6 +25,11 @@ public final class MountState implements ShotObserver.Listener {
     @Nullable public GunSettings gunSettings;
     public boolean locked;
     public boolean claimed;
+    /**
+     * Корабли, на которых стоит сама пушка (и поворотные части её орудия): по ним и по тем, кто на них, эта пушка не
+     * стреляет и их корпус ей не помеха. Свой-чужой для кораблей - только по транспондеру.
+     */
+    public java.util.Set<java.util.UUID> ownShips = java.util.Set.of();
 
     // привод
     public double cmdYaw = Double.NaN, cmdPitch = Double.NaN;

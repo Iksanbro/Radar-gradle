@@ -20,7 +20,7 @@
 - `docs/dev/features.md` — все требования пользователя и история функций по версиям (≈560 строк);
 - `docs/dev/dependencies.md` — проверенные особенности API CBC, CBC-AT, Neo Warfare, Create Radars, Sable;
 - `docs/dev/test-status.md` — что покрыто игровыми тестами и какие комбинации модов проверены;
-- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test, итог — `features.md` п. 43-49).
+- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test, итог — `features.md` п. 43-50).
 
 Эти файлы и `README.md` большие: **не выводи их целиком** (`cat`), ищи нужное через `grep -n` и читай куски.
 
@@ -82,7 +82,9 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # �
 - `FcsDev.radarless` - только для игровых тестов баллистики: цели без радара (иначе - только радары CR на линках).
 - `fcs/` — логика вычислителя: `TargetSensor` (радар/свой сенсор, свой-чужой, фильтр по настройкам), `FcsControl`
   (наведение, огонь, режимы огня: выстрелы считаются по снарядам у дульного среза через `ShotObserver.count`),
-  `FireSafety` (свои на траектории, блоки), `MountState`, `MountClaims`, `Status`, `SettingsNbt`.
+  `FireSafety` (свои на траектории, блоки), `MountState`, `MountClaims`, `Status`, `SettingsNbt`. Корабли для вычислителя -
+  свой-чужой только по транспондеру; пушка не стреляет по кораблю, на котором стоит (`MountState.ownShips`,
+  `FcsControl.onOwnShip`); статичные корабли не сбрасываются (`EngageSettings.motionAllowed`).
 - `net/FcsSettingsPayload` — настройки с экрана на сервер (проверка расстояния, `sanitize`); на клиент настройки идут
   в теге обновления блока; `net/FcsCommandPayload` (собрать/разобрать), `net/MonitorCommandPayload` (назначить, снять,
   масштаб, фильтры). `client/FcsSettingsScreen` — экран (вкладки Огонь, Цели, Списки, Сброс, Выбор, Состояние),

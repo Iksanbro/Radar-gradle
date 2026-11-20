@@ -201,7 +201,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             Vec3 w = SableCompat.toWorld(level, Vec3.atCenterOf(m.pos));
             guard.add(new Vec(w.x, w.y, w.z));
         }
-        return new TargetSensor.Context(owner, ownerTeam, effectiveSettings().iffRule(), platformShips, o, guard, worldPosition,
+        // корабли для вычислителя - свой-чужой только по транспондеру (свой корабль каждой пушки - MountState.ownShips)
+        return new TargetSensor.Context(owner, ownerTeam, effectiveSettings().iffRule(), Set.of(), o, guard, worldPosition,
                 interceptAllowed());
     }
 
@@ -369,22 +370,25 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             if (m.turret != null && m.turret.main != null && m.pos.equals(m.turret.main)) m.turret.leader = m.pos;
         }
         for (MountState m : mounts.values()) if (m.turret != null && m.turret.leader == null) m.turret.leader = m.pos;
-        // корабли, на которых стоит сама батарея: их корпус - не цель и не помеха
+        // корабли, на которых стоит каждая пушка (и поворотные части её орудия): по ним эта пушка не стреляет, их
+        // корпус ей не помеха. Свой-чужой для кораблей - только транспондер: корабль с пушками этого вычислителя
+        // для других его пушек - обычная цель
         Set<UUID> ships = new HashSet<>();
         ownShip = SableCompat.containingId(level, worldPosition);
-        if (ownShip != null) ships.add(ownShip);
         for (MountState m : mounts.values()) {
+            Set<UUID> own = new HashSet<>();
             UUID s = SableCompat.containingId(level, m.pos);
-            if (s != null) ships.add(s);
+            if (s != null) own.add(s);
             if (m.turret != null) {
-                // поворотные части орудия - своя постройка: не цель и не помеха огню
                 for (BlockPos rp : m.turret.rotators) {
                     if (!level.isLoaded(rp) || !(level.getBlockEntity(rp) instanceof GunRotatorBlockEntity r)) continue;
-                    if (r.subLevel() != null) ships.add(r.subLevel());
+                    if (r.subLevel() != null) own.add(r.subLevel());
                     UUID c = SableCompat.containingId(level, rp);
-                    if (c != null) ships.add(c);
+                    if (c != null) own.add(c);
                 }
             }
+            m.ownShips = Set.copyOf(own);
+            ships.addAll(own);
         }
         platformShips = Set.copyOf(ships);
         updateCapacity(level);
