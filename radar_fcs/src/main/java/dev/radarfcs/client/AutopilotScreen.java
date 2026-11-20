@@ -24,7 +24,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * Экран моста Flight Control. Вкладка «Цель»: оси ведения цели (рыскание, крен, тангаж) и пределы крена и тангажа,
  * режим (только поворот, только дальность, дальность и высота), дальность, высота над целью и предел скорости.
  * Вкладка «Без цели»: висеть или орбита (центр - координата или маяк орбиты сети, радиус, высота над центром,
- * направление) и стыковка (когда, что делать, если порты заняты). Числа - с клавиатуры.
+ * направление, скорость, куда смотрит нос) и стыковка (когда, что делать, если порты заняты). Числа - с клавиатуры.
  */
 public final class AutopilotScreen extends Screen {
     private static final int W = 300, H = 272;
@@ -39,7 +39,8 @@ public final class AutopilotScreen extends Screen {
     private int tab;
     private int left, top;
     private EditBox distField, heightField, speedField, rollField, pitchField;
-    private EditBox xField, yField, zField, radiusField, orbitHeightField, codeField;
+    private EditBox xField, yField, zField, radiusField, orbitHeightField, codeField, orbitSpeedField;
+    private Autopilot.OrbitFacing facing;
     private Button hereButton;
     private final List<AbstractWidget> targetTab = new ArrayList<>(), idleTab = new ArrayList<>();
 
@@ -56,6 +57,7 @@ public final class AutopilotScreen extends Screen {
         dock = AutopilotBlockEntity.enumOr(Docking.Trigger.class, t.getString("Dock"), Docking.Trigger.OFF);
         busy = AutopilotBlockEntity.enumOr(Docking.Busy.class, t.getString("DockBusy"), Docking.Busy.WAIT);
         clockwise = t.getBoolean("OrbitCW");
+        facing = AutopilotBlockEntity.enumOr(Autopilot.OrbitFacing.class, t.getString("OrbitFacing"), Autopilot.OrbitFacing.ALONG);
     }
 
     private double init(String key, DoubleUnaryOperator clean, double fallback) {
@@ -128,20 +130,28 @@ public final class AutopilotScreen extends Screen {
         }).bounds(left + W - 8 - 58, top + 77, 58, 18).tooltip(Tooltip.create(Component.translatable("radar_fcs.autopilot.orbit_here.hint"))).build());
         radiusField = field(idleTab, x, top + 100, w, keep(radiusField, init("OrbitRadius", Autopilot::cleanRadius, Double.NaN)));
         orbitHeightField = field(idleTab, x, top + 120, w, keep(orbitHeightField, init("OrbitHeight", Autopilot::cleanHeight, 24)));
+        orbitSpeedField = field(idleTab, x, top + 140, w, keep(orbitSpeedField, init("OrbitSpeed", Autopilot::cleanSpeed, 10)));
         idleTab.add(addRenderableWidget(Button.builder(direction(), b -> {
             clockwise = !clockwise;
             b.setMessage(direction());
-        }).bounds(left + 8, top + 140, W - 16, 18).build()));
+        }).bounds(left + 8, top + 160, hw, 18).build()));
+        idleTab.add(addRenderableWidget(Button.builder(Component.translatable(facing.key()), b -> {
+            Autopilot.OrbitFacing[] v = Autopilot.OrbitFacing.values();
+            facing = v[(facing.ordinal() + 1) % v.length];
+            b.setMessage(Component.translatable(facing.key()));
+            b.setTooltip(Tooltip.create(Component.translatable(facing.key() + ".hint")));
+        }).bounds(left + 12 + hw, top + 160, hw, 18).tooltip(Tooltip.create(Component.translatable(facing.key() + ".hint"))).build()));
         idleTab.add(addRenderableWidget(Button.builder(Component.translatable(dock.key()), b -> {
             Docking.Trigger[] v = Docking.Trigger.values();
             dock = v[(dock.ordinal() + 1) % v.length];
             b.setMessage(Component.translatable(dock.key()));
-        }).bounds(left + 8, top + 172, hw, 18).build()));
+            b.setTooltip(Tooltip.create(Component.translatable(dock.key() + ".hint")));
+        }).bounds(left + 8, top + 194, hw, 18).tooltip(Tooltip.create(Component.translatable(dock.key() + ".hint"))).build()));
         idleTab.add(addRenderableWidget(Button.builder(Component.translatable(busy.key()), b -> {
             Docking.Busy[] v = Docking.Busy.values();
             busy = v[(busy.ordinal() + 1) % v.length];
             b.setMessage(Component.translatable(busy.key()));
-        }).bounds(left + 12 + hw, top + 172, hw, 18).build()));
+        }).bounds(left + 12 + hw, top + 194, hw, 18).build()));
         // ---- сохранить / закрыть
         addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gun.save"), b -> {
             CompoundTag t = new CompoundTag();
@@ -164,6 +174,8 @@ public final class AutopilotScreen extends Screen {
             t.putDouble("OrbitHeight", parse(orbitHeightField, Autopilot::cleanHeight));
             t.putBoolean("OrbitCW", clockwise);
             t.putString("OrbitCode", codeField.getValue());
+            t.putDouble("OrbitSpeed", parse(orbitSpeedField, Autopilot::cleanSpeed));
+            t.putString("OrbitFacing", facing.name());
             PacketDistributor.sendToServer(new AutopilotPayloads.Save(pos, t));
             onClose();
         }).bounds(left + W / 2 - 104, top + H - 26, 100, 20).build());
@@ -216,6 +228,7 @@ public final class AutopilotScreen extends Screen {
         for (EditBox b : new EditBox[]{xField, yField, zField}) edit(b, idle == Autopilot.Idle.ORBIT_POINT);
         edit(radiusField, idle.orbit());
         edit(orbitHeightField, idle.orbit());
+        edit(orbitSpeedField, idle.orbit());
         boolean beacon = idle == Autopilot.Idle.ORBIT_BEACON, idleTabOpen = tab == 1;
         codeField.visible = idleTabOpen && beacon;
         hereButton.visible = idleTabOpen && !beacon;
@@ -267,9 +280,9 @@ public final class AutopilotScreen extends Screen {
             }
             g.drawString(font, Component.translatable("radar_fcs.autopilot.orbit_radius"), left + 8, top + 104, orbit ? 0xC0C0C0 : 0x606060, false);
             g.drawString(font, Component.translatable("radar_fcs.autopilot.orbit_height"), left + 8, top + 124, orbit ? 0xC0C0C0 : 0x606060, false);
-            g.drawString(font, Component.translatable("radar_fcs.autopilot.dock_title"), left + 8, top + 162, 0xC0C0C0, false);
-            g.drawWordWrap(font, Component.translatable(idle.key() + ".hint"), left + 8, top + 194, W - 16, 0x8A9098);
-            g.drawWordWrap(font, Component.translatable(dock.key() + ".hint"), left + 8, top + 218, W - 16, 0x6FA8B8);
+            g.drawString(font, Component.translatable("radar_fcs.autopilot.orbit_speed"), left + 8, top + 144, orbit ? 0xC0C0C0 : 0x606060, false);
+            g.drawString(font, Component.translatable("radar_fcs.autopilot.dock_title"), left + 8, top + 184, 0xC0C0C0, false);
+            g.drawWordWrap(font, Component.translatable(idle.key() + ".hint"), left + 8, top + 216, W - 16, 0x8A9098);
         }
     }
 

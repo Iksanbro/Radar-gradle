@@ -115,6 +115,9 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     public boolean orbitClockwise;
     /** Код маяка орбиты (пусто - первый маяк своей радарной сети). */
     public String orbitCode = "";
+    /** Скорость по орбите, бл/с, и куда смотрит нос на орбите. */
+    public double orbitSpeed = 10;
+    public Autopilot.OrbitFacing orbitFacing = Autopilot.OrbitFacing.ALONG;
 
     @Nullable private UUID owner;
     private String ownerTeam = "";
@@ -356,6 +359,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         t.putDouble("OrbitHeight", orbitHeight);
         t.putBoolean("OrbitCW", orbitClockwise);
         t.putString("OrbitCode", orbitCode);
+        t.putDouble("OrbitSpeed", orbitSpeed);
+        t.putString("OrbitFacing", orbitFacing.name());
         return t;
     }
 
@@ -383,6 +388,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         orbitHeight = Autopilot.cleanHeight(t.contains("OrbitHeight") ? t.getDouble("OrbitHeight") : 24);
         orbitClockwise = t.getBoolean("OrbitCW");
         orbitCode = OrbitBeaconBlockEntity.cleanCode(t.getString("OrbitCode"));
+        orbitSpeed = Autopilot.cleanSpeed(t.contains("OrbitSpeed") ? t.getDouble("OrbitSpeed") : 10);
+        orbitFacing = enumOr(Autopilot.OrbitFacing.class, t.getString("OrbitFacing"), Autopilot.OrbitFacing.ALONG);
     }
 
     public static <E extends Enum<E>> E enumOr(Class<E> c, String name, E fallback) {

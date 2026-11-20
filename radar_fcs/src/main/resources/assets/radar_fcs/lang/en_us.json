@@ -616,7 +616,7 @@
   "radar_fcs.autopilot.idle.hover": "No target: hover in place",
   "radar_fcs.autopilot.idle.hover.hint": "No target — the ship holds where the target was lost, level, keeping its heading.",
   "radar_fcs.autopilot.idle.orbit_point": "No target: orbit a point",
-  "radar_fcs.autopilot.idle.orbit_point.hint": "No target — the ship circles the point at the bridge's speed limit.",
+  "radar_fcs.autopilot.idle.orbit_point.hint": "No target — the ship circles the point at the orbit speed.",
   "radar_fcs.autopilot.idle.orbit_beacon": "No target: orbit the beacon",
   "radar_fcs.autopilot.idle.orbit_beacon.hint": "No target — the ship circles its network's beacon (with the bridge's code); no beacon — it hovers.",
   "radar_fcs.autopilot.orbit_center": "Orbit center (X, Y, Z):",
@@ -639,5 +639,16 @@
   "radar_fcs.autopilot.orbit_code": "Network beacon code (empty — the first one):",
   "radar_fcs.autopilot.state.dock_layout": "Docking: the ship's connectors do not match the port's (different number or layout)",
   "radar_fcs.docking.approach": "Clearance distance, blocks",
-  "radar_fcs.docking.approach_short": "Clearance: %s blocks"
+  "radar_fcs.docking.approach_short": "Clearance: %s blocks",
+  "radar_fcs.autopilot.orbit_speed": "Orbit speed, blocks/s",
+  "radar_fcs.autopilot.orbit_facing.along": "Nose: along the path",
+  "radar_fcs.autopilot.orbit_facing.along.hint": "The ship faces where it flies along the circle (banks into the turn if roll is on)",
+  "radar_fcs.autopilot.orbit_facing.backward": "Nose: backward",
+  "radar_fcs.autopilot.orbit_facing.backward.hint": "The ship flies the circle stern first",
+  "radar_fcs.autopilot.orbit_facing.center": "Nose: to the center",
+  "radar_fcs.autopilot.orbit_facing.center.hint": "The nose always points at the orbit center — the ship circles it sideways",
+  "radar_fcs.autopilot.orbit_facing.outward": "Nose: outward",
+  "radar_fcs.autopilot.orbit_facing.outward.hint": "The nose always points away from the orbit center",
+  "radar_fcs.autopilot.orbit_facing.fixed": "Nose: keep heading",
+  "radar_fcs.autopilot.orbit_facing.fixed.hint": "The ship keeps the heading it had and circles without turning"
 }

@@ -435,6 +435,8 @@ public class DockingGameTests {
                     b.orbitRadius = 10;
                     b.orbitHeight = 0;
                     b.orbitClockwise = false;
+                    b.orbitSpeed = 5;
+                    b.orbitFacing = dev.radarfcs.core.Autopilot.OrbitFacing.CENTER;
                     phase.set(1);
                     since.set(t);
                 }
@@ -443,7 +445,12 @@ public class DockingGameTests {
                     FcsMod.LOG.info("[radar_fcs test] docking: orbit ccw - {} {}", b.state(), c);
                     if (b.state() != AutopilotBlockEntity.State.IDLE_ORBIT) h.fail("expected IDLE_ORBIT, got " + b.state());
                     if (!(vx > 0 && vz > 0)) h.fail("expected toward the center (+X) and counterclockwise (+Z): " + c);
+                    // по касательной - скорость орбиты 5 (к центру - быстрее, до предела моста 20)
+                    if (Math.abs(vz - 5) > 0.01) h.fail("tangential speed is not the orbit speed 5: " + c);
+                    // нос к центру (на восток) - поворот вправо
+                    if (!(num(c, "BODY_ANGULAR_VELOCITY:BODY_ANGULAR_VELOCITY_Y") < -0.1)) h.fail("expected nose to the center (right turn): " + c);
                     b.orbitClockwise = true;
+                    b.orbitFacing = dev.radarfcs.core.Autopilot.OrbitFacing.OUTWARD;
                     phase.set(2);
                     since.set(t);
                 }
@@ -451,6 +458,9 @@ public class DockingGameTests {
                     if (t - since.get() < 12) return;
                     FcsMod.LOG.info("[radar_fcs test] docking: orbit cw - {} {}", b.state(), c);
                     if (!(vx > 0 && vz < 0)) h.fail("expected toward the center (+X) and clockwise (-Z): " + c);
+                    if (Math.abs(vz + 5) > 0.01) h.fail("tangential speed is not the orbit speed 5: " + c);
+                    // нос наружу (на запад) - поворот влево
+                    if (!(num(c, "BODY_ANGULAR_VELOCITY:BODY_ANGULAR_VELOCITY_Y") > 0.1)) h.fail("expected nose outward (left turn): " + c);
                     b.idle = dev.radarfcs.core.Autopilot.Idle.ORBIT_BEACON;
                     b.orbitRadius = 4;
                     phase.set(3);

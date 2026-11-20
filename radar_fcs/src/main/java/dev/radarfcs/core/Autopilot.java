@@ -39,16 +39,63 @@ public final class Autopilot {
     public static final double ORBIT_LAG = 0.5;
 
     public static Vec orbitVelocity(Vec ship, Vec center, Vec centerVel, double radius, double height, double speed, boolean clockwise) {
-        Vec r = ship.sub(center).horizontal();
-        double d = r.length();
-        Vec u = d > 1e-3 ? r.scale(1 / d) : new Vec(1, 0, 0);
-        Vec t = new Vec(u.z(), 0, -u.x());                                  // +Y x u: против часовой сверху
-        if (clockwise) t = t.scale(-1);
+        return orbitVelocity(ship, center, centerVel, radius, height, speed, speed, clockwise);
+    }
+
+    /**
+     * То же со своей скоростью выхода на круг: по касательной - speed (скорость орбиты), к окружности и к высоте - не
+     * быстрее reach (предел скорости моста).
+     */
+    public static Vec orbitVelocity(Vec ship, Vec center, Vec centerVel, double radius, double height, double speed, double reach,
+                                    boolean clockwise) {
+        Vec u = radial(ship, center);
+        Vec t = tangent(u, clockwise);
+        double d = ship.sub(center).horizontalLength();
+        double lim = Math.max(speed, reach);
         // упреждение: регулятор скорости догоняет команду с запаздыванием ORBIT_LAG - без доворота к центру корабль
         // уходит наружу круга
-        double radial = clamp(POS_GAIN * (radius - d) - speed * speed * ORBIT_LAG / Math.max(d, radius), -speed, speed);
-        double vy = clamp(POS_GAIN * (center.y() + height - ship.y()), -speed, speed);
+        double radial = clamp(POS_GAIN * (radius - d) - speed * speed * ORBIT_LAG / Math.max(d, radius), -lim, lim);
+        double vy = clamp(POS_GAIN * (center.y() + height - ship.y()), -lim, lim);
         return t.scale(speed).add(u.scale(radial)).add(new Vec(0, vy, 0)).add(centerVel);
+    }
+
+    /** Направление от центра орбиты к кораблю (горизонтальное, единичное). */
+    public static Vec radial(Vec ship, Vec center) {
+        Vec r = ship.sub(center).horizontal();
+        double d = r.length();
+        return d > 1e-3 ? r.scale(1 / d) : new Vec(1, 0, 0);
+    }
+
+    /** Касательная орбиты (единичная): против часовой, если смотреть сверху, или по часовой. */
+    public static Vec tangent(Vec radial, boolean clockwise) {
+        Vec t = new Vec(radial.z(), 0, -radial.x());                        // +Y x u: против часовой сверху
+        return clockwise ? t.scale(-1) : t;
+    }
+
+    /** Нос корабля на орбите: по ходу, против хода, к центру, наружу, не поворачивать (курс держится). */
+    public enum OrbitFacing {
+        ALONG, BACKWARD, CENTER, OUTWARD, FIXED;
+
+        public String key() {
+            return "radar_fcs.autopilot.orbit_facing." + name().toLowerCase(java.util.Locale.ROOT);
+        }
+
+        /** Куда смотреть носом (горизонтально) или null - не поворачивать. */
+        public Vec dir(Vec ship, Vec center, boolean clockwise) {
+            Vec u = radial(ship, center);
+            return switch (this) {
+                case ALONG -> tangent(u, clockwise);
+                case BACKWARD -> tangent(u, clockwise).scale(-1);
+                case CENTER -> u.scale(-1);
+                case OUTWARD -> u;
+                case FIXED -> null;
+            };
+        }
+
+        /** Крен в поворот - только когда нос по ходу или против хода. */
+        public boolean banks() {
+            return this == ALONG || this == BACKWARD;
+        }
     }
 
     public static double cleanRadius(double v) {

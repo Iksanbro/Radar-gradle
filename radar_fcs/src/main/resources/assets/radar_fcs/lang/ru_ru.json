@@ -616,7 +616,7 @@
   "radar_fcs.autopilot.idle.hover": "Без цели: висеть на месте",
   "radar_fcs.autopilot.idle.hover.hint": "Нет цели — корабль держится там, где цели не стало, ровно и с прежним курсом.",
   "radar_fcs.autopilot.idle.orbit_point": "Без цели: орбита вокруг координаты",
-  "radar_fcs.autopilot.idle.orbit_point.hint": "Нет цели — корабль летит по кругу вокруг координаты на пределе скорости моста.",
+  "radar_fcs.autopilot.idle.orbit_point.hint": "Нет цели — корабль летит по кругу вокруг координаты со скоростью орбиты.",
   "radar_fcs.autopilot.idle.orbit_beacon": "Без цели: орбита вокруг маяка",
   "radar_fcs.autopilot.idle.orbit_beacon.hint": "Нет цели — корабль летит по кругу вокруг маяка своей сети (с кодом моста); маяка нет — висит.",
   "radar_fcs.autopilot.orbit_center": "Центр орбиты (X, Y, Z):",
@@ -639,5 +639,16 @@
   "radar_fcs.autopilot.orbit_code": "Код маяка сети (пусто — первый маяк сети):",
   "radar_fcs.autopilot.state.dock_layout": "Стыковка: порты корабля не встают на порты стыковки (другое число или расстановка)",
   "radar_fcs.docking.approach": "Дистанция обхода, бл",
-  "radar_fcs.docking.approach_short": "Дистанция обхода: %s бл"
+  "radar_fcs.docking.approach_short": "Дистанция обхода: %s бл",
+  "radar_fcs.autopilot.orbit_speed": "Скорость по орбите, бл/с",
+  "radar_fcs.autopilot.orbit_facing.along": "Нос: по ходу",
+  "radar_fcs.autopilot.orbit_facing.along.hint": "Корабль смотрит туда, куда летит по кругу (крен в поворот — если включён крен)",
+  "radar_fcs.autopilot.orbit_facing.backward": "Нос: против хода",
+  "radar_fcs.autopilot.orbit_facing.backward.hint": "Корабль летит по кругу кормой вперёд",
+  "radar_fcs.autopilot.orbit_facing.center": "Нос: к центру",
+  "radar_fcs.autopilot.orbit_facing.center.hint": "Нос всё время на центр орбиты — корабль облетает его боком",
+  "radar_fcs.autopilot.orbit_facing.outward": "Нос: наружу",
+  "radar_fcs.autopilot.orbit_facing.outward.hint": "Нос всё время от центра орбиты",
+  "radar_fcs.autopilot.orbit_facing.fixed": "Нос: не поворачивать",
+  "radar_fcs.autopilot.orbit_facing.fixed.hint": "Корабль держит курс, с которым вышел на орбиту, и летит по кругу не разворачиваясь"
 }

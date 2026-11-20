@@ -20,7 +20,7 @@
 - `docs/dev/features.md` — все требования пользователя и история функций по версиям (≈560 строк);
 - `docs/dev/dependencies.md` — проверенные особенности API CBC, CBC-AT, Neo Warfare, Create Radars, Sable;
 - `docs/dev/test-status.md` — что покрыто игровыми тестами и какие комбинации модов проверены;
-- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test, итог — `features.md` п. 43-46).
+- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test, итог — `features.md` п. 43-47).
 
 Эти файлы и `README.md` большие: **не выводи их целиком** (`cat`), ищи нужное через `grep -n` и читай куски.
 
@@ -118,7 +118,8 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # �
   `net/DockingPayloads`.
 - Мост без цели (других объектов не ведёт): `Autopilot.Idle` - висеть / орбита вокруг координаты / вокруг маяка орбиты
   (`block/OrbitBeaconBlock(Entity)` с кодом, только маяки радарной сети моста - `LinkKind.BEACON`),
-  `Autopilot.orbitVelocity`, `FlightBridgeBlockEntity.idleSteer`; экран моста - вкладки «Цель» и «Без цели».
+  `Autopilot.orbitVelocity` (скорость орбиты, `OrbitFacing` - куда нос), `FlightBridgeBlockEntity.idleSteer`; экран моста -
+  вкладки «Цель» и «Без цели».
 - Подсветка связей стыковочного контроллера с пистолетом FC в руке - `compat/flight/DockingToolClient` (цвета FC;
   рамки 12 рёбрами через позу отрисовки корабля Sable, каждый кадр).
 - `block/`, `registry/`, `client/FcsClient` (цвет транспондера).

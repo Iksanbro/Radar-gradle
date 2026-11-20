@@ -325,12 +325,16 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             return s != State.ACTIVE ? s : idle == Autopilot.Idle.ORBIT_BEACON ? State.IDLE_NO_BEACON : State.IDLE_HOVER;
         }
         hold = null;
-        Vec v = Autopilot.orbitVelocity(ship, center, centerVel, orbitRadius, orbitHeight, maxSpeed, orbitClockwise);
+        // по касательной - скорость орбиты, выход на круг и высота - не быстрее предела моста
+        Vec v = Autopilot.orbitVelocity(ship, center, centerVel, orbitRadius, orbitHeight, orbitSpeed, maxSpeed, orbitClockwise);
+        // нос - по настройке орбиты; крен в поворот (если включён) - только носом по ходу или против хода
+        Vec dir = orbitFacing.dir(ship, center, orbitClockwise);
         Vec w;
-        if (heading || roll) {
+        if (dir != null) {
             BodyForwardFacing f = forwardFacing();
             Vector3d fw = AttitudeTargetUtil.rotateBodyToWorld(sub, new Vector3d(f.direction().getStepX(), 0, f.direction().getStepZ()));
-            w = Autopilot.desiredRates(new Vec(fw.x, fw.y, fw.z), up, v.sub(centerVel).horizontal(), heading, false, roll, maxPitch, maxRoll);
+            boolean bank = roll && orbitFacing.banks();
+            w = Autopilot.desiredRates(new Vec(fw.x, fw.y, fw.z), up, dir, true, false, bank, maxPitch, maxRoll);
         } else {
             w = Docking.levelRates(up);
         }

@@ -869,6 +869,29 @@ public class SolverTest {
             System.out.printf(Locale.ROOT, "  orbit cw=%s: radius %.1f..%.1f, height %.2f, turn %s%n", cw, minR, maxR, ship.y() - 64, turn > 0 ? "ccw" : "cw");
             ok &= m;
         }
+        // своя скорость орбиты (8 бл/с) при пределе моста 20: на круге по касательной 8
+        Vec center = new Vec(0, 64, 0), ship = new Vec(100, 90, 40), vel = Vec.ZERO;
+        double sum = 0;
+        int n = 0;
+        for (int i = 0; i < 20 * 120; i++) {
+            Vec vd = Autopilot.orbitVelocity(ship, center, Vec.ZERO, 30, 20, 8, 20, false);
+            vel = vel.add(vd.sub(vel).scale(0.05 / 0.5));
+            ship = ship.addScaled(vel, 0.05);
+            if (i > 20 * 90) {
+                sum += vel.horizontalLength();
+                n++;
+            }
+        }
+        double r = ship.sub(center).horizontalLength();
+        System.out.printf(Locale.ROOT, "  orbit speed 8 (limit 20): mean %.2f bl/s, radius %.1f%n", sum / n, r);
+        ok &= Math.abs(sum / n - 8) < 0.3 && Math.abs(r - 30) < 1.5;
+        // нос на орбите: к центру, наружу, по ходу (против часовой - касательная), не поворачивать
+        Vec s0 = new Vec(10, 0, 0), c0 = Vec.ZERO;
+        ok &= Autopilot.OrbitFacing.CENTER.dir(s0, c0, false).distance(new Vec(-1, 0, 0)) < 1e-9;
+        ok &= Autopilot.OrbitFacing.OUTWARD.dir(s0, c0, false).distance(new Vec(1, 0, 0)) < 1e-9;
+        ok &= Autopilot.OrbitFacing.ALONG.dir(s0, c0, false).distance(new Vec(0, 0, -1)) < 1e-9;
+        ok &= Autopilot.OrbitFacing.BACKWARD.dir(s0, c0, true).distance(new Vec(0, 0, -1)) < 1e-9;
+        ok &= Autopilot.OrbitFacing.FIXED.dir(s0, c0, false) == null;
         if (!ok) failures++;
         System.out.println("orbit: " + (ok ? "all checks passed" : "failed"));
     }
