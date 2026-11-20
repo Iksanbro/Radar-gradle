@@ -361,8 +361,10 @@ SCENES = {
          'блоки. «Дальность и высота»: ещё и вписанную высоту над целью. Предел скорости — тоже числом',
          '"Distance only": the ship closes in and keeps the typed horizontal distance to the target; other blocks keep the '
          'altitude. "Distance and altitude": also the typed height above the target. The speed limit is typed too'),
-        ('Сигнал редстоуна ставит мост на паузу. Очки инженера показывают цель, дальность и связи',
-         'A redstone signal pauses the bridge. Engineer\'s Goggles show the target, the distance and the links'),
+        ('Сигнал редстоуна ставит мост на паузу (в режиме «Стыковка: редстоун» — отправляет корабль на стыковку). Без цели '
+         'корабль висит или летит по орбите — вкладка «Без цели». Очки инженера показывают цель, дальность и связи',
+         'A redstone signal pauses the bridge (in "Docking: redstone" mode it sends the ship to dock). With no target the '
+         'ship hovers or orbits — the "No target" tab. Engineer\'s Goggles show the target, the distance and the links'),
     ]),
 }
 

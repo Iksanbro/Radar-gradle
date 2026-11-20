@@ -68,8 +68,6 @@ public final class Docking {
     public static final double ABORT_DEG = 12, LATERAL_ABORT = 1.5;
     /** Порт и штекер несовместимы: наклон штекера к «верху» корабля не совпадает с наклоном порта больше чем на это (градусы). */
     public static final double TILT_MISMATCH_DEG = 20;
-    /** Конец штекера в этих блоках от конца порта - выдвигать порты. */
-    public static final double EXTEND_DIST = APPROACH_DIST + 2;
     /** Дистанция обхода (настройка стыковочного контроллера), бл. */
     public static final double APPROACH_MIN = 3, APPROACH_MAX = 64;
 

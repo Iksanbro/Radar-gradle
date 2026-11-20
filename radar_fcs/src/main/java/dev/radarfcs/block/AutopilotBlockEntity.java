@@ -191,7 +191,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         // стыковка по редстоуну: сигнал - на стыковку, а не пауза
         paused = signal && dockTrigger != Docking.Trigger.REDSTONE;
         if (now % 2 == 0) sense(level, now, paused);
-        if (goal != null || paused) noGoalSince = Long.MIN_VALUE;
+        // пауза отсчёт «нет цели» не сбрасывает: пристыкованный корабль после паузы не расстыковывается на 2 с
+        if (goal != null) noGoalSince = Long.MIN_VALUE;
         else if (noGoalSince == Long.MIN_VALUE) noGoalSince = now;
         docking = switch (dockTrigger) {
             case REDSTONE -> signal;

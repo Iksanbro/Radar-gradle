@@ -75,6 +75,8 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
     @Nullable private Vec departDir;
     /** Без цели: точка, в которой корабль висит (где кончилась цель или стыковка). */
     @Nullable private Vec hold;
+    private Set<UUID> dockNets = Set.of();
+    private long dockNetsAt = Long.MIN_VALUE / 2;
     /** Компьютер выключен мостом на время стыковки (сохраняется - включить после расстыковки и перезапуска). */
     private boolean poweredDown, unloading;
     @Nullable private Object cachedSub;
@@ -211,6 +213,8 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
                 driveState = dockSteer(level, cc, now);
                 return;
             }
+            // пауза пристыкованного корабля - остаётся пристыкованным (пауза отпускает управление, а не расстыковывает)
+            if (paused && wasLocked && holdDocked(level, now)) return;
             endDock(level, now);
             if (now < departUntil && cc != null && departDir != null) {        // отход от порта после расстыковки
                 driveState = depart(level, cc);
@@ -409,8 +413,14 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             return State.COMPUTER_OFF;
         }
         Object sub = subLevel(level);
-        Set<UUID> nets = new HashSet<>(LinkRegistry.networksOf(level, worldPosition));
-        nets.addAll(LinkRegistry.networksOf(level, plug.getBlockPos()));
+        // сети моста и штекера - раз в секунду (обход всех передатчиков измерения)
+        if (now - dockNetsAt >= 20) {
+            dockNetsAt = now;
+            Set<UUID> nets = new HashSet<>(LinkRegistry.networksOf(level, worldPosition));
+            nets.addAll(LinkRegistry.networksOf(level, plug.getBlockPos()));
+            dockNets = Set.copyOf(nets);
+        }
+        Set<UUID> nets = dockNets;
         List<Vec> tips = new java.util.ArrayList<>();
         for (Vec3 t : plug.localTips()) {
             Vec3 w = SableCompat.toWorld(level, t);
@@ -458,6 +468,19 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
         dockDist = p.tip().distance(tip);
     }
 
+    /** Держать сцепку на паузе: порты выдвинуты, порт стыковки занят, корабль отмечен; false - уже не сцеплен. */
+    private boolean holdDocked(ServerLevel level, long now) {
+        DockingControllerBlockEntity plug = plug(level);
+        if (plug == null || !plug.locked()) return false;
+        plug.commandExtend(now);
+        if (dockTarget != null) DockingRegistry.reserve(level, dockTarget, plug.key(), now, true);
+        UUID ship = SableCompat.containingId(level, worldPosition);
+        if (ship != null) DockHold.mark(level, ship, now);
+        release();
+        driveState = State.DOCKED;
+        return true;
+    }
+
     /** Компьютер управления полётом выключали на время стыковки - включить снова. */
     private void restoreComputer(ServerLevel level) {
         if (!poweredDown) return;
@@ -469,6 +492,9 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
 
     /** Стыковка кончилась: порт отпустить; был пристыкован - компьютер включить и отойти от порта. */
     private void endDock(ServerLevel level, long now) {
+        dockPhase = Docking.Phase.TRANSIT;
+        cruiseY = Double.NaN;
+        if (!poweredDown && !wasLocked && dockTarget == null) return;    // стыковки не было - ничего не искать
         restoreComputer(level);
         UUID ship = SableCompat.containingId(level, worldPosition);
         if (wasLocked && ship != null) DockHold.release(level, ship);

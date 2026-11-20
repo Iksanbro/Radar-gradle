@@ -31,8 +31,17 @@ public final class DockingPorts {
 
     private DockingPorts() {}
 
+    @Nullable private static net.minecraft.world.level.block.Block block;
+
+    /** Блок порта Simulated (воздух, если Simulated не установлен) - один раз, а не поиск в реестре на каждый вызов. */
+    private static net.minecraft.world.level.block.Block connectorBlock() {
+        if (block == null) block = BuiltInRegistries.BLOCK.get(CONNECTOR);
+        return block;
+    }
+
     public static boolean isConnector(BlockState st) {
-        return CONNECTOR.equals(BuiltInRegistries.BLOCK.getKey(st.getBlock())) && st.hasProperty(BlockStateProperties.FACING);
+        net.minecraft.world.level.block.Block b = connectorBlock();
+        return b != net.minecraft.world.level.block.Blocks.AIR && st.is(b) && st.hasProperty(BlockStateProperties.FACING);
     }
 
     public static boolean isConnector(Level level, BlockPos pos) {
@@ -104,10 +113,15 @@ public final class DockingPorts {
         Level level = level0;
         java.util.Set<BlockPos> f = FORCED.get(level.dimension());
         if (f == null || f.isEmpty()) return;
-        for (BlockPos p : f) {
+        for (java.util.Iterator<BlockPos> it = f.iterator(); it.hasNext(); ) {
+            BlockPos p = it.next();
             if (!level.isLoaded(p)) continue;
             BlockState st = level.getBlockState(p);
-            if (isConnector(st) && !st.getValue(BlockStateProperties.POWERED)) level.setBlock(p, st.setValue(BlockStateProperties.POWERED, true), 2);
+            if (!isConnector(st)) {
+                it.remove();                                                // порт сломан - команду забыть
+                continue;
+            }
+            if (!st.getValue(BlockStateProperties.POWERED)) level.setBlock(p, st.setValue(BlockStateProperties.POWERED, true), 2);
         }
     }
 

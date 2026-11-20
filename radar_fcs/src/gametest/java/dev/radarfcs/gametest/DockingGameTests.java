@@ -446,7 +446,7 @@ public class DockingGameTests {
                     if (b.state() != AutopilotBlockEntity.State.IDLE_ORBIT) h.fail("expected IDLE_ORBIT, got " + b.state());
                     if (!(vx > 0 && vz > 0)) h.fail("expected toward the center (+X) and counterclockwise (+Z): " + c);
                     // по касательной - скорость орбиты 5 (к центру - быстрее, до предела моста 20)
-                    if (Math.abs(vz - 5) > 0.01) h.fail("tangential speed is not the orbit speed 5: " + c);
+                    if (Math.abs(vz - 5) > 0.5) h.fail("tangential speed is not the orbit speed 5: " + c);   // «неподвижный» корабль чуть поворачивается
                     // нос к центру (на восток) - поворот вправо
                     if (!(num(c, "BODY_ANGULAR_VELOCITY:BODY_ANGULAR_VELOCITY_Y") < -0.1)) h.fail("expected nose to the center (right turn): " + c);
                     b.orbitClockwise = true;
@@ -458,7 +458,7 @@ public class DockingGameTests {
                     if (t - since.get() < 12) return;
                     FcsMod.LOG.info("[radar_fcs test] docking: orbit cw - {} {}", b.state(), c);
                     if (!(vx > 0 && vz < 0)) h.fail("expected toward the center (+X) and clockwise (-Z): " + c);
-                    if (Math.abs(vz + 5) > 0.01) h.fail("tangential speed is not the orbit speed 5: " + c);
+                    if (Math.abs(vz + 5) > 0.5) h.fail("tangential speed is not the orbit speed 5: " + c);
                     // нос наружу (на запад) - поворот влево
                     if (!(num(c, "BODY_ANGULAR_VELOCITY:BODY_ANGULAR_VELOCITY_Y") > 0.1)) h.fail("expected nose outward (left turn): " + c);
                     b.idle = dev.radarfcs.core.Autopilot.Idle.ORBIT_BEACON;
@@ -584,17 +584,40 @@ public class DockingGameTests {
                     if (b.state() != AutopilotBlockEntity.State.DOCKED) h.fail("expected DOCKED, got " + b.state());
                     if (FlightTestSupport.working(level, cc)) h.fail("flight control computer still working while docked");
                     if (!dev.radarfcs.dock.DockHold.held(level, shipId, now)) h.fail("docked ship not held (guns would stay active)");
-                    level.removeBlock(at[0].north(), false);
+                    // «стыковка: нет цели» с сигналом - пауза: пристыкованный корабль остаётся пристыкованным
+                    b.dockTrigger = Docking.Trigger.NO_TARGET;
                     phase.set(2);
                     since.set(t);
                 }
-                case 2 -> {                                                 // сигнал снят - расстыковка
+                case 2 -> {                                                 // пауза - сцепка держится, двигатели выключены
+                    DockingRegistry.reserve(level, portPos, plug[0].key(), now, true);
+                    if (t - since.get() < 15) return;
+                    FcsMod.LOG.info("[radar_fcs test] docking: paused while docked - {} locked {} working {}", b.state(), plug[0].lockedCount(),
+                            FlightTestSupport.working(level, cc));
+                    if (b.state() != AutopilotBlockEntity.State.PAUSED) h.fail("expected PAUSED, got " + b.state());
+                    if (plug[0].lockedCount() < 2) h.fail("pause undocked the ship");
+                    if (FlightTestSupport.working(level, cc)) h.fail("computer switched on during the pause");
+                    level.removeBlock(at[0].north(), false);                // пауза снята, цели нет - стыковка продолжается сразу
+                    phase.set(3);
+                    since.set(t);
+                }
+                case 3 -> {
+                    DockingRegistry.reserve(level, portPos, plug[0].key(), now, true);
+                    if (t - since.get() < 15) return;
+                    if (b.state() != AutopilotBlockEntity.State.DOCKED || plug[0].lockedCount() < 2) {
+                        h.fail("ship undocked after the pause: " + b.state() + ", locked " + plug[0].lockedCount());
+                    }
+                    b.dockTrigger = Docking.Trigger.OFF;                    // стыковка выключена - расстыковка
+                    phase.set(4);
+                    since.set(t);
+                }
+                case 4 -> {
                     if (t - since.get() < 20) return;
                     FcsMod.LOG.info("[radar_fcs test] docking: undocked - {} computer working {} locked {}", b.state(),
                             FlightTestSupport.working(level, cc), plug[0].locked());
                     if (!FlightTestSupport.working(level, cc)) h.fail("flight control computer not restored after undocking");
                     if (dev.radarfcs.dock.DockHold.held(level, shipId, now)) h.fail("ship still held after undocking");
-                    if (plug[0].locked()) h.fail("still locked after the signal ended");
+                    if (plug[0].locked()) h.fail("still locked after docking was switched off");
                     h.succeed();
                 }
                 default -> { }

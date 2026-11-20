@@ -1,0 +1,19 @@
+# 1.1-Test — changes since 1.1 (pre-release)
+
+## English
+- **New: Docking Controller** (only with **Create: Flight Control**; recipe needs a Create Aeronautics Docking Connector). One block with two roles: **port** — next to the connectors ships dock to (ground, station, another ship); **plug** — on the ship next to its own connectors. Linked to up to **8 Docking Connectors** (same facing, one number) with the Flight Control Tool Gun; links are highlighted like Flight Control links, also on moving ships.
+- The Autopilot Bridge takes the ship to the **nearest free port with the plug's number**, turning in advance so that **every connector meets its own port** (for up/down-facing ports also by heading). **Clearance distance** on the controller: the ship lines up for the straight approach that far in front of the port and does not come closer — it flies around the port — until it is on the port axis. Controllers extend the connectors; the connectors lock on their own.
+- **When to dock** (bridge, "No target" tab): off, when there is no target, or on a **redstone signal** (then redstone sends the ship to dock instead of pausing). Busy ports: wait at the port or stay.
+- **While docked** the ship's Flight Control Computer is switched off (engines without thrust) and the guns on the ship are inactive ("Ship docked"); after undocking everything is restored and the ship backs away from the port for 3 s. A redstone pause no longer undocks a docked ship.
+- **The bridge no longer chases the nearest radar contact.** With no target it **hovers** in place or flies an **orbit** around a point or a new **Orbit Beacon** (in the bridge's radar network; a code picks the beacon). Orbit radius, height above the center, direction, **orbit speed** and **where the nose points** (along the path, backward, to the center, outward, keep heading).
+- Bridge screen split into **"Target"** and **"No target"** tabs.
+- Optimizations: the bridge does not run its target sensor when there is no target; docking status and network lookups are throttled.
+
+## Русский
+- **Новое: стыковочный контроллер** (только с **Create: Flight Control**; в рецепте — стыковочный порт Create Aeronautics). Один блок с двумя ролями: **порт** — у портов, куда садятся (земля, станция, другой корабль); **штекер** — на корабле у его портов. Связь с **до 8 стыковочными портами** (одно направление, один номер) — инструментальным пистолетом Flight Control; связи подсвечиваются, как у Flight Control, в том числе на движущихся кораблях.
+- Мост автопилота ведёт корабль к **ближайшему свободному порту с номером штекера** и заранее разворачивается так, чтобы **каждый порт встал на свой** (к портам вверх/вниз — и по курсу). **Дистанция обхода** в контроллере: на ней перед портом корабль выходит на прямую и, пока не вышел на ось порта, ближе не подходит — облетает порт. Порты выдвигают контроллеры, сцепляются порты сами.
+- **Когда стыковаться** (мост, вкладка «Без цели»): выкл, когда нет цели, по **сигналу редстоуна** (тогда редстоун — на стыковку, а не пауза). Порты заняты — ждать у порта или не лететь.
+- **Пока корабль пристыкован**, компьютер Flight Control выключен (двигатели без тяги), пушки на корабле неактивны («Корабль пристыкован»); после расстыковки всё возвращается, корабль 3 с отходит от порта. Пауза редстоуном больше не расстыковывает.
+- **Мост больше не ведёт «ближайшую чужую цель радаров».** Без цели корабль **висит** на месте или летит по **орбите** вокруг координаты или нового **маяка орбиты** (в радарной сети моста; маяк выбирается кодом). Радиус, высота над центром, направление, **скорость по орбите** и **куда смотрит нос** (по ходу, против хода, к центру, наружу, не поворачивать).
+- Экран моста разделён на вкладки **«Цель»** и **«Без цели»**.
+- Оптимизации: без цели мост не запускает сенсор; проверки сцепки и поиск сетей при стыковке — реже.

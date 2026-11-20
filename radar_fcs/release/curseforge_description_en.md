@@ -44,7 +44,12 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 - Flies a Flight Control ship to the **radar network's target**: the one designated on a monitor (own or Create: Radars), otherwise the fire control computer's target.
 - **Deflections used to track the target** are toggled separately: **yaw** (nose on the target bearing), **roll** (bank into the turn) and **pitch** (nose on the target elevation), with roll and pitch limits. The nose comes from the Flight Control **Forward Indicator** (linked with the Flight Control Tool Gun).
 - Modes **"turn only"**, **"distance only"** and **"distance and altitude"** — distance, height above the target and speed limit are typed in.
-- Works like the Flight Control **Navigation Terminal**: flies the ship through a **Velocity Coupler** and an **Angular Velocity Coupler** linked to the Flight Control Computer and switches the stabilizers off while flying to the target. Without a designated target it takes the nearest hostile radar contact; redstone pauses it.
+- Works like the Flight Control **Navigation Terminal**: flies the ship through a **Velocity Coupler** and an **Angular Velocity Coupler** linked to the Flight Control Computer and switches the stabilizers off while flying to the target. It chases nothing else: with no target the ship **hovers** or flies an **orbit** around a point or an **Orbit Beacon** of its network (radius, height, direction, orbit speed, where the nose points). Redstone pauses it.
+
+### ⚓ Docking Controller (requires Create: Flight Control and Create Aeronautics)
+- One block, two roles: **port** (next to the connectors ships dock to — ground, station, another ship) and **plug** (on the ship next to its own connectors). Up to **8 Docking Connectors** per controller, linked with the Flight Control Tool Gun and highlighted like Flight Control links.
+- The bridge takes the ship to the **nearest free port with the plug's number**, turning in advance so every connector meets its own port, keeping the **clearance distance** and flying around the port until it is on the port axis. Controllers extend the connectors; the connectors lock on their own.
+- When to dock: when there is no target or on a redstone signal. While docked, the ship's Flight Control engines are off and its guns are inactive.
 
 ### 💥 Shell & rocket interception (requires CBC Interception)
 - Shoots down incoming **big cannon shells** and **rockets** (CBC, CBC Advanced Technologies and other addons): threat filter, types and priorities, "first to arrive first".
@@ -75,7 +80,7 @@ Done — the battery will engage hostile mobs and other targets you allow. Hold 
 ## 🔌 Optional
 - **Create Aeronautics / Sable** — ships as targets, transponders on ships, custom turrets on Swivel Bearings
 - **CBC Interception** — shooting down shells and rockets
-- **Create: Flight Control** — the Autopilot Bridge (0.8.3+)
+- **Create: Flight Control** — the Autopilot Bridge, Docking Controller and Orbit Beacon (0.8.3+; docking also needs Create Aeronautics)
 - **CBC Advanced Technologies** — rifled barrels, heavy/twin autocannons, rockets (its reworked cannon physics is taken into account)
 - **CBC Neo Warfare** — rotary and medium cannons
 - **CBC: Firepower Components** — compact mounts

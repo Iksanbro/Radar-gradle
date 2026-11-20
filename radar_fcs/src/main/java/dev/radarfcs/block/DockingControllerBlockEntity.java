@@ -194,8 +194,10 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         long now = level.getGameTime();
         Direction facing = connectorFacing();
         boolean extend = false;
+        boolean sync = now - lastSync >= 10;
         if (facing == null) {
             if (role == Docking.Role.PORT) DockingRegistry.remove(level, worldPosition);
+            if (forced) for (BlockPos c : connectorPositions()) DockingPorts.unforce(level, c);
             forced = false;
             status = Status.NO_CONNECTOR;
         } else if (role == Docking.Role.PORT) {
@@ -211,11 +213,11 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
                 DockingRegistry.PortInfo info = describe(level, facing);
                 if (info != null) DockingRegistry.put(level, info);
             }
-            boolean locked = locked();
-            status = locked ? Status.LOCKED : extend ? Status.EXTENDED : r != null ? Status.RESERVED : Status.IDLE;
+            // сцепку (рефлексия по каждому порту) - только для сводки, раз в полсекунды
+            if (sync) status = locked() ? Status.LOCKED : extend ? Status.EXTENDED : r != null ? Status.RESERVED : Status.IDLE;
         } else {
             extend = now <= extendUntil;
-            status = locked() ? Status.LOCKED : extend ? Status.EXTENDED : Status.IDLE;
+            if (sync) status = locked() ? Status.LOCKED : extend ? Status.EXTENDED : Status.IDLE;
         }
         // через 2 с после загрузки: порт мог сохраниться выдвинутым по команде, а команды нет - вернуть ему его сигнал
         // (раньше нельзя: пристыкованный корабль расстыковался бы, пока мост не подтвердил стыковку)
@@ -227,7 +229,7 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
             forced = f;
         }
         if (check) checked = true;
-        if (now - lastSync >= 10) {
+        if (sync) {
             lastSync = now;
             String summary = status.name() + "|" + connectorOffsets.size();
             if (!summary.equals(lastSummary)) {
