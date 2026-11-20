@@ -124,7 +124,7 @@ public class DockingGameTests {
                     double dy = p.tip().y() - (con.getY() + 0.5 + DockingPorts.TIP);
                     // середина концов двух портов и расстановка между ними
                     double dx = p.tip().x() - (con.getX() + con2.getX() + 1) / 2.0, dz = p.tip().z() - (con.getZ() + con2.getZ() + 1) / 2.0;
-                    if (p.count() != 2 || Math.abs(dx) > 1e-6 || Math.abs(dz) > 1e-6 || Math.abs(p.pattern().length() - Math.sqrt(5)) > 1e-6) {
+                    if (p.count() != 2 || Math.abs(dx) > 1e-6 || Math.abs(dz) > 1e-6 || Math.abs(p.tips().get(0).distance(p.tips().get(1)) - Math.sqrt(5)) > 1e-6) {
                         h.fail("bad two-connector port: " + p);
                     }
                     FcsMod.LOG.info("[radar_fcs test] docking: port #{} nets {} tip {} facing {}", p.number(), p.networks(), p.tip(), p.facing());
@@ -470,6 +470,29 @@ public class DockingGameTests {
                     FcsMod.LOG.info("[radar_fcs test] docking: orbit beacon - {} {}", b.state(), c);
                     if (b.state() != AutopilotBlockEntity.State.IDLE_ORBIT) h.fail("expected IDLE_ORBIT around the beacon, got " + b.state());
                     if (!(vx < 0)) h.fail("expected toward the beacon (-X): " + c);
+                    // маяк с кодом ALPHA к востоку, не в сети моста; мост с кодом ALPHA - к нему
+                    h.setBlock(new BlockPos(40, 2, 31), DockingBlocks.BEACON.get().defaultBlockState());
+                    FcsGameTests.CREATED.add(h.absolutePos(new BlockPos(40, 2, 31)));
+                    if (level.getBlockEntity(h.absolutePos(new BlockPos(40, 2, 31))) instanceof dev.radarfcs.block.OrbitBeaconBlockEntity ob) {
+                        ob.setCode("  ALPHA\t ");
+                        if (!"ALPHA".equals(ob.code())) h.fail("beacon code not cleaned: '" + ob.code() + "'");
+                    }
+                    b.orbitCode = "alpha";
+                    phase.set(5);
+                    since.set(t);
+                }
+                case 5 -> {                                                 // по коду (без учёта регистра) - к восточному
+                    if (t - since.get() < 30) return;
+                    FcsMod.LOG.info("[radar_fcs test] docking: orbit beacon by code - {} {}", b.state(), c);
+                    if (b.state() != AutopilotBlockEntity.State.IDLE_ORBIT) h.fail("expected IDLE_ORBIT around the coded beacon, got " + b.state());
+                    if (!(vx > 0)) h.fail("expected toward the coded beacon (+X): " + c);
+                    b.orbitCode = "BRAVO";
+                    phase.set(6);
+                    since.set(t);
+                }
+                case 6 -> {                                                 // кода нет ни у одного маяка - висит
+                    if (t - since.get() < 12) return;
+                    if (b.state() != AutopilotBlockEntity.State.IDLE_NO_BEACON) h.fail("expected IDLE_NO_BEACON for an unknown code, got " + b.state());
                     h.succeed();
                 }
                 default -> { }
@@ -478,7 +501,7 @@ public class DockingGameTests {
     }
 
     /**
-     * Пристыкован: порт корабля (вниз) над портом на земле (вверх), оба выдвинуты - сцепились. Мост («стыковка по
+     * Пристыкован: два порта корабля (вниз) над двумя портами на земле (вверх), все выдвинуты - сцепились оба. Мост («стыковка по
      * редстоуну», сигнал есть) видит сцепку: «пристыкован», компьютер управления полётом выключен (тяга двигателей
      * снята), корабль отмечен - пушки вычислителей на нём неактивны. Сигнал снят - расстыковка, компьютер снова работает,
      * отметки нет.
@@ -492,10 +515,15 @@ public class DockingGameTests {
         floor(h);
         UUID net = UUID.randomUUID();
         shipBase(h, net);
-        dock(h, new BlockPos(10, 6, 30), Docking.Role.PLUG, 9, new BlockPos(11, 3, 31), Direction.DOWN, net);
+        // по два порта: у корабля снизу (10,3,31) и (12,3,31), на земле под ними
+        DockingControllerBlockEntity plugBe = dock(h, new BlockPos(10, 6, 30), Docking.Role.PLUG, 9, new BlockPos(10, 3, 31), Direction.DOWN, net);
+        h.setBlock(new BlockPos(12, 3, 31), connector(Direction.DOWN));
+        plugBe.toggleConnector(h.absolutePos(new BlockPos(12, 3, 31)));
         Object sub = SableTestSupport.staticSub(h, new BlockPos(10, 3, 30), new BlockPos(12, 7, 32));
         UUID shipId = SableTestSupport.subId(sub);
-        DockingControllerBlockEntity port = dock(h, new BlockPos(13, 0, 31), Docking.Role.PORT, 9, new BlockPos(11, 0, 31), Direction.UP, net);
+        DockingControllerBlockEntity port = dock(h, new BlockPos(14, 0, 31), Docking.Role.PORT, 9, new BlockPos(10, 0, 31), Direction.UP, net);
+        h.setBlock(new BlockPos(12, 0, 31), connector(Direction.UP));
+        port.toggleConnector(h.absolutePos(new BlockPos(12, 0, 31)));
         BlockPos portPos = port.getBlockPos();
         AtomicInteger phase = new AtomicInteger(), since = new AtomicInteger();
         Object[] bridge = new Object[1];
@@ -521,11 +549,12 @@ public class DockingGameTests {
                 case 0 -> {                                                 // выдвинуть оба порта, ждать сцепки
                     plug[0].commandExtend(now);
                     DockingRegistry.reserve(level, portPos, plug[0].key(), now, true);
-                    if (!plug[0].locked()) {
-                        if (t - since.get() > 300) h.fail("connectors did not lock, plug " + plug[0].status() + ", port " + port.status());
+                    if (plug[0].lockedCount() < 2) {
+                        if (t - since.get() > 300) h.fail("not both connectors locked (" + plug[0].lockedCount() + "), plug " + plug[0].status()
+                                + ", port " + port.status());
                         return;
                     }
-                    FcsMod.LOG.info("[radar_fcs test] docking: locked after {} ticks", t - since.get());
+                    FcsMod.LOG.info("[radar_fcs test] docking: both connectors locked after {} ticks", t - since.get());
                     b.dockTrigger = Docking.Trigger.REDSTONE;
                     phase.set(1);
                     since.set(t);
@@ -553,6 +582,55 @@ public class DockingGameTests {
                 }
                 default -> { }
             }
+        });
+    }
+
+    /**
+     * Доворот по расстановке: у корабля два порта снизу поперёк (по X), у станции №4 два порта вверх вдоль Z - мост на
+     * стыковке («нет цели») даёт команду поворота вокруг вертикали; расстановки совпадают (по 2, через 2 бл).
+     */
+    @GameTest(template = ARENA, batch = "docking", timeoutTicks = 300)
+    public static void bridgeTurnsForPortLayout(GameTestHelper h) {
+        if (!mods(true)) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        UUID net = UUID.randomUUID();
+        shipBase(h, net);
+        DockingControllerBlockEntity plugBe = dock(h, new BlockPos(10, 6, 30), Docking.Role.PLUG, 4, new BlockPos(10, 3, 31), Direction.DOWN, net);
+        h.setBlock(new BlockPos(12, 3, 31), connector(Direction.DOWN));
+        plugBe.toggleConnector(h.absolutePos(new BlockPos(12, 3, 31)));
+        SableTestSupport.staticSub(h, new BlockPos(10, 3, 30), new BlockPos(12, 7, 32));
+        DockingControllerBlockEntity station = dock(h, new BlockPos(41, 1, 21), Docking.Role.PORT, 4, new BlockPos(40, 1, 20), Direction.UP, net);
+        h.setBlock(new BlockPos(40, 1, 22), connector(Direction.UP));
+        station.toggleConnector(h.absolutePos(new BlockPos(40, 1, 22)));
+        AtomicInteger since = new AtomicInteger();
+        Object[] bridge = new Object[1];
+        BlockPos[] at = new BlockPos[1];
+        DockingControllerBlockEntity[] plug = new DockingControllerBlockEntity[1];
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            ServerLevel level = h.getLevel();
+            if (bridge[0] == null) {
+                if (!findShip(h, net, bridge, at, plug)) {
+                    if (t > 100) h.fail("bridge or plug not found in the radar network");
+                    return;
+                }
+                ((AutopilotBlockEntity) bridge[0]).dockTrigger = Docking.Trigger.NO_TARGET;
+                since.set(t);
+                return;
+            }
+            if (t - since.get() < 70) return;
+            AutopilotBlockEntity b = (AutopilotBlockEntity) bridge[0];
+            Map<String, Object> c = FlightTestSupport.commands(level, at[0].offset(D_CC), at[0]);
+            double wy = num(c, "BODY_ANGULAR_VELOCITY:BODY_ANGULAR_VELOCITY_Y");
+            FcsMod.LOG.info("[radar_fcs test] docking: layout turn - {} {}", b.state(), c);
+            if (!b.state().name().startsWith("DOCK_")) h.fail("expected docking, got " + b.state());
+            if (!(Math.abs(wy) > 0.1)) h.fail("expected a yaw command to match the port layout: " + c);
+            DockingRegistry.PortInfo pi = DockingRegistry.get(level, station.getBlockPos());
+            if (pi == null || pi.count() != 2) h.fail("station port not registered with 2 connectors: " + pi);
+            h.succeed();
         });
     }
 }

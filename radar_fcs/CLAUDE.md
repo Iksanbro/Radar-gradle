@@ -20,7 +20,7 @@
 - `docs/dev/features.md` — все требования пользователя и история функций по версиям (≈560 строк);
 - `docs/dev/dependencies.md` — проверенные особенности API CBC, CBC-AT, Neo Warfare, Create Radars, Sable;
 - `docs/dev/test-status.md` — что покрыто игровыми тестами и какие комбинации модов проверены;
-- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test, итог — `features.md` п. 43-44).
+- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test, итог — `features.md` п. 43-45).
 
 Эти файлы и `README.md` большие: **не выводи их целиком** (`cat`), ищи нужное через `grep -n` и читай куски.
 
@@ -109,15 +109,16 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # �
   `compat/ContraptionCompat.hasTransponder(e, rule, now)` - коды из данных блоков контрапшена.
 - Стыковка (только с Flight Control): `block/DockingControllerBlock(Entity)` + `DockingBlocks` (роль порт/штекер, номер,
   до 8 портов `simulated:docking_connector` в одну сторону - пистолетом FC, `compat/flight/DockingToolLink`; середина
-  концов и расстановка), `compat/DockingPorts` (порт Simulated: выдвижение через `POWERED` с повтором в начале и конце
+  концов, подбор доворота и соответствия по всем портам - `Docking.layout/matchYaw`), `compat/DockingPorts` (порт Simulated: выдвижение через `POWERED` с повтором в начале и конце
   тика мира, `isLocked` рефлексией), `dock/DockingRegistry` (порты по сетям и номерам, брони), `dock/DockHold`
   (пристыкованные корабли - пушки на них `Status.DOCKED`), `core/Docking` (фазы подлёта, развороты, доворот по
   расстановке), в мосту - `dockTrigger`/`dockBusy` и `FlightBridgeBlockEntity.dockSteer` через ту же аренду (`lease`);
   пристыкован - компьютер FC выключен (`setWorking(false)`, `DockPoweredDown`). Экран `client/DockingControllerScreen`,
   `net/DockingPayloads`.
 - Мост без цели (других объектов не ведёт): `Autopilot.Idle` - висеть / орбита вокруг координаты / вокруг маяка орбиты
-  (`block/OrbitBeaconBlock(Entity)`, `LinkKind.BEACON`), `Autopilot.orbitVelocity`, `FlightBridgeBlockEntity.idleSteer`;
-  экран моста - вкладки «Цель» и «Без цели».
+  (`block/OrbitBeaconBlock(Entity)` с кодом, `dock/BeaconRegistry` - маяки по кодам, `LinkKind.BEACON`),
+  `Autopilot.orbitVelocity`, `FlightBridgeBlockEntity.idleSteer`; экран моста - вкладки «Цель» и «Без цели».
+- Подсветка связей стыковочного контроллера с пистолетом FC в руке - `compat/flight/DockingToolClient` (цвета FC).
 - `block/`, `registry/`, `client/FcsClient` (цвет транспондера).
 - `src/gametest/` — игровые тесты и dev-автоматизация (в jar не попадают).
 

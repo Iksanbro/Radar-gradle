@@ -39,7 +39,8 @@ public final class AutopilotScreen extends Screen {
     private int tab;
     private int left, top;
     private EditBox distField, heightField, speedField, rollField, pitchField;
-    private EditBox xField, yField, zField, radiusField, orbitHeightField;
+    private EditBox xField, yField, zField, radiusField, orbitHeightField, codeField;
+    private Button hereButton;
     private final List<AbstractWidget> targetTab = new ArrayList<>(), idleTab = new ArrayList<>();
 
     public AutopilotScreen(AutopilotPayloads.Open p) {
@@ -112,13 +113,19 @@ public final class AutopilotScreen extends Screen {
         yField = field(idleTab, left + 12 + cw, top + 78, cw, keep(yField, init("OrbitY", Autopilot::cleanCoord, 64)));
         zField = field(idleTab, left + 16 + 2 * cw, top + 78, cw, keep(zField, init("OrbitZ", Autopilot::cleanCoord, 0)));
         for (EditBox b : new EditBox[]{xField, yField, zField}) b.setMaxLength(10);
-        idleTab.add(addRenderableWidget(Button.builder(Component.translatable("radar_fcs.autopilot.orbit_here"), b -> {
+        // код маяка - на месте координат (видно только в режиме «орбита вокруг маяка»)
+        String code = codeField != null ? codeField.getValue() : initial.getString("OrbitCode");
+        codeField = new EditBox(font, left + 8, top + 78, W - 16, 16, Component.empty());
+        codeField.setMaxLength(16);
+        codeField.setValue(code);
+        addRenderableWidget(codeField);
+        hereButton = addRenderableWidget(Button.builder(Component.translatable("radar_fcs.autopilot.orbit_here"), b -> {
             var pl = Minecraft.getInstance().player;
             if (pl == null) return;
             xField.setValue(String.valueOf((long) Math.floor(pl.getX())));
             yField.setValue(String.valueOf((long) Math.floor(pl.getY())));
             zField.setValue(String.valueOf((long) Math.floor(pl.getZ())));
-        }).bounds(left + W - 8 - 58, top + 77, 58, 18).tooltip(Tooltip.create(Component.translatable("radar_fcs.autopilot.orbit_here.hint"))).build()));
+        }).bounds(left + W - 8 - 58, top + 77, 58, 18).tooltip(Tooltip.create(Component.translatable("radar_fcs.autopilot.orbit_here.hint"))).build());
         radiusField = field(idleTab, x, top + 100, w, keep(radiusField, init("OrbitRadius", Autopilot::cleanRadius, Double.NaN)));
         orbitHeightField = field(idleTab, x, top + 120, w, keep(orbitHeightField, init("OrbitHeight", Autopilot::cleanHeight, 24)));
         idleTab.add(addRenderableWidget(Button.builder(direction(), b -> {
@@ -156,12 +163,18 @@ public final class AutopilotScreen extends Screen {
             t.putDouble("OrbitRadius", parse(radiusField, Autopilot::cleanRadius));
             t.putDouble("OrbitHeight", parse(orbitHeightField, Autopilot::cleanHeight));
             t.putBoolean("OrbitCW", clockwise);
+            t.putString("OrbitCode", codeField.getValue());
             PacketDistributor.sendToServer(new AutopilotPayloads.Save(pos, t));
             onClose();
         }).bounds(left + W / 2 - 104, top + H - 26, 100, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.close"), b -> onClose())
                 .bounds(left + W / 2 + 4, top + H - 26, 100, 20).build());
         setTab(tab);
+    }
+
+    /** Открыть вкладку (0 - «Цель», 1 - «Без цели»); для dev-снимков. */
+    public void showTab(int t) {
+        setTab(t);
     }
 
     private void setTab(int t) {
@@ -203,6 +216,10 @@ public final class AutopilotScreen extends Screen {
         for (EditBox b : new EditBox[]{xField, yField, zField}) edit(b, idle == Autopilot.Idle.ORBIT_POINT);
         edit(radiusField, idle.orbit());
         edit(orbitHeightField, idle.orbit());
+        boolean beacon = idle == Autopilot.Idle.ORBIT_BEACON, idleTabOpen = tab == 1;
+        codeField.visible = idleTabOpen && beacon;
+        hereButton.visible = idleTabOpen && !beacon;
+        for (EditBox b : new EditBox[]{xField, yField, zField}) b.visible = idleTabOpen && !beacon;
     }
 
     private static void edit(EditBox b, boolean on) {
@@ -243,7 +260,11 @@ public final class AutopilotScreen extends Screen {
             g.drawWordWrap(font, Component.translatable(mode.key() + ".hint"), left + 8, top + 204, W - 16, 0x8A9098);
         } else {
             boolean point = idle == Autopilot.Idle.ORBIT_POINT, orbit = idle.orbit();
-            g.drawString(font, Component.translatable("radar_fcs.autopilot.orbit_center"), left + 8, top + 67, point ? 0xC0C0C0 : 0x606060, false);
+            if (idle == Autopilot.Idle.ORBIT_BEACON) {
+                g.drawString(font, Component.translatable("radar_fcs.autopilot.orbit_code"), left + 8, top + 67, 0xC0C0C0, false);
+            } else {
+                g.drawString(font, Component.translatable("radar_fcs.autopilot.orbit_center"), left + 8, top + 67, point ? 0xC0C0C0 : 0x606060, false);
+            }
             g.drawString(font, Component.translatable("radar_fcs.autopilot.orbit_radius"), left + 8, top + 104, orbit ? 0xC0C0C0 : 0x606060, false);
             g.drawString(font, Component.translatable("radar_fcs.autopilot.orbit_height"), left + 8, top + 124, orbit ? 0xC0C0C0 : 0x606060, false);
             g.drawString(font, Component.translatable("radar_fcs.autopilot.dock_title"), left + 8, top + 162, 0xC0C0C0, false);

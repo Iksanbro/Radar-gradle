@@ -87,6 +87,28 @@ public final class DockingToolLink {
         }
     }
 
+    /** Клиент: выбранный пистолетом контроллер (для подсветки), иначе null. */
+    @org.jetbrains.annotations.Nullable
+    public static BlockPos clientPick(Player p) {
+        Pick pick = CLIENT.get(p.getUUID());
+        if (pick == null) return null;
+        if (pick.until() < p.level().getGameTime() || !pick.dim().equals(p.level().dimension())) {
+            CLIENT.remove(p.getUUID());
+            return null;
+        }
+        return pick.pos();
+    }
+
+    /** Клиент: выбрать контроллер (для dev-снимков подсветки). */
+    public static void clientSelect(Player p, BlockPos pos) {
+        CLIENT.put(p.getUUID(), new Pick(p.level().dimension(), pos.immutable(), p.level().getGameTime() + TIMEOUT));
+    }
+
+    /** Клиент: пистолет убран из рук - выбор забыт (как у Flight Control). */
+    public static void clientForget(Player p) {
+        CLIENT.remove(p.getUUID());
+    }
+
     private static void cancel(PlayerInteractEvent.RightClickBlock e) {
         e.setCanceled(true);
         e.setCancellationResult(InteractionResult.sidedSuccess(e.getLevel().isClientSide));

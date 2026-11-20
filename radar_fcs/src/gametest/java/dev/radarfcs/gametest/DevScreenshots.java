@@ -938,8 +938,46 @@ public final class DevScreenshots {
             dev.radarfcs.client.FcsClientHooks.openAutopilot(new dev.radarfcs.net.AutopilotPayloads.Open(bridge, be.writeSettings()));
         }
         if (tick == 3090) shot(mc, "bridge_screen");
-        if (tick == 3092) mc.setScreen(null);
-        if (tick == 3096) mc.stop();
+        if (tick == 3092 && mc.screen instanceof dev.radarfcs.client.AutopilotScreen as) as.showTab(1);
+        if (tick == 3098) shot(mc, "bridge_screen_idle");
+        if (tick == 3100) mc.setScreen(null);
+        // стыковочный контроллер с двумя портами Simulated, маяк орбиты; пистолет Flight Control в руке
+        BlockPos dock = bridge.offset(5, 0, 0), beacon = bridge.offset(5, 0, 4);
+        if (tick == 3102) server.execute(() -> {
+            ServerLevel level = server.overworld();
+            level.setBlock(dock, block("radar_fcs:docking_controller").defaultBlockState()
+                    .setValue(net.minecraft.world.level.block.HorizontalDirectionalBlock.FACING, Direction.SOUTH), 3);
+            var con = block("simulated:docking_connector").defaultBlockState()
+                    .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING, Direction.UP);
+            level.setBlock(dock.offset(2, 0, -1), con, 3);
+            level.setBlock(dock.offset(2, 0, 1), con, 3);
+            level.setBlock(dock.offset(-2, 0, 0), con, 3);
+            if (level.getBlockEntity(dock) instanceof dev.radarfcs.block.DockingControllerBlockEntity d) {
+                d.toggleConnector(dock.offset(2, 0, -1));
+                d.toggleConnector(dock.offset(2, 0, 1));
+            }
+            level.setBlock(beacon, block("radar_fcs:orbit_beacon").defaultBlockState()
+                    .setValue(net.minecraft.world.level.block.HorizontalDirectionalBlock.FACING, Direction.SOUTH), 3);
+            if (level.getBlockEntity(beacon) instanceof dev.radarfcs.block.OrbitBeaconBlockEntity b) b.setCode("ALPHA");
+            var p = server.getPlayerList().getPlayers().get(0);
+            p.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND,
+                    new net.minecraft.world.item.ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("create_flight_control:flight_control_tool_gun"))));
+            // взгляд на порт без связи (под прицелом - белый)
+            look(server, dock.offset(-2, 0, 0).getCenter(), dock.getCenter().add(-1.0, 3.2, 5.5));
+        });
+        if (tick == 3110 && mc.player != null) dev.radarfcs.compat.flight.DockingToolLink.clientSelect(mc.player, dock);
+        if (tick == 3125) shot(mc, "docking_highlight");
+        if (tick == 3127 && mc.level != null && mc.level.getBlockEntity(dock) instanceof dev.radarfcs.block.DockingControllerBlockEntity d) {
+            net.minecraft.nbt.CompoundTag t = d.writeSettings();
+            t.putInt("Connectors", d.connectorCount());
+            t.putString("Status", d.status().name());
+            dev.radarfcs.client.FcsClientHooks.openDocking(new dev.radarfcs.net.DockingPayloads.Open(dock, t));
+        }
+        if (tick == 3133) shot(mc, "docking_screen");
+        if (tick == 3135) dev.radarfcs.client.FcsClientHooks.openBeacon(new dev.radarfcs.net.BeaconPayloads.Open(beacon, "ALPHA"));
+        if (tick == 3141) shot(mc, "beacon_screen");
+        if (tick == 3143) mc.setScreen(null);
+        if (tick == 3146) mc.stop();
     }
 
     private static void openBoard(Minecraft mc, BlockPos pos, boolean second) {

@@ -61,6 +61,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         DOCK_TRANSIT, DOCK_ALIGN, DOCK_WAITING, DOCK_FINAL,
         /** Стыковка: штекер так не встанет к порту (наклон порта не тот), / пристыкован / отходит от порта. */
         DOCK_TILT, DOCKED, DOCK_DEPART,
+        /** Стыковка: расстановка портов корабля не совпадает с расстановкой портов стыковки (сядет не на все). */
+        DOCK_LAYOUT,
         /** Цели нет: висит на месте / летит по орбите / орбита вокруг маяка, а маяка в сети нет (висит). */
         IDLE_HOVER, IDLE_ORBIT, IDLE_NO_BEACON;
 
@@ -111,6 +113,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     public Autopilot.Idle idle = Autopilot.Idle.HOVER;
     public double orbitX, orbitY = 64, orbitZ, orbitRadius = 48, orbitHeight = 24;
     public boolean orbitClockwise;
+    /** Код маяка орбиты (пусто - первый маяк своей радарной сети). */
+    public String orbitCode = "";
 
     @Nullable private UUID owner;
     private String ownerTeam = "";
@@ -351,6 +355,7 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         t.putDouble("OrbitRadius", orbitRadius);
         t.putDouble("OrbitHeight", orbitHeight);
         t.putBoolean("OrbitCW", orbitClockwise);
+        t.putString("OrbitCode", orbitCode);
         return t;
     }
 
@@ -377,6 +382,7 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         orbitRadius = Autopilot.cleanRadius(t.contains("OrbitRadius") ? t.getDouble("OrbitRadius") : Double.NaN);
         orbitHeight = Autopilot.cleanHeight(t.contains("OrbitHeight") ? t.getDouble("OrbitHeight") : 24);
         orbitClockwise = t.getBoolean("OrbitCW");
+        orbitCode = dev.radarfcs.dock.BeaconRegistry.clean(t.getString("OrbitCode"));
     }
 
     public static <E extends Enum<E>> E enumOr(Class<E> c, String name, E fallback) {
@@ -460,7 +466,7 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         ChatFormatting c = state == State.ACTIVE || state == State.DOCKED ? ChatFormatting.GREEN
                 : state == State.NO_TARGET || state == State.IDLE_HOVER || state == State.IDLE_ORBIT ? ChatFormatting.GRAY
                 : state.name().startsWith("DOCK_") && state != State.DOCK_NO_PLUG && state != State.DOCK_NO_CONNECTOR
-                && state != State.DOCK_NO_PORT && state != State.DOCK_TILT ? ChatFormatting.AQUA : ChatFormatting.RED;
+                && state != State.DOCK_NO_PORT && state != State.DOCK_TILT && state != State.DOCK_LAYOUT ? ChatFormatting.AQUA : ChatFormatting.RED;
         tooltip.add(Component.literal("    ").append(Component.translatable(state.key())).withStyle(c));
         if (!dockName.isEmpty()) {
             tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.autopilot.dock_port", dockName,

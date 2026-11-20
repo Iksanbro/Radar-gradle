@@ -23,6 +23,7 @@ import dev.radarfcs.dock.DockHold;
 import dev.radarfcs.dock.DockingRegistry;
 import dev.radarfcs.link.LinkRegistry;
 import java.util.HashSet;
+import java.util.List;
 import net.minecraft.world.phys.Vec3;
 import dev.radarfcs.core.Autopilot;
 import dev.radarfcs.core.Vec;
@@ -305,6 +306,13 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
         Vec center = null, centerVel = Vec.ZERO;
         if (idle == Autopilot.Idle.ORBIT_POINT) {
             center = new Vec(orbitX, orbitY, orbitZ);
+        } else if (idle == Autopilot.Idle.ORBIT_BEACON && !orbitCode.isEmpty()) {
+            // маяк по коду - в любом месте измерения (ближайший с этим кодом)
+            dev.radarfcs.dock.BeaconRegistry.Beacon b = dev.radarfcs.dock.BeaconRegistry.find(level, orbitCode, ship);
+            if (b != null) {
+                center = b.center();
+                centerVel = b.vel();
+            }
         } else if (idle == Autopilot.Idle.ORBIT_BEACON) {
             for (BlockPos b : beacons) {
                 if (!level.isLoaded(b) || !(level.getBlockEntity(b) instanceof OrbitBeaconBlockEntity)) continue;
@@ -368,7 +376,6 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
         Vec3 wt = SableCompat.toWorld(level, lt);
         Vec3 wd = SableCompat.dirToWorld(ship, Vec3.atLowerCornerOf(f.getNormal()));
         Vec3 wu = SableCompat.dirToWorld(ship, new Vec3(0, 1, 0));
-        Vec3 wp = SableCompat.dirToWorld(ship, plug.localPattern());
         Vec tip = new Vec(wt.x, wt.y, wt.z);
         if (Double.isNaN(cruiseY)) cruiseY = tip.y();
         long key = plug.key();
@@ -405,8 +412,13 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
         Object sub = subLevel(level);
         Set<UUID> nets = new HashSet<>(LinkRegistry.networksOf(level, worldPosition));
         nets.addAll(LinkRegistry.networksOf(level, plug.getBlockPos()));
+        List<Vec> tips = new java.util.ArrayList<>();
+        for (Vec3 t : plug.localTips()) {
+            Vec3 w = SableCompat.toWorld(level, t);
+            tips.add(new Vec(w.x, w.y, w.z));
+        }
         DockingRegistry.Choice ch = DockingRegistry.choose(level, nets, plug.number, ship == null ? null : ship.getUniqueId(), key, tip,
-                dockTarget, now);
+                dockTarget, now, tips.size());
         if (ch == null || (!ch.free() && dockBusy == Docking.Busy.STAY)) {
             endDock(level, now);
             release();
@@ -419,8 +431,8 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             dockTarget = target;
             dockPhase = Docking.Phase.TRANSIT;
         }
-        Docking.Command c = Docking.steer(dockPhase, ch.port().port(), tip, new Vec(wd.x, wd.y, wd.z), new Vec(wp.x, wp.y, wp.z),
-                new Vec(wu.x, wu.y, wu.z), maxSpeed, cruiseY, ch.free());
+        Docking.Command c = Docking.steer(dockPhase, ch.port().port(), tips, new Vec(wd.x, wd.y, wd.z), new Vec(wu.x, wu.y, wu.z),
+                maxSpeed, cruiseY, ch.free());
         dockPhase = c.phase();
         boolean extend = c.phase() == Docking.Phase.FINAL;
         dockReserved = ch.free();
@@ -431,6 +443,8 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
         State s = lease(cc, r, sub, c.velocity(), c.rates(), false);
         if (s != State.ACTIVE) return s;
         if (!c.compatible()) return State.DOCK_TILT;
+        // развёрнут, а порты не встают каждый на свой (другое число или другая расстановка) - предупредить
+        if (!c.layoutOk() && (c.phase() == Docking.Phase.ALIGN || c.phase() == Docking.Phase.FINAL)) return State.DOCK_LAYOUT;
         return switch (c.phase()) {
             case TRANSIT, APPROACH -> State.DOCK_TRANSIT;
             case ALIGN -> ch.free() ? State.DOCK_ALIGN : State.DOCK_WAITING;

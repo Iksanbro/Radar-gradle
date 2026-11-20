@@ -157,27 +157,12 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         return sum.scale(1.0 / tips.size());
     }
 
-    /**
-     * Расстановка портов (плот): от одного к другому из двух самых далёких концов; один порт - ноль. По ней корабль
-     * доворачивает к порту, который смотрит вверх или вниз.
-     */
-    public Vec3 localPattern() {
-        return pattern(localTips());
-    }
-
-    public static Vec3 pattern(List<Vec3> tips) {
-        Vec3 best = Vec3.ZERO;
-        double d = 0;
-        for (int i = 0; i < tips.size(); i++) {
-            for (int j = i + 1; j < tips.size(); j++) {
-                Vec3 v = tips.get(j).subtract(tips.get(i));
-                if (v.lengthSqr() > d + 1e-6) {
-                    d = v.lengthSqr();
-                    best = v;
-                }
-            }
-        }
-        return best;
+    /** Сколько портов сцеплено. */
+    public int lockedCount() {
+        if (level == null) return 0;
+        int n = 0;
+        for (BlockPos c : validConnectors()) if (DockingPorts.isLocked(level, c)) n++;
+        return n;
     }
 
     /** Хоть один порт сцеплен. */
@@ -259,10 +244,14 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         Vec3 tip = localTip();
         Vec3 w = SableCompat.toWorld(level, tip);
         Vec3 f = SableCompat.dirToWorld(ship, Vec3.atLowerCornerOf(facing.getNormal()));
-        Vec3 pat = SableCompat.dirToWorld(ship, pattern(tips));
+        List<Vec> wt = new ArrayList<>(tips.size());
+        for (Vec3 t : tips) {
+            Vec3 tw = SableCompat.toWorld(level, t);
+            wt.add(new Vec(tw.x, tw.y, tw.z));
+        }
         Vec3 v = SableCompat.pointVelocity(level, ship, tip).scale(20);
         return new DockingRegistry.PortInfo(worldPosition, number, networks, new Vec(w.x, w.y, w.z), new Vec(f.x, f.y, f.z).normalize(),
-                new Vec(v.x, v.y, v.z), ship == null ? null : ship.getUniqueId(), locked(), true, new Vec(pat.x, pat.y, pat.z), tips.size());
+                new Vec(v.x, v.y, v.z), ship == null ? null : ship.getUniqueId(), locked(), true, List.copyOf(wt));
     }
 
     @Override

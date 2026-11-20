@@ -698,29 +698,23 @@ public class SolverTest {
 
     /**
      * Подлёт к стыковочному порту через регуляторы Flight Control (как couplerFlight: запаздывание угловой скорости
-     * 0.2 с, предел 0.4 рад/с, скорости 0.5 с). Корабль - точка с осями: нос f, верх u, штекер в осях корабля
-     * (вперёд, вверх, вправо). Итог: конец штекера у цели ближнего подхода, штекер навстречу порту, корпус ровный.
+     * 0.2 с, предел 0.4 рад/с, скорости 0.5 с). Корабль - точка с осями: нос f, верх u; штекеры в осях корабля
+     * (вперёд, вверх, вправо). Итог печатается: фаза, промах самого дальнего штекера от своего места (конец порта +
+     * GAP по его оси), ошибка разворота, ровность, промах расстановки.
      */
-    static Docking.Command dockFlight(String name, Vec ship, Vec f, Vec u, Vec plugOff, Vec plugDirBody, Docking.Port port,
+    static Docking.Command dockFlight(String name, Vec ship, Vec f, Vec u, List<Vec> plugOffs, Vec plugDirBody, Docking.Port port,
                                      boolean mayEnter, int seconds) {
-        return dockFlight(name, ship, f, u, plugOff, plugDirBody, Vec.ZERO, port, mayEnter, seconds);
-    }
-
-    /** То же с расстановкой штекеров plugPatBody (в осях корабля); печатает угол расстановок в конце. */
-    static Docking.Command dockFlight(String name, Vec ship, Vec f, Vec u, Vec plugOff, Vec plugDirBody, Vec plugPatBody,
-                                     Docking.Port port, boolean mayEnter, int seconds) {
         Vec w = Vec.ZERO, vel = Vec.ZERO;
         double dt = 0.05;
         Docking.Phase ph = Docking.Phase.TRANSIT;
         Docking.Command c = null;
         double cruise = Double.NaN;
         for (int i = 0; i < seconds * 20; i++) {
+            List<Vec> tips = tips(ship, f, u, plugOffs);
             Vec r = f.cross(u).normalize();
-            Vec tip = ship.add(f.scale(plugOff.x())).add(u.scale(plugOff.y())).add(r.scale(plugOff.z()));
             Vec pd = f.scale(plugDirBody.x()).add(u.scale(plugDirBody.y())).add(r.scale(plugDirBody.z()));
-            if (Double.isNaN(cruise)) cruise = tip.y();
-            Vec pp = f.scale(plugPatBody.x()).add(u.scale(plugPatBody.y())).add(r.scale(plugPatBody.z()));
-            c = Docking.steer(ph, port, tip, pd, pp, u, 15, cruise, mayEnter);
+            if (Double.isNaN(cruise)) cruise = Docking.centroid(tips).y();
+            c = Docking.steer(ph, port, tips, pd, u, 15, cruise, mayEnter);
             ph = c.phase();
             Vec wc = new Vec(Autopilot.clamp(c.rates().x(), -0.4, 0.4), Autopilot.clamp(c.rates().y(), -0.4, 0.4),
                     Autopilot.clamp(c.rates().z(), -0.4, 0.4));
@@ -728,33 +722,80 @@ public class SolverTest {
             double wl = w.length();
             if (wl > 1e-12) {
                 Vec ax = w.scale(1 / wl);
-                // поворот вокруг центра корабля
                 f = rot(f, ax, wl * dt).normalize();
                 u = rot(u, ax, wl * dt).normalize();
             }
             vel = vel.add(c.velocity().sub(vel).scale(dt / 0.5));
             ship = ship.addScaled(vel, dt);
         }
-        Vec r = f.cross(u).normalize();
-        Vec tip = ship.add(f.scale(plugOff.x())).add(u.scale(plugOff.y())).add(r.scale(plugOff.z()));
-        Vec pp = f.scale(plugPatBody.x()).add(u.scale(plugPatBody.y())).add(r.scale(plugPatBody.z()));
-        double pat = pp.length() > 0 && port.pattern().length() > 0 ? Math.min(pp.angleTo(port.pattern()), pp.angleTo(port.pattern().scale(-1))) : 0;
-        System.out.printf(Locale.ROOT, "  dock %-28s phase %-8s tip->contact %.2f bl, plug err %.1f deg, level %.3f, pattern %.1f deg, compatible %s%n",
-                name, c.phase(), tip.distance(port.contact()), c.attitudeErrorDeg(), u.dot(Vec.UP), pat, c.compatible());
-        lastPatternDeg = pat;
+        double worst = 0;
+        for (Vec t : tips(ship, f, u, plugOffs)) {
+            double best = 1e9;
+            for (Vec q : port.tips()) best = Math.min(best, t.distance(q.addScaled(port.facing(), Docking.GAP)));
+            worst = Math.max(worst, best);
+        }
+        lastWorst = worst;
+        System.out.printf(Locale.ROOT, "  dock %-30s phase %-8s worst plug %.2f bl, err %.1f deg, level %.3f, layout %.2f bl %s, compatible %s%n",
+                name, c.phase(), worst, c.attitudeErrorDeg(), u.dot(Vec.UP), c.layoutError(), c.layoutOk() ? "ok" : "MISMATCH", c.compatible());
         return c;
     }
 
-    static double lastPatternDeg;
+    static Docking.Command dockFlight(String name, Vec ship, Vec f, Vec u, Vec plugOff, Vec plugDirBody, Docking.Port port,
+                                     boolean mayEnter, int seconds) {
+        return dockFlight(name, ship, f, u, List.of(plugOff), plugDirBody, port, mayEnter, seconds);
+    }
+
+    static List<Vec> tips(Vec ship, Vec f, Vec u, List<Vec> offs) {
+        Vec r = f.cross(u).normalize();
+        List<Vec> out = new ArrayList<>();
+        for (Vec o : offs) out.add(ship.add(f.scale(o.x())).add(u.scale(o.y())).add(r.scale(o.z())));
+        return out;
+    }
+
+    static double lastWorst;
+
+    /** Порт из нескольких портов: середина, направление, концы = середина + смещения. */
+    static Docking.Port multiPort(Vec center, Vec facing, Vec... offs) {
+        List<Vec> t = new ArrayList<>();
+        for (Vec o : offs) t.add(center.add(o));
+        return new Docking.Port(Docking.centroid(t), facing, Vec.ZERO, t);
+    }
+
+    static Vec rotYTest(Vec v, double a) {
+        double c = Math.cos(a), sn = Math.sin(a);
+        return new Vec(v.x() * c + v.z() * sn, v.y(), -v.x() * sn + v.z() * c);
+    }
 
     static void docking() {
         boolean ok = true;
-        // площадка из двух портов вверх, расстановка по X (восток-запад); у корабля штекеры вдоль носа (север-юг) -
-        // доворот на 90°
-        Docking.Port pad2 = new Docking.Port(new Vec(20.5, 64.5, -10.5), Vec.UP, Vec.ZERO, new Vec(4, 0, 0));
-        Docking.Command c2 = dockFlight("two pad ports, yaw by pattern", new Vec(-20, 100, 20), new Vec(0, 0, -1), Vec.UP,
-                new Vec(0, -3, 0), new Vec(0, -1, 0), new Vec(4, 0, 0), pad2, true, 90);
-        ok &= c2.phase() == Docking.Phase.FINAL && c2.distance() < Docking.GAP + 0.6 && lastPatternDeg < 3;
+        // площадка из двух портов вверх по X; у корабля два порта снизу вдоль носа - доворот на 90°
+        Docking.Port pad2 = multiPort(new Vec(20.5, 64.5, -10.5), Vec.UP, new Vec(-4, 0, 0), new Vec(4, 0, 0));
+        Docking.Command c2 = dockFlight("two pad ports, yaw 90", new Vec(-20, 100, 20), new Vec(0, 0, -1), Vec.UP,
+                List.of(new Vec(4, -3, 0), new Vec(-4, -3, 0)), new Vec(0, -1, 0), pad2, true, 90);
+        ok &= c2.phase() == Docking.Phase.FINAL && lastWorst < 0.3 && c2.layoutOk();
+        // три порта вверх «уголком» (несимметрично); у корабля такой же уголок, повёрнутый на 130° - доворот на 130°,
+        // каждый порт к своему
+        Vec[] corner = {new Vec(0, 0, 0), new Vec(5, 0, 0), new Vec(0, 0, 3)};
+        Docking.Port pad3 = multiPort(new Vec(-30.5, 70.5, 40.5), Vec.UP, corner);
+        Vec cc = Docking.centroid(List.of(corner));
+        List<Vec> plug3 = new ArrayList<>();
+        for (Vec o : corner) {
+            Vec wv = rotYTest(o.sub(cc), Math.toRadians(-130));               // мир при носе на север: вправо = +X, вперёд = -Z
+            plug3.add(new Vec(-wv.z(), -3, wv.x()));
+        }
+        Docking.Command c3 = dockFlight("three pad ports, yaw 130", new Vec(30, 105, -20), new Vec(0, 0, -1), Vec.UP, plug3,
+                new Vec(0, -1, 0), pad3, true, 120);
+        ok &= c3.phase() == Docking.Phase.FINAL && lastWorst < 0.3 && c3.layoutOk();
+        // два порта в стене (смотрят на восток) один над другим; у корабля два порта справа один над другим
+        Docking.Port wall2 = multiPort(new Vec(0.5, 66.5, 0.5), new Vec(1, 0, 0), new Vec(0, -2, 0), new Vec(0, 2, 0));
+        Docking.Command cw = dockFlight("two wall ports, stacked", new Vec(-60, 95, 50), new Vec(0, 0, -1), Vec.UP,
+                List.of(new Vec(0, 2, 3), new Vec(0, -2, 3)), new Vec(0, 0, 1), wall2, true, 90);
+        ok &= cw.phase() == Docking.Phase.FINAL && lastWorst < 0.3 && cw.layoutOk();
+        // расстановки разные (6 бл у корабля, 8 у порта) - предупреждение
+        Docking.Port pad8 = multiPort(new Vec(60.5, 64.5, 60.5), Vec.UP, new Vec(-4, 0, 0), new Vec(4, 0, 0));
+        Docking.Command cx = dockFlight("layout mismatch", new Vec(40, 95, 40), new Vec(0, 0, -1), Vec.UP,
+                List.of(new Vec(3, -3, 0), new Vec(-3, -3, 0)), new Vec(0, -1, 0), pad8, true, 60);
+        ok &= !cx.layoutOk();
         // порт в стене смотрит на восток; штекер справа от корабля, корабль носом на север далеко и высоко
         Docking.Port east = new Docking.Port(new Vec(0.5, 64.5, 0.5), new Vec(1, 0, 0), Vec.ZERO);
         Docking.Command c = dockFlight("side port, ship turns", new Vec(-90, 100, 70), new Vec(0, 0, -1), Vec.UP,

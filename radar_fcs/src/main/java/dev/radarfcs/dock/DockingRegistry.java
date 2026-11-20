@@ -22,9 +22,13 @@ import org.jetbrains.annotations.Nullable;
 public final class DockingRegistry {
     /** Порт: контроллер pos, номер, сети, конец порта и направление (мир), скорость (бл/с), корабль порта, сцеплен ли. */
     public record PortInfo(BlockPos pos, int number, Set<UUID> networks, Vec tip, Vec facing, Vec vel, @Nullable UUID ship,
-                           boolean locked, boolean loaded, Vec pattern, int count) {
+                           boolean locked, boolean loaded, List<Vec> tips) {
         public Docking.Port port() {
-            return new Docking.Port(tip, facing, vel, pattern);
+            return new Docking.Port(tip, facing, vel, tips);
+        }
+
+        public int count() {
+            return tips.size();
         }
     }
 
@@ -56,7 +60,7 @@ public final class DockingRegistry {
         Map<BlockPos, PortInfo> m = PORTS.get(level.dimension());
         if (m == null) return;
         m.computeIfPresent(pos, (k, p) -> new PortInfo(p.pos(), p.number(), p.networks(), p.tip(), p.facing(), Vec.ZERO, p.ship(),
-                p.locked(), false, p.pattern(), p.count()));
+                p.locked(), false, p.tips()));
     }
 
     @Nullable
@@ -100,12 +104,13 @@ public final class DockingRegistry {
     }
 
     /**
-     * Порт для штекера owner с концом в точке from: прежний (keep), если он ещё годится и свободен для него, иначе
-     * ближайший свободный, иначе ближайший занятый (free = false); null - портов с номером в сетях нет.
+     * Порт для штекера owner с серединой в точке from и count портами: прежний (keep), если он ещё годится и свободен
+     * для него, иначе ближайший свободный с тем же числом портов, иначе ближайший свободный, иначе ближайший занятый
+     * (free = false); null - портов с номером в сетях нет.
      */
     @Nullable
     public static Choice choose(Level level, Set<UUID> networks, int number, @Nullable UUID ship, long owner, Vec from,
-                                @Nullable BlockPos keep, long now) {
+                                @Nullable BlockPos keep, long now, int count) {
         List<PortInfo> all = ports(level, networks, number, ship);
         if (all.isEmpty()) return null;
         PortInfo bestFree = null, bestAny = null;
@@ -114,6 +119,7 @@ public final class DockingRegistry {
             boolean free = freeFor(level, p, owner, now);
             if (free && p.pos().equals(keep)) return new Choice(p, true);
             double d = p.tip().distanceSqr(from);
+            if (p.count() != count) d += 1e12;                           // сначала порты с той же расстановкой
             if (free && d < dFree) {
                 dFree = d;
                 bestFree = p;

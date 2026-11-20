@@ -32,6 +32,7 @@ public final class FcsMod {
         modBus.addListener(dev.radarfcs.net.GunPayloads::register);
         modBus.addListener(dev.radarfcs.net.AutopilotPayloads::register);
         modBus.addListener(dev.radarfcs.net.DockingPayloads::register);
+        modBus.addListener(dev.radarfcs.net.BeaconPayloads::register);
         // обучающие сцены Ponder (как в Create) - только на клиенте
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) dev.radarfcs.client.ponder.FcsPonderPlugin.init();
         if (dev.radarfcs.compat.Mods.SABLE) dev.radarfcs.compat.sable.SableRotor.init(dev.radarfcs.block.GunRotatorBlockEntity::physicsStepAll);
@@ -67,10 +68,18 @@ public final class FcsMod {
             dev.radarfcs.dock.DockingRegistry.clear();
             dev.radarfcs.compat.DockingPorts.clear();
             dev.radarfcs.dock.DockHold.clear();
+            dev.radarfcs.dock.BeaconRegistry.clear();
         });
         NeoForge.EVENT_BUS.addListener(dev.radarfcs.compat.DockingPorts::onLevelTick);
         NeoForge.EVENT_BUS.addListener(dev.radarfcs.compat.DockingPorts::onLevelTickEnd);
         // стыковочный контроллер: связь с портом Simulated инструментальным пистолетом Flight Control
-        if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) dev.radarfcs.compat.flight.DockingToolLink.init();
+        if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) {
+            dev.radarfcs.compat.flight.DockingToolLink.init();
+            // подсветка связей стыковочного контроллера с пистолетом Flight Control в руке - только на клиенте
+            if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
+                NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.client.event.ClientTickEvent.Post.class,
+                        dev.radarfcs.compat.flight.DockingToolClient::onTick);
+            }
+        }
     }
 }
