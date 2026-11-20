@@ -7,6 +7,7 @@ import dev.radarfcs.core.Docking;
 import dev.radarfcs.core.Vec;
 import dev.radarfcs.dock.DockingRegistry;
 import dev.radarfcs.link.LinkRegistry;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -50,7 +51,9 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
 
     public Docking.Role role = Docking.Role.PORT;
     public int number = 1;
-    @Nullable private BlockPos connectorOffset;
+    /** Порты Simulated - смещения от контроллера. */
+    private final List<BlockPos> connectorOffsets = new ArrayList<>();
+    public static final int MAX_CONNECTORS = 8;
 
     // сервер
     private long extendUntil = Long.MIN_VALUE;
@@ -65,42 +68,126 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         super(type, pos, state);
     }
 
-    // ------------------------------------------------------------- связь с портом Simulated
+    // ------------------------------------------------------------- связь с портами Simulated
 
-    @Nullable
-    public BlockPos connectorPos() {
-        return connectorOffset == null ? null : worldPosition.offset(connectorOffset);
+    /** Порты Simulated контроллера (мир/плот). */
+    public List<BlockPos> connectorPositions() {
+        List<BlockPos> out = new ArrayList<>(connectorOffsets.size());
+        for (BlockPos o : connectorOffsets) out.add(worldPosition.offset(o));
+        return out;
     }
 
-    /** Связать с портом Simulated в точке p (проверка - {@link DockingPorts#linkable}). */
-    public void linkConnector(@Nullable BlockPos p) {
-        if (level != null && !level.isClientSide && forced && connectorPos() != null) DockingPorts.setPowered(level, connectorPos(), false);
+    /** Итог добавления порта инструментом. */
+    public enum LinkResult { ADDED, REMOVED, FULL, FACING }
+
+    /**
+     * Добавить порт Simulated в точке p или убрать, если он уже связан (проверка расстояния и постройки -
+     * {@link DockingPorts#linkable}). Все порты контроллера должны смотреть в одну сторону.
+     */
+    public LinkResult toggleConnector(BlockPos p) {
+        BlockPos off = p.subtract(worldPosition);
+        if (connectorOffsets.contains(off)) {
+            unpower(List.of(p));
+            connectorOffsets.remove(off);
+            changed();
+            return LinkResult.REMOVED;
+        }
+        if (connectorOffsets.size() >= MAX_CONNECTORS) return LinkResult.FULL;
+        Direction f = connectorFacing();
+        if (f != null && level != null && DockingPorts.facingAt(level, p) != f) return LinkResult.FACING;
+        connectorOffsets.add(off.immutable());
+        changed();
+        return LinkResult.ADDED;
+    }
+
+    /** Снять связь со всеми портами (выдвинутые по команде вернуть к их сигналу). */
+    public void clearConnectors() {
+        unpower(connectorPositions());
+        connectorOffsets.clear();
         forced = false;
-        connectorOffset = p == null ? null : p.subtract(worldPosition);
         changed();
     }
 
-    /** Порт Simulated на месте: его направление, иначе null. */
+    private void unpower(List<BlockPos> ps) {
+        if (level == null || level.isClientSide || !forced) return;
+        for (BlockPos c : ps) if (level.isLoaded(c)) DockingPorts.setPowered(level, c, false);
+    }
+
+    /** Порты на месте и смотрящие как первый из них (остальные не в счёт). */
+    public List<BlockPos> validConnectors() {
+        List<BlockPos> out = new ArrayList<>();
+        if (level == null) return out;
+        Direction first = null;
+        for (BlockPos c : connectorPositions()) {
+            Direction f = DockingPorts.facingAt(level, c);
+            if (f == null) continue;
+            if (first == null) first = f;
+            if (f == first) out.add(c);
+        }
+        return out;
+    }
+
+    /** Направление портов (первого на месте), иначе null - портов нет. */
     @Nullable
     public Direction connectorFacing() {
-        BlockPos c = connectorPos();
-        return c == null || level == null ? null : DockingPorts.facingAt(level, c);
+        if (level == null) return null;
+        for (BlockPos c : connectorPositions()) {
+            Direction f = DockingPorts.facingAt(level, c);
+            if (f != null) return f;
+        }
+        return null;
     }
 
-    /** Конец порта Simulated в координатах постройки (плот); null - порта нет. */
+    /** Концы портов в координатах постройки (плот). */
+    public List<Vec3> localTips() {
+        Direction f = connectorFacing();
+        List<Vec3> out = new ArrayList<>();
+        if (f == null) return out;
+        for (BlockPos c : validConnectors()) out.add(DockingPorts.localTip(c, f));
+        return out;
+    }
+
+    /** Середина концов портов (плот); null - портов нет. */
     @Nullable
     public Vec3 localTip() {
-        Direction f = connectorFacing();
-        return f == null ? null : DockingPorts.localTip(connectorPos(), f);
+        List<Vec3> tips = localTips();
+        if (tips.isEmpty()) return null;
+        Vec3 sum = Vec3.ZERO;
+        for (Vec3 t : tips) sum = sum.add(t);
+        return sum.scale(1.0 / tips.size());
     }
 
-    /** Порт сцеплен. */
+    /**
+     * Расстановка портов (плот): от одного к другому из двух самых далёких концов; один порт - ноль. По ней корабль
+     * доворачивает к порту, который смотрит вверх или вниз.
+     */
+    public Vec3 localPattern() {
+        return pattern(localTips());
+    }
+
+    public static Vec3 pattern(List<Vec3> tips) {
+        Vec3 best = Vec3.ZERO;
+        double d = 0;
+        for (int i = 0; i < tips.size(); i++) {
+            for (int j = i + 1; j < tips.size(); j++) {
+                Vec3 v = tips.get(j).subtract(tips.get(i));
+                if (v.lengthSqr() > d + 1e-6) {
+                    d = v.lengthSqr();
+                    best = v;
+                }
+            }
+        }
+        return best;
+    }
+
+    /** Хоть один порт сцеплен. */
     public boolean locked() {
-        BlockPos c = connectorPos();
-        return c != null && level != null && DockingPorts.isLocked(level, c);
+        if (level == null) return false;
+        for (BlockPos c : validConnectors()) if (DockingPorts.isLocked(level, c)) return true;
+        return false;
     }
 
-    /** Штекер: выдвигать порт корабля ещё пару тиков (мост повторяет команду каждый тик). */
+    /** Штекер: выдвигать порты корабля ещё пару тиков (мост повторяет команду каждый тик). */
     public void commandExtend(long now) {
         extendUntil = now + 2;
     }
@@ -118,7 +205,6 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
 
     private void tick(ServerLevel level) {
         long now = level.getGameTime();
-        BlockPos c = connectorPos();
         Direction facing = connectorFacing();
         boolean extend = false;
         if (facing == null) {
@@ -135,7 +221,8 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
             // занятый порт (корабль подходит) - положение каждый тик, иначе раз в полсекунды
             if (r != null || now - lastPut >= 10) {
                 lastPut = now;
-                DockingRegistry.put(level, describe(level, c, facing));
+                DockingRegistry.PortInfo info = describe(level, facing);
+                if (info != null) DockingRegistry.put(level, info);
             }
             boolean locked = locked();
             status = locked ? Status.LOCKED : extend ? Status.EXTENDED : r != null ? Status.RESERVED : Status.IDLE;
@@ -147,11 +234,15 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         // (раньше нельзя: пристыкованный корабль расстыковался бы, пока мост не подтвердил стыковку)
         if (firstTick == Long.MIN_VALUE) firstTick = now;
         boolean check = !checked && now - firstTick >= 40;
-        if (c != null && (extend || forced || check)) forced = DockingPorts.setPowered(level, c, extend);
+        if (extend || forced || check) {
+            boolean f = false;
+            for (BlockPos c : connectorPositions()) f |= DockingPorts.setPowered(level, c, extend);
+            forced = f;
+        }
         if (check) checked = true;
         if (now - lastSync >= 10) {
             lastSync = now;
-            String summary = status.name();
+            String summary = status.name() + "|" + connectorOffsets.size();
             if (!summary.equals(lastSummary)) {
                 lastSummary = summary;
                 level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
@@ -159,15 +250,19 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         }
     }
 
-    /** Порт для реестра: мировой конец, направление и скорость (у порта на корабле - через его позу). */
-    private DockingRegistry.PortInfo describe(ServerLevel level, BlockPos c, Direction facing) {
+    /** Порт для реестра: мировая середина концов, направление, расстановка и скорость (у порта на корабле - через его позу). */
+    @Nullable
+    private DockingRegistry.PortInfo describe(ServerLevel level, Direction facing) {
+        List<Vec3> tips = localTips();
+        if (tips.isEmpty()) return null;
         var ship = SableCompat.containing(level, worldPosition);
-        Vec3 tip = DockingPorts.localTip(c, facing);
+        Vec3 tip = localTip();
         Vec3 w = SableCompat.toWorld(level, tip);
         Vec3 f = SableCompat.dirToWorld(ship, Vec3.atLowerCornerOf(facing.getNormal()));
+        Vec3 pat = SableCompat.dirToWorld(ship, pattern(tips));
         Vec3 v = SableCompat.pointVelocity(level, ship, tip).scale(20);
         return new DockingRegistry.PortInfo(worldPosition, number, networks, new Vec(w.x, w.y, w.z), new Vec(f.x, f.y, f.z).normalize(),
-                new Vec(v.x, v.y, v.z), ship == null ? null : ship.getUniqueId(), locked(), true);
+                new Vec(v.x, v.y, v.z), ship == null ? null : ship.getUniqueId(), locked(), true, new Vec(pat.x, pat.y, pat.z), tips.size());
     }
 
     @Override
@@ -175,8 +270,7 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         unloading = true;
         if (level != null && !level.isClientSide) {
             if (role == Docking.Role.PORT) DockingRegistry.unloaded(level, worldPosition);
-            BlockPos c = connectorPos();
-            if (c != null) DockingPorts.unforce(level, c);
+            for (BlockPos c : connectorPositions()) DockingPorts.unforce(level, c);
         }
         super.onChunkUnloaded();
     }
@@ -185,8 +279,7 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
     public void setRemoved() {
         if (level != null && !level.isClientSide && !unloading) {
             DockingRegistry.remove(level, worldPosition);
-            BlockPos c = connectorPos();
-            if (forced && c != null && level.isLoaded(c)) DockingPorts.setPowered(level, c, false);
+            unpower(connectorPositions());
         }
         super.setRemoved();
     }
@@ -235,8 +328,8 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         return status;
     }
 
-    public boolean connectorLinked() {
-        return connectorOffset != null;
+    public int connectorCount() {
+        return connectorOffsets.size();
     }
 
     private void changed() {
@@ -250,14 +343,22 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
         tag.put("Docking", writeSettings());
-        if (connectorOffset != null) tag.putLong("Connector", connectorOffset.asLong());
+        writeConnectors(tag);
+    }
+
+    private void writeConnectors(CompoundTag tag) {
+        long[] a = new long[connectorOffsets.size()];
+        for (int i = 0; i < a.length; i++) a[i] = connectorOffsets.get(i).asLong();
+        tag.putLongArray("Connectors", a);
     }
 
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
         readSettings(tag.getCompound("Docking"));
-        connectorOffset = tag.contains("Connector") ? BlockPos.of(tag.getLong("Connector")) : null;
+        connectorOffsets.clear();
+        for (long l : tag.getLongArray("Connectors")) if (connectorOffsets.size() < MAX_CONNECTORS) connectorOffsets.add(BlockPos.of(l));
+        if (tag.contains("Connector")) connectorOffsets.add(BlockPos.of(tag.getLong("Connector")));   // 1.1-Test: один порт
         if (tag.contains("Status")) {
             try {
                 status = Status.valueOf(tag.getString("Status"));
@@ -271,7 +372,7 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
     public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
         CompoundTag t = super.getUpdateTag(registries);
         t.put("Docking", writeSettings());
-        if (connectorOffset != null) t.putLong("Connector", connectorOffset.asLong());
+        writeConnectors(t);
         t.putString("Status", status.name());
         return t;
     }
@@ -288,6 +389,8 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         tooltip.add(Component.literal("    ").append(Component.translatable("block.radar_fcs.docking_controller")).withStyle(ChatFormatting.GOLD));
         tooltip.add(Component.literal("    ").append(Component.translatable(role.key())).append(" ")
                 .append(Component.translatable("radar_fcs.docking.number_short", number)).withStyle(ChatFormatting.AQUA));
+        tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.docking.connectors", connectorOffsets.size()))
+                .withStyle(ChatFormatting.GRAY));
         ChatFormatting c = switch (status) {
             case NO_CONNECTOR -> ChatFormatting.RED;
             case LOCKED -> ChatFormatting.GREEN;

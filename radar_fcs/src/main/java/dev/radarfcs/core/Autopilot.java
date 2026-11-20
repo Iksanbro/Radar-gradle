@@ -14,6 +14,51 @@ public final class Autopilot {
         }
     }
 
+    /** Без цели: висеть на месте, орбита вокруг координаты, орбита вокруг маяка орбиты сети. */
+    public enum Idle {
+        HOVER, ORBIT_POINT, ORBIT_BEACON;
+
+        public String key() {
+            return "radar_fcs.autopilot.idle." + name().toLowerCase(java.util.Locale.ROOT);
+        }
+
+        public boolean orbit() {
+            return this != HOVER;
+        }
+    }
+
+    /** Радиус орбиты, бл; высота орбиты над центром - как HEIGHT_MIN..HEIGHT_MAX; координата центра - в пределах мира. */
+    public static final double ORBIT_RADIUS_MIN = 4, ORBIT_RADIUS_MAX = 2048, COORD_MAX = 30_000_000;
+
+    /**
+     * Скорость по орбите (мир, бл/с): по касательной speed (против часовой, если смотреть сверху; clockwise - по
+     * часовой), к окружности радиуса radius - ошибка x POS_GAIN (не больше speed), к высоте center.y + height - так же;
+     * плюс скорость центра (маяк на корабле).
+     */
+    /** Запаздывание регулятора скорости Flight Control, с (для упреждения на орбите). */
+    public static final double ORBIT_LAG = 0.5;
+
+    public static Vec orbitVelocity(Vec ship, Vec center, Vec centerVel, double radius, double height, double speed, boolean clockwise) {
+        Vec r = ship.sub(center).horizontal();
+        double d = r.length();
+        Vec u = d > 1e-3 ? r.scale(1 / d) : new Vec(1, 0, 0);
+        Vec t = new Vec(u.z(), 0, -u.x());                                  // +Y x u: против часовой сверху
+        if (clockwise) t = t.scale(-1);
+        // упреждение: регулятор скорости догоняет команду с запаздыванием ORBIT_LAG - без доворота к центру корабль
+        // уходит наружу круга
+        double radial = clamp(POS_GAIN * (radius - d) - speed * speed * ORBIT_LAG / Math.max(d, radius), -speed, speed);
+        double vy = clamp(POS_GAIN * (center.y() + height - ship.y()), -speed, speed);
+        return t.scale(speed).add(u.scale(radial)).add(new Vec(0, vy, 0)).add(centerVel);
+    }
+
+    public static double cleanRadius(double v) {
+        return Double.isFinite(v) ? clamp(v, ORBIT_RADIUS_MIN, ORBIT_RADIUS_MAX) : 48;
+    }
+
+    public static double cleanCoord(double v) {
+        return Double.isFinite(v) ? clamp(v, -COORD_MAX, COORD_MAX) : 0;
+    }
+
     /** Курс: ошибка угла -> желаемая угловая скорость (1/с), предел угловой скорости (рад/с), отклик скорости (1/с). */
     public static final double YAW_GAIN = 1.5, YAW_RATE_MAX = 0.8, YAW_RATE_GAIN = 3.0;
     /** Дальность: ошибка (блоки) -> скорость сближения (1/с); отклик скорости (1/с); предел ускорения (бл/с²). */

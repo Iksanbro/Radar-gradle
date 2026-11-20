@@ -38,7 +38,9 @@ public enum LinkKind {
     /** Мост автопилота Flight Control: ведёт корабль к цели сети. */
     AUTOPILOT,
     /** Стыковочный контроллер: порт стыковки или штекер корабля. */
-    DOCKING;
+    DOCKING,
+    /** Маяк орбиты: центр орбиты моста без цели. */
+    BEACON;
 
     /** Вид аппаратуры в точке или null (не аппаратура, чанк не загружен). */
     @Nullable
@@ -60,6 +62,7 @@ public enum LinkKind {
         if (be instanceof dev.radarfcs.block.GunDriveBlockEntity) return GUN_DRIVE;
         if (be instanceof dev.radarfcs.block.AutopilotBlockEntity) return AUTOPILOT;
         if (be instanceof dev.radarfcs.block.DockingControllerBlockEntity) return DOCKING;
+        if (be instanceof dev.radarfcs.block.OrbitBeaconBlockEntity) return BEACON;
         if (CbcMount.of(be) != null) return MOUNT;
         try {
             if (RadarLink.isRadar(be)) return RADAR;

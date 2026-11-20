@@ -703,6 +703,12 @@ public class SolverTest {
      */
     static Docking.Command dockFlight(String name, Vec ship, Vec f, Vec u, Vec plugOff, Vec plugDirBody, Docking.Port port,
                                      boolean mayEnter, int seconds) {
+        return dockFlight(name, ship, f, u, plugOff, plugDirBody, Vec.ZERO, port, mayEnter, seconds);
+    }
+
+    /** То же с расстановкой штекеров plugPatBody (в осях корабля); печатает угол расстановок в конце. */
+    static Docking.Command dockFlight(String name, Vec ship, Vec f, Vec u, Vec plugOff, Vec plugDirBody, Vec plugPatBody,
+                                     Docking.Port port, boolean mayEnter, int seconds) {
         Vec w = Vec.ZERO, vel = Vec.ZERO;
         double dt = 0.05;
         Docking.Phase ph = Docking.Phase.TRANSIT;
@@ -713,7 +719,8 @@ public class SolverTest {
             Vec tip = ship.add(f.scale(plugOff.x())).add(u.scale(plugOff.y())).add(r.scale(plugOff.z()));
             Vec pd = f.scale(plugDirBody.x()).add(u.scale(plugDirBody.y())).add(r.scale(plugDirBody.z()));
             if (Double.isNaN(cruise)) cruise = tip.y();
-            c = Docking.steer(ph, port, tip, pd, u, 15, cruise, mayEnter);
+            Vec pp = f.scale(plugPatBody.x()).add(u.scale(plugPatBody.y())).add(r.scale(plugPatBody.z()));
+            c = Docking.steer(ph, port, tip, pd, pp, u, 15, cruise, mayEnter);
             ph = c.phase();
             Vec wc = new Vec(Autopilot.clamp(c.rates().x(), -0.4, 0.4), Autopilot.clamp(c.rates().y(), -0.4, 0.4),
                     Autopilot.clamp(c.rates().z(), -0.4, 0.4));
@@ -730,13 +737,24 @@ public class SolverTest {
         }
         Vec r = f.cross(u).normalize();
         Vec tip = ship.add(f.scale(plugOff.x())).add(u.scale(plugOff.y())).add(r.scale(plugOff.z()));
-        System.out.printf(Locale.ROOT, "  dock %-28s phase %-8s tip->contact %.2f bl, plug err %.1f deg, level %.3f, compatible %s%n", name, c.phase(),
-                tip.distance(port.contact()), c.attitudeErrorDeg(), u.dot(Vec.UP), c.compatible());
+        Vec pp = f.scale(plugPatBody.x()).add(u.scale(plugPatBody.y())).add(r.scale(plugPatBody.z()));
+        double pat = pp.length() > 0 && port.pattern().length() > 0 ? Math.min(pp.angleTo(port.pattern()), pp.angleTo(port.pattern().scale(-1))) : 0;
+        System.out.printf(Locale.ROOT, "  dock %-28s phase %-8s tip->contact %.2f bl, plug err %.1f deg, level %.3f, pattern %.1f deg, compatible %s%n",
+                name, c.phase(), tip.distance(port.contact()), c.attitudeErrorDeg(), u.dot(Vec.UP), pat, c.compatible());
+        lastPatternDeg = pat;
         return c;
     }
 
+    static double lastPatternDeg;
+
     static void docking() {
         boolean ok = true;
+        // площадка из двух портов вверх, расстановка по X (восток-запад); у корабля штекеры вдоль носа (север-юг) -
+        // доворот на 90°
+        Docking.Port pad2 = new Docking.Port(new Vec(20.5, 64.5, -10.5), Vec.UP, Vec.ZERO, new Vec(4, 0, 0));
+        Docking.Command c2 = dockFlight("two pad ports, yaw by pattern", new Vec(-20, 100, 20), new Vec(0, 0, -1), Vec.UP,
+                new Vec(0, -3, 0), new Vec(0, -1, 0), new Vec(4, 0, 0), pad2, true, 90);
+        ok &= c2.phase() == Docking.Phase.FINAL && c2.distance() < Docking.GAP + 0.6 && lastPatternDeg < 3;
         // порт в стене смотрит на восток; штекер справа от корабля, корабль носом на север далеко и высоко
         Docking.Port east = new Docking.Port(new Vec(0.5, 64.5, 0.5), new Vec(1, 0, 0), Vec.ZERO);
         Docking.Command c = dockFlight("side port, ship turns", new Vec(-90, 100, 70), new Vec(0, 0, -1), Vec.UP,
@@ -775,6 +793,34 @@ public class SolverTest {
         System.out.println("docking: " + (ok ? "all checks passed" : "failed"));
     }
 
+    /** Орбита моста без цели: из точки в 100 бл выходит на круг радиуса 30 на высоте +20, обходит в нужную сторону. */
+    static void orbit() {
+        boolean ok = true;
+        for (boolean cw : new boolean[]{false, true}) {
+            Vec center = new Vec(0, 64, 0), ship = new Vec(100, 90, 40), vel = Vec.ZERO;
+            double minR = 1e9, maxR = 0, turn = 0;
+            Vec prev = null;
+            for (int i = 0; i < 20 * 120; i++) {
+                Vec vd = Autopilot.orbitVelocity(ship, center, Vec.ZERO, 30, 20, 12, cw);
+                vel = vel.add(vd.sub(vel).scale(0.05 / 0.5));
+                ship = ship.addScaled(vel, 0.05);
+                if (i > 20 * 60) {
+                    double r = ship.sub(center).horizontalLength();
+                    minR = Math.min(minR, r);
+                    maxR = Math.max(maxR, r);
+                    Vec rel = ship.sub(center).horizontal();
+                    if (prev != null) turn += prev.cross(rel).y();
+                    prev = rel;
+                }
+            }
+            boolean m = minR > 27 && maxR < 33 && Math.abs(ship.y() - 84) < 0.5 && (cw ? turn < 0 : turn > 0);
+            System.out.printf(Locale.ROOT, "  orbit cw=%s: radius %.1f..%.1f, height %.2f, turn %s%n", cw, minR, maxR, ship.y() - 64, turn > 0 ? "ccw" : "cw");
+            ok &= m;
+        }
+        if (!ok) failures++;
+        System.out.println("orbit: " + (ok ? "all checks passed" : "failed"));
+    }
+
     public static void main(String[] a) {
         ballisticCase("big cannon 4 charges", new Truth(8, -0.05, 0.01, false, 0, 0, 1, 1, 600), 300, false, 97);
         ballisticCase("big cannon 2 charges", new Truth(4, -0.05, 0.01, false, 0, 0, 1, 1, 600), 200, false, 97);
@@ -795,6 +841,7 @@ public class SolverTest {
         angleLimits();
         autopilot();
         docking();
+        orbit();
         if (failures > 0) {
             System.out.println("FAILURES: " + failures);
             System.exit(1);

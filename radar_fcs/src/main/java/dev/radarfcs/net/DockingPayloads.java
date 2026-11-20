@@ -53,7 +53,7 @@ public final class DockingPayloads {
 
     public static void open(ServerPlayer sp, DockingControllerBlockEntity be) {
         CompoundTag t = be.writeSettings();
-        t.putBoolean("Linked", be.connectorLinked());
+        t.putInt("Connectors", be.connectorCount());
         t.putString("Status", be.status().name());
         PacketDistributor.sendToPlayer(sp, new Open(be.getBlockPos(), t));
     }

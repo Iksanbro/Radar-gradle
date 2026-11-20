@@ -72,7 +72,7 @@ public class DockingGameTests {
         t.putString("Role", role.name());
         t.putInt("Number", number);
         be.applySettings(t);
-        be.linkConnector(h.absolutePos(connectorRel));
+        be.toggleConnector(h.absolutePos(connectorRel));
         FcsGameTests.placeLink(h, rel, Direction.UP, net);
         return be;
     }
@@ -100,6 +100,14 @@ public class DockingGameTests {
             h.fail("a connector 29 blocks away must not be linkable");
         }
         if (!DockingPorts.linkable(lv, pos, con, DockingControllerBlockEntity.LINK_RADIUS)) h.fail("adjacent connector must be linkable");
+        // второй порт вверх - добавлен; порт на север - не добавлен (порты контроллера смотрят в одну сторону)
+        BlockPos con2Rel = new BlockPos(11, 2, 12), con3Rel = new BlockPos(11, 2, 7);
+        h.setBlock(con2Rel, connector(Direction.UP));
+        h.setBlock(con3Rel, connector(Direction.NORTH));
+        BlockPos con2 = h.absolutePos(con2Rel);
+        if (be.toggleConnector(con2) != DockingControllerBlockEntity.LinkResult.ADDED) h.fail("second connector not added");
+        if (be.toggleConnector(h.absolutePos(con3Rel)) != DockingControllerBlockEntity.LinkResult.FACING) h.fail("connector facing north accepted");
+        if (be.connectorCount() != 2) h.fail("expected 2 connectors, got " + be.connectorCount());
         AtomicInteger phase = new AtomicInteger(), since = new AtomicInteger();
         h.onEachTick(() -> {
             int t = (int) h.getTick();
@@ -114,6 +122,11 @@ public class DockingGameTests {
                         return;
                     }
                     double dy = p.tip().y() - (con.getY() + 0.5 + DockingPorts.TIP);
+                    // середина концов двух портов и расстановка между ними
+                    double dx = p.tip().x() - (con.getX() + con2.getX() + 1) / 2.0, dz = p.tip().z() - (con.getZ() + con2.getZ() + 1) / 2.0;
+                    if (p.count() != 2 || Math.abs(dx) > 1e-6 || Math.abs(dz) > 1e-6 || Math.abs(p.pattern().length() - Math.sqrt(5)) > 1e-6) {
+                        h.fail("bad two-connector port: " + p);
+                    }
                     FcsMod.LOG.info("[radar_fcs test] docking: port #{} nets {} tip {} facing {}", p.number(), p.networks(), p.tip(), p.facing());
                     if (p.number() != 5 || !p.networks().contains(net) || Math.abs(dy) > 1e-6 || p.facing().y() < 0.99 || p.locked()) {
                         h.fail("bad port entry: " + p);
@@ -127,7 +140,9 @@ public class DockingGameTests {
                 case 1 -> {                                                 // бронь с «выдвигать»: выдвинут каждый тик, пластина стоит
                     DockingRegistry.reserve(level, pos, OTHER, now, true);
                     if (t - since.get() < 3) return;
-                    if (!DockingPorts.isPowered(level, con)) h.fail("reserved port connector not extended at tick " + (t - since.get()));
+                    if (!DockingPorts.isPowered(level, con) || !DockingPorts.isPowered(level, con2)) {
+                        h.fail("reserved port connectors not extended at tick " + (t - since.get()));
+                    }
                     if (t - since.get() < 60) return;
                     BlockState front = level.getBlockState(con.above());
                     FcsMod.LOG.info("[radar_fcs test] docking: extended connector, in front {}", front);
@@ -143,7 +158,7 @@ public class DockingGameTests {
                 }
                 case 2 -> {                                                 // бронь снята - задвинут
                     if (t - since.get() < 30) return;
-                    if (DockingPorts.isPowered(level, con)) h.fail("connector still extended after the reservation ended");
+                    if (DockingPorts.isPowered(level, con) || DockingPorts.isPowered(level, con2)) h.fail("connectors still extended after the reservation ended");
                     CompoundTag s = new CompoundTag();
                     s.putString("Role", Docking.Role.PLUG.name());
                     s.putInt("Number", 5);
@@ -163,7 +178,7 @@ public class DockingGameTests {
                 }
                 case 4 -> {                                                 // блок убран - порт задвинут, реестр пуст
                     if (t - since.get() < 3) return;
-                    if (DockingPorts.isPowered(level, con)) h.fail("connector stays extended after the controller was removed");
+                    if (DockingPorts.isPowered(level, con) || DockingPorts.isPowered(level, con2)) h.fail("connectors stay extended after the controller was removed");
                     if (DockingRegistry.get(level, pos) != null) h.fail("removed controller still registered");
                     h.succeed();
                 }
@@ -302,11 +317,11 @@ public class DockingGameTests {
                     phase.set(5);
                     since.set(t);
                 }
-                case 5 -> {                                                 // «редстоун» без сигнала - не стыкуется
+                case 5 -> {                                                 // «редстоун» без сигнала - не стыкуется, висит
                     if (t - since.get() < 15) return;
                     FcsMod.LOG.info("[radar_fcs test] docking: redstone mode, no signal - {} {}", b.state(), c);
-                    if (b.state() != AutopilotBlockEntity.State.NO_TARGET) h.fail("expected NO_TARGET without a signal, got " + b.state());
-                    if (!c.isEmpty()) h.fail("lease kept without a signal: " + c);
+                    if (b.state() != AutopilotBlockEntity.State.IDLE_HOVER) h.fail("expected IDLE_HOVER without a signal, got " + b.state());
+                    if (DockingRegistry.reservation(level, southPos, now) != null) h.fail("south port reserved without a signal");
                     level.setBlock(at[0].north(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
                     phase.set(6);
                     since.set(t);
@@ -322,10 +337,218 @@ public class DockingGameTests {
                     phase.set(7);
                     since.set(t);
                 }
-                case 7 -> {                                                 // сигнал снят - бронь отпущена, аренда отдана
+                case 7 -> {                                                 // сигнал снят - бронь отпущена, висит
                     if (t - since.get() < 15) return;
                     if (DockingRegistry.reservation(level, southPos, now) != null) h.fail("south port still reserved after the signal ended");
-                    if (!c.isEmpty()) h.fail("lease kept after the signal ended: " + c);
+                    if (b.state() != AutopilotBlockEntity.State.IDLE_HOVER) h.fail("expected IDLE_HOVER after the signal ended, got " + b.state());
+                    h.succeed();
+                }
+                default -> { }
+            }
+        });
+    }
+
+    // ------------------------------------------------------------- корабль с мостом для тестов ниже
+
+    private static final BlockPos BRIDGE = new BlockPos(11, 5, 31);
+    private static final BlockPos D_IND = new BlockPos(-1, 0, -1), D_CC = new BlockPos(1, 0, 1), D_VEL = new BlockPos(-1, 0, 1),
+            D_ANG = new BlockPos(1, 0, -1), D_ATT = new BlockPos(-1, 0, 0), D_ALT = new BlockPos(1, 0, 0);
+
+    /** Палуба 3x3 (y=4), мост (11,5,31) с компьютером, регуляторами скорости и угловой скорости, стабилизаторами; линк сверху. */
+    private static void shipBase(GameTestHelper h, UUID net) {
+        for (int x = 10; x <= 12; x++) for (int z = 30; z <= 32; z++) h.setBlock(new BlockPos(x, 4, z), Blocks.IRON_BLOCK.defaultBlockState());
+        h.setBlock(BRIDGE, FlightTestSupport.bridge(Direction.NORTH));
+        h.setBlock(BRIDGE.offset(D_IND), FlightTestSupport.indicator(Direction.NORTH));
+        h.setBlock(BRIDGE.offset(D_CC), FlightTestSupport.computer());
+        h.setBlock(BRIDGE.offset(D_VEL), FlightTestSupport.fc("velocity_coupler"));
+        h.setBlock(BRIDGE.offset(D_ANG), FlightTestSupport.fc("angular_velocity_coupler"));
+        h.setBlock(BRIDGE.offset(D_ATT), FlightTestSupport.fc("attitude_hold"));
+        h.setBlock(BRIDGE.offset(D_ALT), FlightTestSupport.fc("altitude_hold"));
+        FcsGameTests.placeLink(h, BRIDGE, Direction.UP, net);
+        FlightTestSupport.startComputer(h.getLevel(), h.absolutePos(BRIDGE.offset(D_CC)));
+    }
+
+    /** Найти мост корабля (и штекер) в сети и связать с компьютером и регуляторами; false - ещё не нашёлся. */
+    private static boolean findShip(GameTestHelper h, UUID net, Object[] bridge, BlockPos[] at, DockingControllerBlockEntity[] plug) {
+        ServerLevel level = h.getLevel();
+        for (BlockPos p : LinkRegistry.members(level, net)) {
+            if (FlightTestSupport.isBridge(level.getBlockEntity(p))) {
+                bridge[0] = level.getBlockEntity(p);
+                at[0] = p;
+            }
+            if (plug != null && level.getBlockEntity(p) instanceof DockingControllerBlockEntity d && d.role == Docking.Role.PLUG) plug[0] = d;
+        }
+        if (bridge[0] == null || (plug != null && plug[0] == null)) {
+            bridge[0] = null;
+            return false;
+        }
+        BlockPos cc = at[0].offset(D_CC);
+        if (!FlightTestSupport.linkComputer(level, bridge[0], cc)) h.fail("bridge-computer link failed");
+        for (BlockPos d : new BlockPos[]{D_VEL, D_ANG, D_ATT, D_ALT}) FlightTestSupport.linkController(level, cc, at[0].offset(d));
+        return true;
+    }
+
+    /**
+     * Без цели мост других объектов не ведёт: «висеть» - скорости около нуля, корпус ровно; «орбита вокруг координаты»
+     * (центр в 30 бл к востоку, радиус 10) - к центру (+X) и против часовой - на юг (+Z), по часовой - на север (-Z);
+     * «орбита вокруг маяка» без маяка - висит, маяк к западу в сети - к нему (-X), «летит по орбите».
+     */
+    @GameTest(template = ARENA, batch = "docking", timeoutTicks = 400)
+    public static void bridgeIdleHoverAndOrbit(GameTestHelper h) {
+        if (!mods(true)) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        UUID net = UUID.randomUUID();
+        shipBase(h, net);
+        SableTestSupport.staticSub(h, new BlockPos(10, 4, 30), new BlockPos(12, 6, 32));
+        BlockPos shipAbs = h.absolutePos(BRIDGE);
+        AtomicInteger phase = new AtomicInteger(), since = new AtomicInteger();
+        Object[] bridge = new Object[1];
+        BlockPos[] at = new BlockPos[1];
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            ServerLevel level = h.getLevel();
+            if (bridge[0] == null) {
+                if (!findShip(h, net, bridge, at, null)) {
+                    if (t > 100) h.fail("bridge not found in the radar network");
+                    return;
+                }
+                since.set(t);
+                return;
+            }
+            AutopilotBlockEntity b = (AutopilotBlockEntity) bridge[0];
+            Map<String, Object> c = FlightTestSupport.commands(level, at[0].offset(D_CC), at[0]);
+            double vx = num(c, VEL + "BODY_VELOCITY_X"), vz = num(c, VEL + "BODY_VELOCITY_Z");
+            switch (phase.get()) {
+                case 0 -> {                                                 // висеть
+                    if (t - since.get() < 20) return;
+                    FcsMod.LOG.info("[radar_fcs test] docking: idle hover - {} {}", b.state(), c);
+                    if (b.state() != AutopilotBlockEntity.State.IDLE_HOVER) h.fail("expected IDLE_HOVER, got " + b.state());
+                    if (!(Math.abs(vx) < 0.5 && Math.abs(vz) < 0.5)) h.fail("hovering ship moves: " + c);
+                    if (!"REQUEST_OFF".equals(c.get("ALTITUDE_HOLD:participation"))) h.fail("altitude hold not suppressed: " + c);
+                    b.idle = dev.radarfcs.core.Autopilot.Idle.ORBIT_POINT;
+                    b.orbitX = shipAbs.getX() + 30.5;
+                    b.orbitY = shipAbs.getY();
+                    b.orbitZ = shipAbs.getZ() + 0.5;
+                    b.orbitRadius = 10;
+                    b.orbitHeight = 0;
+                    b.orbitClockwise = false;
+                    phase.set(1);
+                    since.set(t);
+                }
+                case 1 -> {                                                 // орбита против часовой
+                    if (t - since.get() < 12) return;
+                    FcsMod.LOG.info("[radar_fcs test] docking: orbit ccw - {} {}", b.state(), c);
+                    if (b.state() != AutopilotBlockEntity.State.IDLE_ORBIT) h.fail("expected IDLE_ORBIT, got " + b.state());
+                    if (!(vx > 0 && vz > 0)) h.fail("expected toward the center (+X) and counterclockwise (+Z): " + c);
+                    b.orbitClockwise = true;
+                    phase.set(2);
+                    since.set(t);
+                }
+                case 2 -> {                                                 // по часовой
+                    if (t - since.get() < 12) return;
+                    FcsMod.LOG.info("[radar_fcs test] docking: orbit cw - {} {}", b.state(), c);
+                    if (!(vx > 0 && vz < 0)) h.fail("expected toward the center (+X) and clockwise (-Z): " + c);
+                    b.idle = dev.radarfcs.core.Autopilot.Idle.ORBIT_BEACON;
+                    b.orbitRadius = 4;
+                    phase.set(3);
+                    since.set(t);
+                }
+                case 3 -> {                                                 // маяка нет - висит
+                    if (t - since.get() < 12) return;
+                    if (b.state() != AutopilotBlockEntity.State.IDLE_NO_BEACON) h.fail("expected IDLE_NO_BEACON, got " + b.state());
+                    h.setBlock(new BlockPos(2, 2, 31), DockingBlocks.BEACON.get().defaultBlockState());
+                    FcsGameTests.CREATED.add(h.absolutePos(new BlockPos(2, 2, 31)));
+                    FcsGameTests.placeLink(h, new BlockPos(2, 2, 31), Direction.UP, net);
+                    phase.set(4);
+                    since.set(t);
+                }
+                case 4 -> {                                                 // маяк к западу - к нему
+                    if (t - since.get() < 30) return;
+                    FcsMod.LOG.info("[radar_fcs test] docking: orbit beacon - {} {}", b.state(), c);
+                    if (b.state() != AutopilotBlockEntity.State.IDLE_ORBIT) h.fail("expected IDLE_ORBIT around the beacon, got " + b.state());
+                    if (!(vx < 0)) h.fail("expected toward the beacon (-X): " + c);
+                    h.succeed();
+                }
+                default -> { }
+            }
+        });
+    }
+
+    /**
+     * Пристыкован: порт корабля (вниз) над портом на земле (вверх), оба выдвинуты - сцепились. Мост («стыковка по
+     * редстоуну», сигнал есть) видит сцепку: «пристыкован», компьютер управления полётом выключен (тяга двигателей
+     * снята), корабль отмечен - пушки вычислителей на нём неактивны. Сигнал снят - расстыковка, компьютер снова работает,
+     * отметки нет.
+     */
+    @GameTest(template = ARENA, batch = "docking", timeoutTicks = 600)
+    public static void dockedShipPowersDown(GameTestHelper h) {
+        if (!mods(true)) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        UUID net = UUID.randomUUID();
+        shipBase(h, net);
+        dock(h, new BlockPos(10, 6, 30), Docking.Role.PLUG, 9, new BlockPos(11, 3, 31), Direction.DOWN, net);
+        Object sub = SableTestSupport.staticSub(h, new BlockPos(10, 3, 30), new BlockPos(12, 7, 32));
+        UUID shipId = SableTestSupport.subId(sub);
+        DockingControllerBlockEntity port = dock(h, new BlockPos(13, 0, 31), Docking.Role.PORT, 9, new BlockPos(11, 0, 31), Direction.UP, net);
+        BlockPos portPos = port.getBlockPos();
+        AtomicInteger phase = new AtomicInteger(), since = new AtomicInteger();
+        Object[] bridge = new Object[1];
+        BlockPos[] at = new BlockPos[1];
+        DockingControllerBlockEntity[] plug = new DockingControllerBlockEntity[1];
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            ServerLevel level = h.getLevel();
+            long now = level.getGameTime();
+            if (bridge[0] == null) {
+                if (!findShip(h, net, bridge, at, plug)) {
+                    if (t > 100) h.fail("bridge or plug not found in the radar network");
+                    return;
+                }
+                // сигнал на мосту - пока пауза (стыковка выкл); порты выдвигает тест, после сцепки - «стыковка по редстоуну»
+                level.setBlock(at[0].north(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
+                since.set(t);
+                return;
+            }
+            AutopilotBlockEntity b = (AutopilotBlockEntity) bridge[0];
+            BlockPos cc = at[0].offset(D_CC);
+            switch (phase.get()) {
+                case 0 -> {                                                 // выдвинуть оба порта, ждать сцепки
+                    plug[0].commandExtend(now);
+                    DockingRegistry.reserve(level, portPos, plug[0].key(), now, true);
+                    if (!plug[0].locked()) {
+                        if (t - since.get() > 300) h.fail("connectors did not lock, plug " + plug[0].status() + ", port " + port.status());
+                        return;
+                    }
+                    FcsMod.LOG.info("[radar_fcs test] docking: locked after {} ticks", t - since.get());
+                    b.dockTrigger = Docking.Trigger.REDSTONE;
+                    phase.set(1);
+                    since.set(t);
+                }
+                case 1 -> {                                                 // пристыкован: компьютер выключен, корабль отмечен
+                    DockingRegistry.reserve(level, portPos, plug[0].key(), now, true);
+                    if (t - since.get() < 12) return;
+                    FcsMod.LOG.info("[radar_fcs test] docking: docked - {} computer working {} held {}", b.state(),
+                            FlightTestSupport.working(level, cc), dev.radarfcs.dock.DockHold.held(level, shipId, now));
+                    if (b.state() != AutopilotBlockEntity.State.DOCKED) h.fail("expected DOCKED, got " + b.state());
+                    if (FlightTestSupport.working(level, cc)) h.fail("flight control computer still working while docked");
+                    if (!dev.radarfcs.dock.DockHold.held(level, shipId, now)) h.fail("docked ship not held (guns would stay active)");
+                    level.removeBlock(at[0].north(), false);
+                    phase.set(2);
+                    since.set(t);
+                }
+                case 2 -> {                                                 // сигнал снят - расстыковка
+                    if (t - since.get() < 20) return;
+                    FcsMod.LOG.info("[radar_fcs test] docking: undocked - {} computer working {} locked {}", b.state(),
+                            FlightTestSupport.working(level, cc), plug[0].locked());
+                    if (!FlightTestSupport.working(level, cc)) h.fail("flight control computer not restored after undocking");
+                    if (dev.radarfcs.dock.DockHold.held(level, shipId, now)) h.fail("ship still held after undocking");
+                    if (plug[0].locked()) h.fail("still locked after the signal ended");
                     h.succeed();
                 }
                 default -> { }

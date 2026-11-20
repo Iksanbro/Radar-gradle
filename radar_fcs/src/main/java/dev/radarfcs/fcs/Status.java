@@ -39,7 +39,9 @@ public enum Status {
     /** Прицел орудия не стоит на поворотной части вращателей (или вращателей нет в орудии). */
     TURRET_NO_ROTATOR(ChatFormatting.GOLD),
     /** Орудию выключено автоприцеливание (настройки орудия): наводится только с камеры. */
-    GUN_AUTO_OFF(ChatFormatting.GRAY);
+    GUN_AUTO_OFF(ChatFormatting.GRAY),
+    /** Пушка на пристыкованном корабле: не наводится и не стреляет, пока корабль не расстыкуется. */
+    DOCKED(ChatFormatting.DARK_AQUA);
 
     public final ChatFormatting color;
 

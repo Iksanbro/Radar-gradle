@@ -154,7 +154,13 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             List<MountState> order = new ArrayList<>(mounts.size());
             for (MountState m : mounts.values()) if (m.turret == null || m.pos.equals(m.turret.leader)) order.add(m);
             for (MountState m : mounts.values()) if (m.turret != null && !m.pos.equals(m.turret.leader)) order.add(m);
+            boolean docked = dev.radarfcs.dock.DockHold.any(level, now);
             for (MountState m : order) {
+                // пушка на пристыкованном корабле неактивна
+                if (docked && dev.radarfcs.dock.DockHold.held(level, SableCompat.containingId(level, m.pos), now)) {
+                    FcsControl.cease(level, m, Status.DOCKED);
+                    continue;
+                }
                 // орудие слушается последней по времени камеры, которой оно назначено (остальные - автоприцел)
                 FcsControl.control(level, this, m, sensor, now, hold, effectiveSettings().iffRule(), platformShips, des,
                         manualFor(manuals, m));

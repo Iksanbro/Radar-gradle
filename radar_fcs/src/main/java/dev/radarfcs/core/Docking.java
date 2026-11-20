@@ -73,7 +73,11 @@ public final class Docking {
     /**
      * Порт стыковки: мировой конец, направление «наружу» (единичное) и скорость (бл/с; у порта на земле - ноль).
      */
-    public record Port(Vec tip, Vec facing, Vec vel) {
+    public record Port(Vec tip, Vec facing, Vec vel, Vec pattern) {
+        public Port(Vec tip, Vec facing, Vec vel) {
+            this(tip, facing, vel, Vec.ZERO);
+        }
+
         /** Точка подхода. */
         public Vec approach() {
             return tip.addScaled(facing, APPROACH_DIST);
@@ -105,13 +109,25 @@ public final class Docking {
      */
     public static Command steer(Phase prev, Port port, Vec plugTip, Vec plugDir, Vec shipUp, double maxSpeed, double cruiseY,
                                 boolean mayEnter) {
+        return steer(prev, port, plugTip, plugDir, Vec.ZERO, shipUp, maxSpeed, cruiseY, mayEnter);
+    }
+
+    /**
+     * То же для нескольких портов: plugTip - середина концов штекеров, plugPattern - их расстановка (мир, от одного
+     * крайнего к другому; один порт - ноль). Порт смотрит вверх или вниз - корабль доворачивает, чтобы расстановка
+     * штекеров легла вдоль расстановки портов (в любую сторону).
+     */
+    public static Command steer(Phase prev, Port port, Vec plugTip, Vec plugDir, Vec plugPattern, Vec shipUp, double maxSpeed,
+                                double cruiseY, boolean mayEnter) {
         Vec fp = port.facing().normalize();
         Vec want = fp.scale(-1);
         Vec p = plugDir.normalize();
         Vec up = shipUp.normalize();
-        double err = p.angleTo(want);
+        double patYaw = patternYaw(p, want, plugPattern, port.pattern());
+        double err = Math.max(p.angleTo(want), Math.toDegrees(Math.abs(patYaw)));
         boolean compatible = compatible(p, up, fp);
         Vec rates = compatible ? rates(p, up, want) : levelRates(up);
+        if (compatible && patYaw != 0) rates = rates.add(Vec.UP.scale(rate(patYaw)));
         Vec a = port.approach();
         double dist = plugTip.distance(port.tip());
         Phase phase = prev;
@@ -144,7 +160,7 @@ public final class Docking {
     }
 
     /** Скорость к точке: ошибка x POS_GAIN, не больше maxSpeed. */
-    static Vec toward(Vec from, Vec to, double maxSpeed) {
+    public static Vec toward(Vec from, Vec to, double maxSpeed) {
         Vec d = to.sub(from);
         double l = d.length();
         if (l < 1e-9) return Vec.ZERO;
@@ -175,6 +191,21 @@ public final class Docking {
             out = out.add(Vec.UP.scale(rate(yaw)));
         }
         return out;
+    }
+
+    /**
+     * Доворот по расстановке портов (рад, + - против часовой вокруг +Y): только когда штекер и порт вертикальные (иначе
+     * курс задаёт само направление порта) и у обоих есть расстановка; ближайший из двух вариантов (вдоль или навстречу).
+     */
+    static double patternYaw(Vec plugDir, Vec want, Vec plugPattern, Vec portPattern) {
+        if (plugDir.horizontal().length() > 0.2 || want.horizontal().length() > 0.2) return 0;
+        Vec a = plugPattern.horizontal(), b = portPattern.horizontal();
+        if (a.length() < 0.5 || b.length() < 0.5) return 0;
+        a = a.normalize();
+        b = b.normalize();
+        double y1 = Math.atan2(a.cross(b).y(), a.dot(b));
+        double y2 = Math.atan2(a.cross(b.scale(-1)).y(), -a.dot(b));
+        return Math.abs(y1) <= Math.abs(y2) ? y1 : y2;
     }
 
     /** Выровнять корпус: верх корабля к мировой вертикали. */

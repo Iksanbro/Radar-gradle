@@ -687,6 +687,32 @@ def docking_front(plug):
     return t
 
 
+def orbit_beacon_front():
+    """Маяк орбиты: экран с центром-маяком и эллипсом орбиты, на орбите - отметка корабля со стрелкой хода."""
+    t = Tex()
+    console(t, [(GREEN, True), (YELLOW, True), (BLUE, True)])
+    screen_bg(t, 6, 5, 25, 21, SCREEN, 15.5, 13, 13)
+    cx, cy = 15.5, 13.0
+    for i in range(160):
+        a = 2 * math.pi * i / 160
+        x, y = cx + 8.0 * math.cos(a), cy + 5.0 * math.sin(a)
+        t.px(int(round(x)), int(round(y)), ramp(PHOS, 0.55 if math.sin(a) < 0 else 0.8))
+    t.glow(cx, cy, 3.0, YELLOW[2], 0.6)
+    t.px(15, 12, YELLOW[3])
+    t.px(16, 12, YELLOW[2])
+    t.px(15, 13, YELLOW[2])
+    t.px(16, 13, YELLOW[1])
+    # корабль на орбите справа внизу и стрелка хода
+    sx, sy = 21, 16
+    t.px(sx, sy, BLUE[4])
+    t.px(sx + 1, sy, BLUE[3])
+    t.px(sx, sy + 1, BLUE[3])
+    t.glow(sx + 0.5, sy + 0.5, 2.0, BLUE[3], 0.4)
+    for x, y in ((19, 18), (18, 18), (19, 17)):
+        t.px(x, y, ramp(PHOS, 0.95))
+    return t
+
+
 def main():
     textures = {
         'fcs_front': fcs_front(False),
@@ -694,6 +720,7 @@ def main():
         'flight_bridge_front': flight_bridge_front(),
         'docking_controller_port_front': docking_front(False),
         'docking_controller_plug_front': docking_front(True),
+        'orbit_beacon_front': orbit_beacon_front(),
         'memory_front': memory_front(True),
         'memory_front_off': memory_front(False),
         'camera_monitor_front': camera_monitor_front(),

@@ -16,8 +16,10 @@ import ace.flight.physics.AttitudeTargetUtil;
 import dev.radarfcs.FcsMod;
 import dev.radarfcs.block.AutopilotBlockEntity;
 import dev.radarfcs.block.DockingControllerBlockEntity;
+import dev.radarfcs.block.OrbitBeaconBlockEntity;
 import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.core.Docking;
+import dev.radarfcs.dock.DockHold;
 import dev.radarfcs.dock.DockingRegistry;
 import dev.radarfcs.link.LinkRegistry;
 import java.util.HashSet;
@@ -70,6 +72,10 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
     private double cruiseY = Double.NaN;
     private long plugKey, departUntil = Long.MIN_VALUE;
     @Nullable private Vec departDir;
+    /** Без цели: точка, в которой корабль висит (где кончилась цель или стыковка). */
+    @Nullable private Vec hold;
+    /** Компьютер выключен мостом на время стыковки (сохраняется - включить после расстыковки и перезапуска). */
+    private boolean poweredDown, unloading;
     @Nullable private Object cachedSub;
     private long cachedSubAt;
 
@@ -170,12 +176,14 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
 
     @Override
     public void setRemoved() {
+        if (!unloading && level instanceof ServerLevel sl) restoreComputer(sl);
         release();
         super.setRemoved();
     }
 
     @Override
     public void onChunkUnloaded() {
+        unloading = true;
         release();
         super.onChunkUnloaded();
     }
@@ -193,6 +201,7 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             if (dock) {
                 departUntil = Long.MIN_VALUE;
                 holdFor = null;
+                hold = null;
                 if (cc == null) {
                     release();
                     driveState = State.COMPUTER_OFF;
@@ -206,6 +215,11 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
                 driveState = depart(level, cc);
                 return;
             }
+            if (g == null && cc != null && !paused && mode != Autopilot.Mode.OFF) {
+                driveState = idleSteer(level, cc);                         // цели нет - висеть или орбита
+                return;
+            }
+            hold = null;
             if (g == null || cc == null) {
                 release();
                 holdFor = null;
@@ -271,6 +285,56 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
         return lease(cc, r, sub, v, w, false);
     }
 
+    // ------------------------------------------------------------- без цели
+
+    /**
+     * Цели нет: висеть там, где её не стало (корпус ровно, курс держится), или лететь по орбите вокруг координаты /
+     * маяка орбиты сети на пределе скорости моста (нос по ходу, если включено рыскание; крен в поворот, если включён).
+     */
+    private State idleSteer(ServerLevel level, FlightControlComputerBlockEntity cc) throws Exception {
+        Ready r = ready(level, cc);
+        if (r == null) {
+            release();
+            return State.COMPUTER_OFF;
+        }
+        Object sub = subLevel(level);
+        Vector3d p = AttitudeTargetUtil.getLogicalPosition(sub);
+        Vec ship = new Vec(p.x, p.y, p.z);
+        Vector3d up3 = AttitudeTargetUtil.rotateBodyToWorld(sub, new Vector3d(0, 1, 0));
+        Vec up = new Vec(up3.x, up3.y, up3.z);
+        Vec center = null, centerVel = Vec.ZERO;
+        if (idle == Autopilot.Idle.ORBIT_POINT) {
+            center = new Vec(orbitX, orbitY, orbitZ);
+        } else if (idle == Autopilot.Idle.ORBIT_BEACON) {
+            for (BlockPos b : beacons) {
+                if (!level.isLoaded(b) || !(level.getBlockEntity(b) instanceof OrbitBeaconBlockEntity)) continue;
+                Vec3 local = Vec3.atCenterOf(b);
+                Vec3 w = SableCompat.toWorld(level, local);
+                Vec3 v = SableCompat.pointVelocity(level, SableCompat.containing(level, b), local).scale(20);
+                center = new Vec(w.x, w.y, w.z);
+                centerVel = new Vec(v.x, v.y, v.z);
+                break;
+            }
+        }
+        if (center == null) {                                               // висеть
+            if (hold == null) hold = ship;
+            State s = lease(cc, r, sub, Docking.toward(ship, hold, maxSpeed), Docking.levelRates(up), false);
+            return s != State.ACTIVE ? s : idle == Autopilot.Idle.ORBIT_BEACON ? State.IDLE_NO_BEACON : State.IDLE_HOVER;
+        }
+        hold = null;
+        Vec v = Autopilot.orbitVelocity(ship, center, centerVel, orbitRadius, orbitHeight, maxSpeed, orbitClockwise);
+        Vec w;
+        if (heading || roll) {
+            BodyForwardFacing f = forwardFacing();
+            Vector3d fw = AttitudeTargetUtil.rotateBodyToWorld(sub, new Vector3d(f.direction().getStepX(), 0, f.direction().getStepZ()));
+            w = Autopilot.desiredRates(new Vec(fw.x, fw.y, fw.z), up, v.sub(centerVel).horizontal(), heading, false, roll, maxPitch, maxRoll);
+        } else {
+            w = Docking.levelRates(up);
+        }
+        State s = lease(cc, r, sub, v, w, false);
+        return s == State.ACTIVE ? State.IDLE_ORBIT : s;
+    }
+
     // ------------------------------------------------------------- стыковка
 
     /** Штекер стыковки на этом корабле (первый из сети), иначе null. */
@@ -300,16 +364,11 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             release();
             return State.DOCK_NO_CONNECTOR;
         }
-        Ready r = ready(level, cc);
-        if (r == null) {
-            release();
-            return State.COMPUTER_OFF;
-        }
-        Object sub = subLevel(level);
         var ship = SableCompat.containing(level, worldPosition);
         Vec3 wt = SableCompat.toWorld(level, lt);
         Vec3 wd = SableCompat.dirToWorld(ship, Vec3.atLowerCornerOf(f.getNormal()));
         Vec3 wu = SableCompat.dirToWorld(ship, new Vec3(0, 1, 0));
+        Vec3 wp = SableCompat.dirToWorld(ship, plug.localPattern());
         Vec tip = new Vec(wt.x, wt.y, wt.z);
         if (Double.isNaN(cruiseY)) cruiseY = tip.y();
         long key = plug.key();
@@ -326,9 +385,24 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
                 }
             }
             wasLocked = true;
-            State s = lease(cc, r, sub, null, null, true);
-            return s == State.ACTIVE ? State.DOCKED : s;
+            // пристыкован: компьютер управления полётом выключен (тяга двигателей Flight Control снята), пушки корабля
+            // неактивны (вычислители видят отметку DockHold)
+            release();
+            if (cc.isWorkingDefaultEnabled()) {
+                cc.setWorking(false);
+                poweredDown = true;
+                setChanged();
+            }
+            if (ship != null) DockHold.mark(level, ship.getUniqueId(), now);
+            return State.DOCKED;
         }
+        restoreComputer(level);
+        Ready r = ready(level, cc);
+        if (r == null) {
+            release();
+            return State.COMPUTER_OFF;
+        }
+        Object sub = subLevel(level);
         Set<UUID> nets = new HashSet<>(LinkRegistry.networksOf(level, worldPosition));
         nets.addAll(LinkRegistry.networksOf(level, plug.getBlockPos()));
         DockingRegistry.Choice ch = DockingRegistry.choose(level, nets, plug.number, ship == null ? null : ship.getUniqueId(), key, tip,
@@ -345,8 +419,8 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             dockTarget = target;
             dockPhase = Docking.Phase.TRANSIT;
         }
-        Docking.Command c = Docking.steer(dockPhase, ch.port().port(), tip, new Vec(wd.x, wd.y, wd.z), new Vec(wu.x, wu.y, wu.z),
-                maxSpeed, cruiseY, ch.free());
+        Docking.Command c = Docking.steer(dockPhase, ch.port().port(), tip, new Vec(wd.x, wd.y, wd.z), new Vec(wp.x, wp.y, wp.z),
+                new Vec(wu.x, wu.y, wu.z), maxSpeed, cruiseY, ch.free());
         dockPhase = c.phase();
         boolean extend = c.phase() == Docking.Phase.FINAL;
         dockReserved = ch.free();
@@ -369,8 +443,20 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
         dockDist = p.tip().distance(tip);
     }
 
-    /** Стыковка кончилась: порт отпустить; был пристыкован - отойти от порта. */
+    /** Компьютер управления полётом выключали на время стыковки - включить снова. */
+    private void restoreComputer(ServerLevel level) {
+        if (!poweredDown) return;
+        BlockPos p = getLinkedComputerPos();
+        if (p != null && level.isLoaded(p) && level.getBlockEntity(p) instanceof FlightControlComputerBlockEntity cc) cc.setWorking(true);
+        poweredDown = false;
+        setChanged();
+    }
+
+    /** Стыковка кончилась: порт отпустить; был пристыкован - компьютер включить и отойти от порта. */
     private void endDock(ServerLevel level, long now) {
+        restoreComputer(level);
+        UUID ship = SableCompat.containingId(level, worldPosition);
+        if (wasLocked && ship != null) DockHold.release(level, ship);
         if (dockTarget != null && dockReserved) DockingRegistry.release(level, dockTarget, plugKey);
         if (wasLocked && departDir != null) departUntil = now + Docking.DEPART_TICKS;
         wasLocked = false;
@@ -559,6 +645,7 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
         computerOffset = tag.contains("ComputerOffset") ? BlockPos.of(tag.getLong("ComputerOffset")) : null;
         loadForwardIndicatorLink(tag);
         forward = tag.contains("Forward") ? BodyForwardFacing.fromSerializedName(tag.getString("Forward")) : null;
+        poweredDown = tag.getBoolean("DockPoweredDown");
     }
 
     @Override
@@ -567,6 +654,7 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
     }
 
     private void writeLinks(CompoundTag tag) {
+        if (poweredDown) tag.putBoolean("DockPoweredDown", true);
         if (computerOffset != null) tag.putLong("ComputerOffset", computerOffset.asLong());
         saveForwardIndicatorLink(tag);
         if (forward != null) tag.putString("Forward", forward.serializedName());

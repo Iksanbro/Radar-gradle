@@ -20,7 +20,7 @@ public final class DockingControllerScreen extends Screen {
     private final BlockPos pos;
     private Docking.Role role;
     private final int number0;
-    private final boolean linked;
+    private final int linked;
     private final DockingControllerBlockEntity.Status status;
     private int left, top;
     private EditBox numberField;
@@ -37,7 +37,7 @@ public final class DockingControllerScreen extends Screen {
         }
         role = r;
         number0 = DockingControllerBlockEntity.cleanNumber(t.getInt("Number"));
-        linked = t.getBoolean("Linked");
+        linked = t.getInt("Connectors");
         DockingControllerBlockEntity.Status s;
         try {
             s = DockingControllerBlockEntity.Status.valueOf(t.getString("Status"));
@@ -94,8 +94,9 @@ public final class DockingControllerScreen extends Screen {
         super.render(g, mouseX, mouseY, partialTick);
         g.drawString(font, title, left + 8, top + 8, 0xFFD27F, false);
         g.drawString(font, Component.translatable("radar_fcs.docking.number"), left + 8, top + 52, 0xC0C0C0, false);
-        g.drawString(font, Component.translatable(linked ? "radar_fcs.docking.connector_linked" : "radar_fcs.docking.connector_none"),
-                left + 8, top + 72, linked ? 0x7FE07F : 0xE07F7F, false);
+        g.drawString(font, linked > 0 ? Component.translatable("radar_fcs.docking.connector_linked", linked)
+                        : Component.translatable("radar_fcs.docking.connector_none"),
+                left + 8, top + 72, linked > 0 ? 0x7FE07F : 0xE07F7F, false);
         g.drawString(font, Component.translatable(status.key()), left + 8, top + 84, 0xA0A8B0, false);
         g.drawWordWrap(font, Component.translatable(role.key() + ".hint"), left + 8, top + 100, W - 16, 0x8A9098);
     }

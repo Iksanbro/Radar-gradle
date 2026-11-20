@@ -1,0 +1,36 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "create_flight_control"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "pattern": [
+    " E ",
+    "SCS",
+    "BTB"
+  ],
+  "key": {
+    "E": {
+      "item": "minecraft:ender_pearl"
+    },
+    "S": {
+      "item": "create:brass_sheet"
+    },
+    "C": {
+      "item": "create:brass_casing"
+    },
+    "B": {
+      "item": "create:andesite_alloy"
+    },
+    "T": {
+      "item": "create:electron_tube"
+    }
+  },
+  "result": {
+    "id": "radar_fcs:orbit_beacon",
+    "count": 1
+  }
+}

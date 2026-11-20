@@ -66,8 +66,10 @@ public final class FcsMod {
             dev.radarfcs.link.GunLinks.clear();
             dev.radarfcs.dock.DockingRegistry.clear();
             dev.radarfcs.compat.DockingPorts.clear();
+            dev.radarfcs.dock.DockHold.clear();
         });
         NeoForge.EVENT_BUS.addListener(dev.radarfcs.compat.DockingPorts::onLevelTick);
+        NeoForge.EVENT_BUS.addListener(dev.radarfcs.compat.DockingPorts::onLevelTickEnd);
         // стыковочный контроллер: связь с портом Simulated инструментальным пистолетом Flight Control
         if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) dev.radarfcs.compat.flight.DockingToolLink.init();
     }

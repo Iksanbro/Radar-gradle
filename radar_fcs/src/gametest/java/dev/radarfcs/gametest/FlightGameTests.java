@@ -48,7 +48,7 @@ public class FlightGameTests {
      * «нужны регуляторы». Регуляторы скорости и угловой скорости связали - мост берёт аренду, как навигационный терминал
      * Flight Control: регулятор скорости включён и ведёт к цели (+X), регулятор угловой скорости - поворот вправо (-Y),
      * оба стабилизатора выключены. Индикатор «вперёд = восток» - поворота по курсу почти нет; тангаж - цель ниже, нос
-     * вниз (-Z). «Дальность и высота» +12 - вверх. Назначение сняли - ближайшая цель радаров. Редстоун - пауза, аренда
+     * вниз (-Z). «Дальность и высота» +12 - вверх. Назначение сняли - других целей (хаск рядом) не ведёт, висит на месте. Редстоун - пауза, аренда
      * отдана. Мост сломан - компьютер его забыл.
      */
     @GameTest(template = ARENA, batch = "flight", timeoutTicks = 500)
@@ -168,10 +168,15 @@ public class FlightGameTests {
                     phase.set(5);
                     since.set(t);
                 }
-                case 5 -> {                                                 // без назначения - ближайшая цель радаров
+                case 5 -> {                                                 // без назначения - других целей не ведёт, висит
                     if (t - since.get() < 12) return;
-                    if (b.goal() == null) h.fail("no goal without designation (nearest target expected): " + b.state());
-                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: no designation - nearest target {}", b.targetName());
+                    Map<String, Object> c = FlightTestSupport.commands(level, cc, at[0]);
+                    FcsMod.LOG.info("[radar_fcs test] flight_bridge: no designation - {} {}", b.state(), c);
+                    if (b.goal() != null) h.fail("bridge chases another object without a designation: " + b.targetName());
+                    if (b.state() != AutopilotBlockEntity.State.IDLE_HOVER) h.fail("expected IDLE_HOVER without a target, got " + b.state());
+                    for (String ax : new String[]{"X", "Y", "Z"}) {
+                        if (!(Math.abs(num(c, VEL + "BODY_VELOCITY_" + ax)) < 0.5)) h.fail("hovering ship moves along " + ax + ": " + c);
+                    }
                     level.setBlock(at[0].north(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);   // рядом с мостом (с севера свободно)
                     phase.set(6);
                     since.set(t);

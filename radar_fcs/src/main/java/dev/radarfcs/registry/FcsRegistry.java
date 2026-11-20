@@ -171,6 +171,7 @@ public final class FcsRegistry {
                         if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) {
                             out.accept(dev.radarfcs.compat.flight.FlightBridge.ITEM.get());
                             out.accept(dev.radarfcs.block.DockingBlocks.ITEM.get());
+                            out.accept(dev.radarfcs.block.DockingBlocks.BEACON_ITEM.get());
                         }
                     })
                     .build());

@@ -336,9 +336,11 @@ SCENES = {
          'The Autopilot Bridge connects the radar network to Create: Flight Control. It goes on a Sable ship and exists '
          'only when Flight Control is installed'),
         ('В радарную сеть — передатчиком. Цель моста — назначенная на мониторе сети (своём или Create: Radars), иначе '
-         'та, которую ведёт вычислитель сети, иначе ближайшая чужая цель радаров',
+         'та, которую ведёт вычислитель сети. Других объектов мост не ведёт: без цели корабль висит на месте или летит '
+         'по орбите (вкладка «Без цели»)',
          'Add it to a radar network with a Radar Link. Its target is the one designated on a monitor of the network (own '
-         'or Create: Radars), otherwise the one a fire control computer is tracking, otherwise the nearest hostile radar contact'),
+         'or Create: Radars), otherwise the one a fire control computer is tracking. It chases nothing else: with no '
+         'target the ship hovers in place or flies an orbit (the "No target" tab)'),
         ('Инструментальный пистолет Flight Control: ПКМ по индикатору направления вперёд, затем по мосту — нос корабля '
          'берётся с индикатора. Без индикатора нос — лицевая сторона моста',
          'Flight Control tool gun: right-click the Forward Indicator, then the bridge — the ship nose comes from the '

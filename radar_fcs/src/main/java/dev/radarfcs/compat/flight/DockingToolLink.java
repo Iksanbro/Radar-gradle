@@ -19,7 +19,8 @@ import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 
 /**
  * Связь стыковочного контроллера с портом Create Simulated инструментальным пистолетом Flight Control: ПКМ по
- * контроллеру - он выбран, ПКМ по порту на той же постройке - связаны; Shift+ПКМ по контроллеру - связь снята.
+ * контроллеру - он выбран, ПКМ по портам на той же постройке - каждый добавлен (повторно - убран, до 8, все смотрят в
+ * одну сторону); Shift+ПКМ по контроллеру - все связи сняты.
  * Выбор помнится по игроку (на сервере и на клиенте отдельно) и забывается через минуту. Пистолет при этом своей
  * работы не делает (событие отменено раньше обработчика Flight Control).
  */
@@ -47,7 +48,7 @@ public final class DockingToolLink {
             if (p.isShiftKeyDown()) {
                 picks.remove(p.getUUID());
                 if (!level.isClientSide) {
-                    be.linkConnector(null);
+                    be.clearConnectors();
                     say(p, Component.translatable("radar_fcs.docking.unlinked").withStyle(ChatFormatting.YELLOW));
                 }
                 return;
@@ -59,19 +60,31 @@ public final class DockingToolLink {
         Pick pick = picks.get(p.getUUID());
         if (pick == null || !DockingPorts.isConnector(level, pos)) return;
         cancel(e);
-        picks.remove(p.getUUID());
         if (level.isClientSide) return;
         if (pick.until() < now || !pick.dim().equals(level.dimension())
                 || !(level.getBlockEntity(pick.pos()) instanceof DockingControllerBlockEntity be)) {
+            picks.remove(p.getUUID());
             say(p, Component.translatable("radar_fcs.docking.pick_lost").withStyle(ChatFormatting.RED));
+            return;
+        }
+        // выбор остаётся: следующие порты - тоже к этому контроллеру (повторный щелчок по порту - убрать)
+        picks.put(p.getUUID(), new Pick(pick.dim(), pick.pos(), now + TIMEOUT));
+        if (be.connectorPositions().contains(pos)) {
+            be.toggleConnector(pos.immutable());                             // убрать связанный порт - без проверок
+            say(p, Component.translatable("radar_fcs.docking.removed", be.connectorCount()).withStyle(ChatFormatting.YELLOW));
             return;
         }
         if (!DockingPorts.linkable(level, pick.pos(), pos, DockingControllerBlockEntity.LINK_RADIUS)) {
             say(p, Component.translatable("radar_fcs.docking.too_far", (int) DockingControllerBlockEntity.LINK_RADIUS).withStyle(ChatFormatting.RED));
             return;
         }
-        be.linkConnector(pos.immutable());
-        say(p, Component.translatable("radar_fcs.docking.linked").withStyle(ChatFormatting.GREEN));
+        switch (be.toggleConnector(pos.immutable())) {
+            case ADDED -> say(p, Component.translatable("radar_fcs.docking.linked", be.connectorCount()).withStyle(ChatFormatting.GREEN));
+            case REMOVED -> say(p, Component.translatable("radar_fcs.docking.removed", be.connectorCount()).withStyle(ChatFormatting.YELLOW));
+            case FULL -> say(p, Component.translatable("radar_fcs.docking.full", DockingControllerBlockEntity.MAX_CONNECTORS)
+                    .withStyle(ChatFormatting.RED));
+            case FACING -> say(p, Component.translatable("radar_fcs.docking.facing").withStyle(ChatFormatting.RED));
+        }
     }
 
     private static void cancel(PlayerInteractEvent.RightClickBlock e) {

@@ -22,9 +22,9 @@ import org.jetbrains.annotations.Nullable;
 public final class DockingRegistry {
     /** Порт: контроллер pos, номер, сети, конец порта и направление (мир), скорость (бл/с), корабль порта, сцеплен ли. */
     public record PortInfo(BlockPos pos, int number, Set<UUID> networks, Vec tip, Vec facing, Vec vel, @Nullable UUID ship,
-                           boolean locked, boolean loaded) {
+                           boolean locked, boolean loaded, Vec pattern, int count) {
         public Docking.Port port() {
-            return new Docking.Port(tip, facing, vel);
+            return new Docking.Port(tip, facing, vel, pattern);
         }
     }
 
@@ -56,7 +56,7 @@ public final class DockingRegistry {
         Map<BlockPos, PortInfo> m = PORTS.get(level.dimension());
         if (m == null) return;
         m.computeIfPresent(pos, (k, p) -> new PortInfo(p.pos(), p.number(), p.networks(), p.tip(), p.facing(), Vec.ZERO, p.ship(),
-                p.locked(), false));
+                p.locked(), false, p.pattern(), p.count()));
     }
 
     @Nullable

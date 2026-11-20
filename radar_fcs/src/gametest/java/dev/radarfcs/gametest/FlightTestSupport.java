@@ -112,6 +112,11 @@ final class FlightTestSupport {
         return linkController(level, computer, ((FlightBridgeBlockEntity) bridge).getBlockPos());
     }
 
+    /** Компьютер управления полётом работает (не выключен мостом на время стыковки). */
+    static boolean working(Level level, BlockPos computer) {
+        return level.getBlockEntity(computer) instanceof FlightControlComputerBlockEntity cc && cc.working;
+    }
+
     /** Мост убран - компьютер забыл его. */
     static boolean computerForgot(Level level, BlockPos computer, BlockPos bridge) {
         return level.getBlockEntity(computer) instanceof FlightControlComputerBlockEntity cc && !cc.hasLinkedControllerAt(bridge);

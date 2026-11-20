@@ -21,6 +21,10 @@
     {
       "id": "radar_fcs:docking_controller",
       "required": false
+    },
+    {
+      "id": "radar_fcs:orbit_beacon",
+      "required": false
     }
   ]
 }

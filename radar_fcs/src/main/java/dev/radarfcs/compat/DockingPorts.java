@@ -91,10 +91,19 @@ public final class DockingPorts {
      * соседей при любом их изменении (и когда сам ставит пластину) - без этого он задвинулся бы на тик и расстыковался.
      */
     public static void onLevelTick(net.neoforged.neoforge.event.tick.LevelTickEvent.Pre e) {
-        if (e.getLevel().isClientSide) return;
-        java.util.Set<BlockPos> f = FORCED.get(e.getLevel().dimension());
+        reassert(e.getLevel());
+    }
+
+    /** Конец тика мира: порт, сбросивший сигнал от своей же пластины в тике блоков, к клиенту уходит выдвинутым. */
+    public static void onLevelTickEnd(net.neoforged.neoforge.event.tick.LevelTickEvent.Post e) {
+        reassert(e.getLevel());
+    }
+
+    private static void reassert(Level level0) {
+        if (level0.isClientSide) return;
+        Level level = level0;
+        java.util.Set<BlockPos> f = FORCED.get(level.dimension());
         if (f == null || f.isEmpty()) return;
-        Level level = e.getLevel();
         for (BlockPos p : f) {
             if (!level.isLoaded(p)) continue;
             BlockState st = level.getBlockState(p);
