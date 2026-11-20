@@ -46,4 +46,8 @@ public final class FcsClientHooks {
     public static void openAutopilot(dev.radarfcs.net.AutopilotPayloads.Open p) {
         net.minecraft.client.Minecraft.getInstance().setScreen(new AutopilotScreen(p));
     }
+
+    public static void openDocking(dev.radarfcs.net.DockingPayloads.Open p) {
+        net.minecraft.client.Minecraft.getInstance().setScreen(new DockingControllerScreen(p));
+    }
 }

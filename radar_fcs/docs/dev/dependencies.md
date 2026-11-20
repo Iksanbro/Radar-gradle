@@ -137,3 +137,14 @@
 - Рендер монитора: квады (`RenderType.debugQuads`) рисовать до текста — `font.drawInBatch` берёт другой тип рендера,
   и ранее полученный `VertexConsumer` становится недействительным (падение «Not building!»).
 
+
+**Create Simulated (в составе Create Aeronautics 1.3.2, mod id `simulated`) — стыковочный порт.**
+`simulated:docking_connector` (`DockingConnectorBlock` - `WrenchableDirectionalBlock`, свойства `FACING`, `POWERED`
+(ванильное `BlockStateProperties.POWERED`), `EXTENDED`; `DockingConnectorBlockEntity` - `SmartBlockEntity`, магнит
+`SimMagnet`). Тик читает `powered` из состояния блока; выдвинут - ставит перед собой `paired_docking_connector`
+(пластину) и ищет пары в `MAGNET_CONTROLLER` (`MagnetMap.findNearby`). Пара: `DockingConnectorPair.canConnect` -
+расстояние концов² < 16 и направления навстречу; магнит тянет и выравнивает, затем `LOCKING` -> `LOCKED`
+(`FixedConstraint` Sable). Без сигнала у сцепленного - `unDock`. `getTipPosition()` = центр блока + 1.5 x FACING.
+`neighborChanged` сверяет `POWERED` с `hasNeighborSignal` - поэтому выдвижение «без проводов» держится, пока соседи не
+менялись, и контроллер повторяет его каждый тик. Конфиг порта - только ёмкость FE. Класс на classpath компиляции нет -
+мод обращается к порту по имени блока и рефлексией (`compat/DockingPorts`).

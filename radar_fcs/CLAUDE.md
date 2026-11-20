@@ -12,14 +12,15 @@
 ## 1. Что делает мод
 Игровые блоки для автоматизации пушек CBC в Minecraft: вычислитель (блок с экраном настроек), контроллеры поворота
 станка, радарный линк (связывает блоки в сеть как складские передатчики Create), монитор радара (мультиблок-карта),
-транспондер (метит «своих» игроков, мобов и корабли), блок памяти, камера, мост автопилота для Create: Flight Control.
+транспондер (метит «своих» игроков, мобов и корабли), блок памяти, камера, мост автопилота для Create: Flight Control,
+стыковочный контроллер (автостыковка кораблей к портам Create Aeronautics через мост).
 Цели берутся только с радаров Create: Radars (его код не копировать — лицензия source-available).
 
 Подробности:
 - `docs/dev/features.md` — все требования пользователя и история функций по версиям (≈560 строк);
 - `docs/dev/dependencies.md` — проверенные особенности API CBC, CBC-AT, Neo Warfare, Create Radars, Sable;
 - `docs/dev/test-status.md` — что покрыто игровыми тестами и какие комбинации модов проверены;
-- `docs/dev/task-docking.md` — текущая задача: стыковочный контроллер.
+- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test, итог — `features.md` п. 43).
 
 Эти файлы и `README.md` большие: **не выводи их целиком** (`cat`), ищи нужное через `grep -n` и читай куски.
 
@@ -106,6 +107,11 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # �
   транспондера одним тегом), `InheritPolicy`, `IffAccess`; `block/IffTransponderBlock(Entity)` (владелец, код, режим, радиус; `apply` проверяет
   доступ и чистит значения), `client/TransponderScreen`, `net/TransponderPayloads` (Open S->C, Save C->S);
   `compat/ContraptionCompat.hasTransponder(e, rule, now)` - коды из данных блоков контрапшена.
+- Стыковка (только с Flight Control): `block/DockingControllerBlock(Entity)` + `DockingBlocks` (роль порт/штекер, номер,
+  связь с портом `simulated:docking_connector` пистолетом FC - `compat/flight/DockingToolLink`), `compat/DockingPorts`
+  (порт Simulated: выдвижение через `POWERED`, `isLocked` рефлексией), `dock/DockingRegistry` (порты по сетям и номерам,
+  брони), `core/Docking` (фазы подлёта, развороты), в мосту - `dockTrigger`/`dockBusy` и `FlightBridgeBlockEntity.dockSteer`
+  через ту же аренду (`lease`); экран `client/DockingControllerScreen`, `net/DockingPayloads`.
 - `block/`, `registry/`, `client/FcsClient` (цвет транспондера).
 - `src/gametest/` — игровые тесты и dev-автоматизация (в jar не попадают).
 
@@ -119,4 +125,6 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # �
 - Распределение целей между пушками (сейчас каждая выбирает сама по настройкам вычислителя).
 - Манекен в тестах разворачивается мгновенно: на пару тиков он «стоит», и при «сбрасывать статичные» выпадает из
   целей — тест приоритета это учитывает.
+- Стыковка: физика подлёта и сцепка портов в игре игровым тестом не проверены (корабль Sable в тесте сам не летит);
+  порты выгруженных чанков после перезапуска сервера неизвестны, пока их чанк не загрузится.
 - Lua-версия (`lua/`) — исходный прототип для CC:Tweaked, в моде не используется.

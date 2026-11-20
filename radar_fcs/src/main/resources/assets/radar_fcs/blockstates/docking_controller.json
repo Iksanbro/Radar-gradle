@@ -1,0 +1,34 @@
+{
+  "variants": {
+    "facing=north,plug=false": {
+      "model": "radar_fcs:block/docking_controller_port"
+    },
+    "facing=north,plug=true": {
+      "model": "radar_fcs:block/docking_controller_plug"
+    },
+    "facing=east,plug=false": {
+      "model": "radar_fcs:block/docking_controller_port",
+      "y": 90
+    },
+    "facing=east,plug=true": {
+      "model": "radar_fcs:block/docking_controller_plug",
+      "y": 90
+    },
+    "facing=south,plug=false": {
+      "model": "radar_fcs:block/docking_controller_port",
+      "y": 180
+    },
+    "facing=south,plug=true": {
+      "model": "radar_fcs:block/docking_controller_plug",
+      "y": 180
+    },
+    "facing=west,plug=false": {
+      "model": "radar_fcs:block/docking_controller_port",
+      "y": 270
+    },
+    "facing=west,plug=true": {
+      "model": "radar_fcs:block/docking_controller_plug",
+      "y": 270
+    }
+  }
+}

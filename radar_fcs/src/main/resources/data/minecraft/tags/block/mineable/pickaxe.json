@@ -17,6 +17,10 @@
     {
       "id": "radar_fcs:flight_bridge",
       "required": false
+    },
+    {
+      "id": "radar_fcs:docking_controller",
+      "required": false
     }
   ]
 }

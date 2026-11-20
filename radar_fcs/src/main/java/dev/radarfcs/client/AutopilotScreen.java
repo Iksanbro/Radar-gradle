@@ -2,12 +2,14 @@ package dev.radarfcs.client;
 
 import dev.radarfcs.block.AutopilotBlockEntity;
 import dev.radarfcs.core.Autopilot;
+import dev.radarfcs.core.Docking;
 import dev.radarfcs.net.AutopilotPayloads;
 import java.util.function.DoubleUnaryOperator;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -19,11 +21,13 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * дальность, высота над целью и предел скорости - числами с клавиатуры.
  */
 public final class AutopilotScreen extends Screen {
-    private static final int W = 300, H = 262;
+    private static final int W = 300, H = 286;
 
     private final BlockPos pos;
     private boolean heading, pitch, roll;
     private Autopilot.Mode mode;
+    private Docking.Trigger dock;
+    private Docking.Busy busy;
     private final double distance0, height0, speed0, roll0, pitch0;
     private int left, top;
     private EditBox distField, heightField, speedField, rollField, pitchField;
@@ -42,6 +46,8 @@ public final class AutopilotScreen extends Screen {
             m = Autopilot.Mode.DISTANCE;
         }
         mode = m;
+        dock = AutopilotBlockEntity.enumOr(Docking.Trigger.class, t.getString("Dock"), Docking.Trigger.OFF);
+        busy = AutopilotBlockEntity.enumOr(Docking.Busy.class, t.getString("DockBusy"), Docking.Busy.WAIT);
         distance0 = Autopilot.cleanDistance(t.getDouble("Distance"));
         height0 = Autopilot.cleanHeight(t.getDouble("Height"));
         speed0 = Autopilot.cleanSpeed(t.getDouble("MaxSpeed"));
@@ -81,6 +87,19 @@ public final class AutopilotScreen extends Screen {
         distField = field(x, top + 130, w, keep(distField, distance0));
         heightField = field(x, top + 152, w, keep(heightField, height0));
         speedField = field(x, top + 174, w, keep(speedField, speed0));
+        // стыковка: когда лететь и что делать, если порты заняты
+        int hw = (W - 20) / 2;
+        addRenderableWidget(Button.builder(Component.translatable(dock.key()), b -> {
+            Docking.Trigger[] v = Docking.Trigger.values();
+            dock = v[(dock.ordinal() + 1) % v.length];
+            b.setMessage(Component.translatable(dock.key()));
+            b.setTooltip(Tooltip.create(Component.translatable(dock.key() + ".hint")));
+        }).bounds(left + 8, top + 198, hw, 18).tooltip(Tooltip.create(Component.translatable(dock.key() + ".hint"))).build());
+        addRenderableWidget(Button.builder(Component.translatable(busy.key()), b -> {
+            Docking.Busy[] v = Docking.Busy.values();
+            busy = v[(busy.ordinal() + 1) % v.length];
+            b.setMessage(Component.translatable(busy.key()));
+        }).bounds(left + 12 + hw, top + 198, hw, 18).build());
         updateFields();
         addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gun.save"), b -> {
             CompoundTag t = new CompoundTag();
@@ -93,6 +112,8 @@ public final class AutopilotScreen extends Screen {
             t.putDouble("Distance", parse(distField, distance0, Autopilot::cleanDistance));
             t.putDouble("Height", parse(heightField, height0, Autopilot::cleanHeight));
             t.putDouble("MaxSpeed", parse(speedField, speed0, Autopilot::cleanSpeed));
+            t.putString("Dock", dock.name());
+            t.putString("DockBusy", busy.name());
             PacketDistributor.sendToServer(new AutopilotPayloads.Save(pos, t));
             onClose();
         }).bounds(left + W / 2 - 104, top + H - 26, 100, 20).build());
@@ -161,7 +182,7 @@ public final class AutopilotScreen extends Screen {
         g.drawString(font, Component.translatable("radar_fcs.autopilot.height"), left + 8, top + 156,
                 mode == Autopilot.Mode.DISTANCE_ALTITUDE ? 0xC0C0C0 : 0x606060, false);
         g.drawString(font, Component.translatable("radar_fcs.autopilot.max_speed"), left + 8, top + 178, off, false);
-        g.drawWordWrap(font, Component.translatable(mode.key() + ".hint"), left + 8, top + 198, W - 16, 0x8A9098);
+        g.drawWordWrap(font, Component.translatable(mode.key() + ".hint"), left + 8, top + 222, W - 16, 0x8A9098);
     }
 
     @Override

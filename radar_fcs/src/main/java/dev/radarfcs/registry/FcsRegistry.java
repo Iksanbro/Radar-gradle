@@ -168,13 +168,19 @@ public final class FcsRegistry {
                         out.accept(GUN_DRIVE_ITEM.get());
                         out.accept(SIGHT_ITEM.get());
                         out.accept(GUN_LINK_ITEM.get());
-                        if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) out.accept(dev.radarfcs.compat.flight.FlightBridge.ITEM.get());
+                        if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) {
+                            out.accept(dev.radarfcs.compat.flight.FlightBridge.ITEM.get());
+                            out.accept(dev.radarfcs.block.DockingBlocks.ITEM.get());
+                        }
                     })
                     .build());
 
     public static void register(IEventBus bus) {
         // мост автопилота - только с Create: Flight Control
-        if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) dev.radarfcs.compat.flight.FlightBridge.register();
+        if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) {
+            dev.radarfcs.compat.flight.FlightBridge.register();
+            dev.radarfcs.block.DockingBlocks.register();                    // стыковочный контроллер - тоже только с FC
+        }
         BLOCKS.register(bus);
         ITEMS.register(bus);
         BLOCK_ENTITIES.register(bus);

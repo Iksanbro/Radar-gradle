@@ -31,6 +31,7 @@ public final class FcsMod {
         modBus.addListener(dev.radarfcs.net.CameraPayloads::register);
         modBus.addListener(dev.radarfcs.net.GunPayloads::register);
         modBus.addListener(dev.radarfcs.net.AutopilotPayloads::register);
+        modBus.addListener(dev.radarfcs.net.DockingPayloads::register);
         // обучающие сцены Ponder (как в Create) - только на клиенте
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) dev.radarfcs.client.ponder.FcsPonderPlugin.init();
         if (dev.radarfcs.compat.Mods.SABLE) dev.radarfcs.compat.sable.SableRotor.init(dev.radarfcs.block.GunRotatorBlockEntity::physicsStepAll);
@@ -63,6 +64,11 @@ public final class FcsMod {
             dev.radarfcs.fcs.FcsControl.clearClaims();
             dev.radarfcs.link.LinkRegistry.clear();
             dev.radarfcs.link.GunLinks.clear();
+            dev.radarfcs.dock.DockingRegistry.clear();
+            dev.radarfcs.compat.DockingPorts.clear();
         });
+        NeoForge.EVENT_BUS.addListener(dev.radarfcs.compat.DockingPorts::onLevelTick);
+        // стыковочный контроллер: связь с портом Simulated инструментальным пистолетом Flight Control
+        if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) dev.radarfcs.compat.flight.DockingToolLink.init();
     }
 }

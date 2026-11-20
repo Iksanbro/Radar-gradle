@@ -15,6 +15,13 @@ import ace.flight.navigation.NavigationVehicleStateSnapshot;
 import ace.flight.physics.AttitudeTargetUtil;
 import dev.radarfcs.FcsMod;
 import dev.radarfcs.block.AutopilotBlockEntity;
+import dev.radarfcs.block.DockingControllerBlockEntity;
+import dev.radarfcs.compat.SableCompat;
+import dev.radarfcs.core.Docking;
+import dev.radarfcs.dock.DockingRegistry;
+import dev.radarfcs.link.LinkRegistry;
+import java.util.HashSet;
+import net.minecraft.world.phys.Vec3;
 import dev.radarfcs.core.Autopilot;
 import dev.radarfcs.core.Vec;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
@@ -56,6 +63,13 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
     private long revision, epoch;
     @Nullable private FlightControlComputerBlockEntity leaseComputer;
     private State driveState = State.NO_TARGET;
+    // стыковка
+    @Nullable private BlockPos dockTarget;
+    private boolean dockReserved, wasLocked;
+    private Docking.Phase dockPhase = Docking.Phase.TRANSIT;
+    private double cruiseY = Double.NaN;
+    private long plugKey, departUntil = Long.MIN_VALUE;
+    @Nullable private Vec departDir;
     @Nullable private Object cachedSub;
     private long cachedSubAt;
 
@@ -172,21 +186,38 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
     }
 
     @Override
-    protected void drive(ServerLevel level, @Nullable Goal g) {
+    protected void drive(ServerLevel level, @Nullable Goal g, boolean dock) {
         FlightControlComputerBlockEntity cc = computer(level);
-        if (g == null || cc == null) {
-            release();
-            holdFor = null;
-            return;
-        }
+        long now = level.getGameTime();
         try {
+            if (dock) {
+                departUntil = Long.MIN_VALUE;
+                holdFor = null;
+                if (cc == null) {
+                    release();
+                    driveState = State.COMPUTER_OFF;
+                    return;
+                }
+                driveState = dockSteer(level, cc, now);
+                return;
+            }
+            endDock(level, now);
+            if (now < departUntil && cc != null && departDir != null) {        // отход от порта после расстыковки
+                driveState = depart(level, cc);
+                return;
+            }
+            if (g == null || cc == null) {
+                release();
+                holdFor = null;
+                return;
+            }
             driveState = steer(level, cc, g);
         } catch (Throwable e) {
             release();
             driveState = State.COMPUTER_OFF;
-            long now = System.currentTimeMillis();
-            if (now - lastError > 60_000) {                              // API Flight Control изменилось - мост молчит
-                lastError = now;
+            long t = System.currentTimeMillis();
+            if (t - lastError > 60_000) {                                // API Flight Control изменилось - мост молчит
+                lastError = t;
                 FcsMod.LOG.warn("[radar_fcs] flight bridge at {}: {}", worldPosition, e.toString());
             }
         }
@@ -199,32 +230,24 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
         return level.getBlockEntity(p) instanceof FlightControlComputerBlockEntity cc && cc.hasReciprocalControllerAt(worldPosition) ? cc : null;
     }
 
-    /**
-     * Как навигационный терминал Flight Control: аренда у компьютера осей регулятора скорости (движение) и регулятора
-     * угловой скорости (повороты) с их целями; остальные регуляторы, которые спорили бы с ними (стабилизаторы ориентации
-     * и высоты, регулятор дистанции, терминал мыши, лишние регуляторы скорости), на время аренды выключены.
-     */
-    private State steer(ServerLevel level, FlightControlComputerBlockEntity cc, Goal g) throws Exception {
+    /** Компьютер в рабочем режиме и знает корабль: снимок сети регуляторов и корабля, иначе null. */
+    private record Ready(NavigationControlNetworkSnapshot net, NavigationVehicleStateSnapshot vehicle) {}
+
+    @Nullable
+    private Ready ready(ServerLevel level, FlightControlComputerBlockEntity cc) {
         NavigationControlNetworkSnapshot net = cc.snapshotControlNetwork(worldPosition, level.getGameTime());
         NavigationVehicleStateSnapshot vehicle = cc.getNavigationVehicleStateSnapshot();
         if (net.status() != NavigationControlNetworkSnapshot.Status.AVAILABLE || !net.computerWorking() || net.computerMode() != 0
-                || net.dimensionId() == null || vehicle == null || vehicle.structureId() == null) {
+                || net.dimensionId() == null || vehicle == null || vehicle.structureId() == null) return null;
+        return new Ready(net, vehicle);
+    }
+
+    /** Полёт к цели: скорость и повороты по настройкам моста. */
+    private State steer(ServerLevel level, FlightControlComputerBlockEntity cc, Goal g) throws Exception {
+        Ready r = ready(level, cc);
+        if (r == null) {
             release();
             return State.COMPUTER_OFF;
-        }
-        boolean move = g.mode() != Autopilot.Mode.OFF, turn = g.turns();
-        NavigationControllerSnapshot vel = null, ang = null;
-        for (NavigationControllerSnapshot n : net.controllers()) {
-            if (!usable(n)) continue;
-            if (vel == null && n.kind() == NavigationControllerKind.BODY_VELOCITY) vel = n;
-            if (ang == null && n.kind() == NavigationControllerKind.BODY_ANGULAR_VELOCITY) ang = n;
-        }
-        boolean needVel = move && vel == null, needAng = turn && ang == null;
-        if (!move) vel = null;
-        if (!turn) ang = null;
-        if (vel == null && ang == null) {
-            release();
-            return needVel && needAng ? State.NEED_COUPLERS : needVel ? State.NEED_VELOCITY : needAng ? State.NEED_ANGULAR : State.ACTIVE;
         }
         // положение корабля, нос и «верх» в мире
         Object sub = subLevel(level);
@@ -235,34 +258,205 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             holdFor = g.id();
             holdY = p.y;
         }
-        Map<NavigationControlDomain, NavigationControlCommand> cmds = new HashMap<>();
-        if (vel != null) {
-            Vec v = Autopilot.desiredVelocity(g.mode(), g.distance(), g.height(), g.maxSpeed(), ship, target, g.vel(),
-                    g.mode() == Autopilot.Mode.DISTANCE ? holdY : Double.NaN);
-            Vector3d vb = new Vector3d(v.x(), v.y(), v.z());
-            AttitudeTargetUtil.worldToBody(sub, vb);
-            track(cmds, vel, vb, NavigationControlDomain.SemanticAxis.BODY_VELOCITY_X, NavigationControlDomain.SemanticAxis.BODY_VELOCITY_Y,
-                    NavigationControlDomain.SemanticAxis.BODY_VELOCITY_Z);
-        }
-        if (ang != null) {
+        Vec v = g.mode() == Autopilot.Mode.OFF ? null : Autopilot.desiredVelocity(g.mode(), g.distance(), g.height(), g.maxSpeed(), ship,
+                target, g.vel(), g.mode() == Autopilot.Mode.DISTANCE ? holdY : Double.NaN);
+        Vec w = null;
+        if (g.turns()) {
             BodyForwardFacing f = forwardFacing();
             Vector3d fw = AttitudeTargetUtil.rotateBodyToWorld(sub, new Vector3d(f.direction().getStepX(), 0, f.direction().getStepZ()));
             Vector3d up = AttitudeTargetUtil.rotateBodyToWorld(sub, new Vector3d(0, 1, 0));
-            Vec w = Autopilot.desiredRates(new Vec(fw.x, fw.y, fw.z), new Vec(up.x, up.y, up.z), target.sub(ship),
+            w = Autopilot.desiredRates(new Vec(fw.x, fw.y, fw.z), new Vec(up.x, up.y, up.z), target.sub(ship),
                     g.yaw(), g.pitch(), g.roll(), g.maxPitch(), g.maxRoll());
-            Vector3d wb = new Vector3d(w.x(), w.y(), w.z());
-            AttitudeTargetUtil.worldToBody(sub, wb);
-            track(cmds, ang, wb, NavigationControlDomain.SemanticAxis.BODY_ANGULAR_VELOCITY_X,
-                    NavigationControlDomain.SemanticAxis.BODY_ANGULAR_VELOCITY_Y, NavigationControlDomain.SemanticAxis.BODY_ANGULAR_VELOCITY_Z);
         }
-        // кто спорил бы с регуляторами моста - выключить на время аренды
-        for (NavigationControllerSnapshot n : net.controllers()) {
-            if (n == vel || n == ang || !usable(n)) continue;
-            boolean fights = vel != null && (n.kind() == NavigationControllerKind.ALTITUDE_HOLD || n.kind() == NavigationControllerKind.DISTANCE
-                    || n.kind() == NavigationControllerKind.BODY_VELOCITY)
-                    || ang != null && (n.kind() == NavigationControllerKind.ATTITUDE_HOLD || n.kind() == NavigationControllerKind.MOUSE_FLIGHT
-                    || n.kind() == NavigationControllerKind.BODY_ANGULAR_VELOCITY);
-            if (fights) cmds.put(NavigationControlDomain.participation(n.index(), n.nodeIncarnation()), NavigationControlCommand.Participation.REQUEST_OFF);
+        return lease(cc, r, sub, v, w, false);
+    }
+
+    // ------------------------------------------------------------- стыковка
+
+    /** Штекер стыковки на этом корабле (первый из сети), иначе null. */
+    @Nullable
+    private DockingControllerBlockEntity plug(ServerLevel level) {
+        for (BlockPos p : plugs) {
+            if (level.isLoaded(p) && level.getBlockEntity(p) instanceof DockingControllerBlockEntity d && d.role == Docking.Role.PLUG) return d;
+        }
+        return null;
+    }
+
+    /**
+     * Стыковка: штекер корабля к порту с его номером (ближайшему свободному; занят - ждать у точки подхода или не
+     * лететь). Пристыкован - все регуляторы движения и стабилизаторы выключены, корабль держит сцепка портов.
+     */
+    private State dockSteer(ServerLevel level, FlightControlComputerBlockEntity cc, long now) throws Exception {
+        DockingControllerBlockEntity plug = plug(level);
+        if (plug == null) {
+            endDock(level, now);
+            release();
+            return State.DOCK_NO_PLUG;
+        }
+        Vec3 lt = plug.localTip();
+        Direction f = plug.connectorFacing();
+        if (lt == null || f == null) {
+            endDock(level, now);
+            release();
+            return State.DOCK_NO_CONNECTOR;
+        }
+        Ready r = ready(level, cc);
+        if (r == null) {
+            release();
+            return State.COMPUTER_OFF;
+        }
+        Object sub = subLevel(level);
+        var ship = SableCompat.containing(level, worldPosition);
+        Vec3 wt = SableCompat.toWorld(level, lt);
+        Vec3 wd = SableCompat.dirToWorld(ship, Vec3.atLowerCornerOf(f.getNormal()));
+        Vec3 wu = SableCompat.dirToWorld(ship, new Vec3(0, 1, 0));
+        Vec tip = new Vec(wt.x, wt.y, wt.z);
+        if (Double.isNaN(cruiseY)) cruiseY = tip.y();
+        long key = plug.key();
+        plugKey = key;
+        if (plug.locked()) {                                                // пристыкован: держать порты выдвинутыми
+            plug.commandExtend(now);
+            if (dockTarget != null) {
+                DockingRegistry.reserve(level, dockTarget, key, now, true);
+                dockReserved = true;
+                DockingRegistry.PortInfo pi = DockingRegistry.get(level, dockTarget);
+                if (pi != null) {
+                    departDir = pi.facing();
+                    summary(pi, tip);
+                }
+            }
+            wasLocked = true;
+            State s = lease(cc, r, sub, null, null, true);
+            return s == State.ACTIVE ? State.DOCKED : s;
+        }
+        Set<UUID> nets = new HashSet<>(LinkRegistry.networksOf(level, worldPosition));
+        nets.addAll(LinkRegistry.networksOf(level, plug.getBlockPos()));
+        DockingRegistry.Choice ch = DockingRegistry.choose(level, nets, plug.number, ship == null ? null : ship.getUniqueId(), key, tip,
+                dockTarget, now);
+        if (ch == null || (!ch.free() && dockBusy == Docking.Busy.STAY)) {
+            endDock(level, now);
+            release();
+            if (ch != null) summary(ch.port(), tip);
+            return ch == null ? State.DOCK_NO_PORT : State.DOCK_PORTS_BUSY;
+        }
+        BlockPos target = ch.port().pos();
+        if (!target.equals(dockTarget)) {                                   // другой порт - подход заново
+            if (dockTarget != null && dockReserved) DockingRegistry.release(level, dockTarget, key);
+            dockTarget = target;
+            dockPhase = Docking.Phase.TRANSIT;
+        }
+        Docking.Command c = Docking.steer(dockPhase, ch.port().port(), tip, new Vec(wd.x, wd.y, wd.z), new Vec(wu.x, wu.y, wu.z),
+                maxSpeed, cruiseY, ch.free());
+        dockPhase = c.phase();
+        boolean extend = c.phase() == Docking.Phase.FINAL;
+        dockReserved = ch.free();
+        if (ch.free()) DockingRegistry.reserve(level, target, key, now, extend);
+        if (extend) plug.commandExtend(now);
+        departDir = ch.port().facing();
+        summary(ch.port(), tip);
+        State s = lease(cc, r, sub, c.velocity(), c.rates(), false);
+        if (s != State.ACTIVE) return s;
+        if (!c.compatible()) return State.DOCK_TILT;
+        return switch (c.phase()) {
+            case TRANSIT, APPROACH -> State.DOCK_TRANSIT;
+            case ALIGN -> ch.free() ? State.DOCK_ALIGN : State.DOCK_WAITING;
+            case FINAL -> State.DOCK_FINAL;
+        };
+    }
+
+    private void summary(DockingRegistry.PortInfo p, Vec tip) {
+        dockName = String.valueOf(p.number());
+        dockDist = p.tip().distance(tip);
+    }
+
+    /** Стыковка кончилась: порт отпустить; был пристыкован - отойти от порта. */
+    private void endDock(ServerLevel level, long now) {
+        if (dockTarget != null && dockReserved) DockingRegistry.release(level, dockTarget, plugKey);
+        if (wasLocked && departDir != null) departUntil = now + Docking.DEPART_TICKS;
+        wasLocked = false;
+        dockTarget = null;
+        dockReserved = false;
+        dockPhase = Docking.Phase.TRANSIT;
+        cruiseY = Double.NaN;
+    }
+
+    /** Отход от порта по его направлению, корпус ровно. */
+    private State depart(ServerLevel level, FlightControlComputerBlockEntity cc) throws Exception {
+        Ready r = ready(level, cc);
+        if (r == null) {
+            release();
+            return State.COMPUTER_OFF;
+        }
+        Object sub = subLevel(level);
+        Vector3d up = AttitudeTargetUtil.rotateBodyToWorld(sub, new Vector3d(0, 1, 0));
+        State s = lease(cc, r, sub, departDir.scale(Docking.DEPART_SPEED), Docking.levelRates(new Vec(up.x, up.y, up.z)), false);
+        return s == State.ACTIVE ? State.DOCK_DEPART : s;
+    }
+
+    // ------------------------------------------------------------- аренда регуляторов
+
+    /**
+     * Как навигационный терминал Flight Control: аренда у компьютера осей регулятора скорости (движение, v - мир, бл/с)
+     * и регулятора угловой скорости (повороты, w - мир, рад/с) с их целями; null - этим регулятором не управлять.
+     * Остальные регуляторы, которые спорили бы с ними (стабилизаторы ориентации и высоты, регулятор дистанции,
+     * терминал мыши, лишние регуляторы скорости), на время аренды выключены. allOff - выключить и регуляторы скорости
+     * (корабль пристыкован, его держит сцепка).
+     */
+    private State lease(FlightControlComputerBlockEntity cc, Ready r, Object sub, @Nullable Vec v, @Nullable Vec w, boolean allOff)
+            throws Exception {
+        NavigationControlNetworkSnapshot net = r.net();
+        Map<NavigationControlDomain, NavigationControlCommand> cmds = new HashMap<>();
+        boolean needVel = false, needAng = false;
+        if (allOff) {
+            for (NavigationControllerSnapshot n : net.controllers()) {
+                if (!usable(n)) continue;
+                NavigationControllerKind k = n.kind();
+                if (k == NavigationControllerKind.BODY_VELOCITY || k == NavigationControllerKind.BODY_ANGULAR_VELOCITY
+                        || k == NavigationControllerKind.ALTITUDE_HOLD || k == NavigationControllerKind.ATTITUDE_HOLD
+                        || k == NavigationControllerKind.DISTANCE || k == NavigationControllerKind.MOUSE_FLIGHT) {
+                    cmds.put(NavigationControlDomain.participation(n.index(), n.nodeIncarnation()), NavigationControlCommand.Participation.REQUEST_OFF);
+                }
+            }
+        } else {
+            NavigationControllerSnapshot vel = null, ang = null;
+            for (NavigationControllerSnapshot n : net.controllers()) {
+                if (!usable(n)) continue;
+                if (vel == null && n.kind() == NavigationControllerKind.BODY_VELOCITY) vel = n;
+                if (ang == null && n.kind() == NavigationControllerKind.BODY_ANGULAR_VELOCITY) ang = n;
+            }
+            needVel = v != null && vel == null;
+            needAng = w != null && ang == null;
+            if (v == null) vel = null;
+            if (w == null) ang = null;
+            if (vel == null && ang == null) {
+                release();
+                return needVel && needAng ? State.NEED_COUPLERS : needVel ? State.NEED_VELOCITY : needAng ? State.NEED_ANGULAR : State.ACTIVE;
+            }
+            if (vel != null) {
+                Vector3d vb = new Vector3d(v.x(), v.y(), v.z());
+                AttitudeTargetUtil.worldToBody(sub, vb);
+                track(cmds, vel, vb, NavigationControlDomain.SemanticAxis.BODY_VELOCITY_X, NavigationControlDomain.SemanticAxis.BODY_VELOCITY_Y,
+                        NavigationControlDomain.SemanticAxis.BODY_VELOCITY_Z);
+            }
+            if (ang != null) {
+                Vector3d wb = new Vector3d(w.x(), w.y(), w.z());
+                AttitudeTargetUtil.worldToBody(sub, wb);
+                track(cmds, ang, wb, NavigationControlDomain.SemanticAxis.BODY_ANGULAR_VELOCITY_X,
+                        NavigationControlDomain.SemanticAxis.BODY_ANGULAR_VELOCITY_Y, NavigationControlDomain.SemanticAxis.BODY_ANGULAR_VELOCITY_Z);
+            }
+            // кто спорил бы с регуляторами моста - выключить на время аренды
+            for (NavigationControllerSnapshot n : net.controllers()) {
+                if (n == vel || n == ang || !usable(n)) continue;
+                boolean fights = vel != null && (n.kind() == NavigationControllerKind.ALTITUDE_HOLD || n.kind() == NavigationControllerKind.DISTANCE
+                        || n.kind() == NavigationControllerKind.BODY_VELOCITY)
+                        || ang != null && (n.kind() == NavigationControllerKind.ATTITUDE_HOLD || n.kind() == NavigationControllerKind.MOUSE_FLIGHT
+                        || n.kind() == NavigationControllerKind.BODY_ANGULAR_VELOCITY);
+                if (fights) cmds.put(NavigationControlDomain.participation(n.index(), n.nodeIncarnation()), NavigationControlCommand.Participation.REQUEST_OFF);
+            }
+        }
+        if (cmds.isEmpty()) {
+            release();
+            return State.ACTIVE;
         }
         NavigationLeaseBroker broker = broker(cc);
         long now = System.nanoTime();
@@ -277,21 +471,20 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
             }
         } else {
             release();
-            identity = new NavigationLeaseIdentity(net.dimensionId(), vehicle.structureId(), worldPosition.asLong(), UUID.randomUUID());
+            identity = new NavigationLeaseIdentity(net.dimensionId(), r.vehicle().structureId(), worldPosition.asLong(), UUID.randomUUID());
             revision = 0;
-            NavigationLeaseBroker.BundleResult r = broker.tryAcquireAndPublish(identity, net.topologyEpoch(), want, revision, cmds, now);
-            if (!r.succeeded() || r.token() == null) {
-                if (r.status() == NavigationLeaseBroker.Status.COMPUTER_INACTIVE) return State.COMPUTER_OFF;
+            NavigationLeaseBroker.BundleResult res = broker.tryAcquireAndPublish(identity, net.topologyEpoch(), want, revision, cmds, now);
+            if (!res.succeeded() || res.token() == null) {
+                if (res.status() == NavigationLeaseBroker.Status.COMPUTER_INACTIVE) return State.COMPUTER_OFF;
                 return State.BUSY;
             }
-            token = r.token();
+            token = res.token();
             leased = want;
             epoch = net.topologyEpoch();
             leaseComputer = cc;
         }
         return needVel ? State.NEED_VELOCITY : needAng ? State.NEED_ANGULAR : State.ACTIVE;
     }
-
     /**
      * Постройка Sable, на которой стоит мост. Поиск у Flight Control идёт рефлексией - на каждый тик дорого, поэтому
      * найденная постройка держится, пока жива (проверка раз в секунду).

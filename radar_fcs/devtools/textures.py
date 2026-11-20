@@ -645,11 +645,55 @@ def camera_face():
     return t
 
 
+def docking_front(plug):
+    """Стыковочный контроллер: экран с прицелом стыковки. Порт - кольца площадки и метки (голубой), штекер - стрелка
+    к кольцу (оранжевая)."""
+    t = Tex()
+    console(t, [(GREEN, True), (BLUE, not plug), (ORANGE, plug)])
+    screen_bg(t, 6, 5, 25, 21, SCREEN, 15.5, 13, 13)
+    acc = ORANGE if plug else BLUE
+    cx, cy = 15.5, 13.0
+    # перекрестие и метки шкалы
+    for x in range(7, 25):
+        if abs(x - cx) > 2:
+            t.blend(x, 13, PHOS[1], 0.35)
+    for y in range(6, 21):
+        if abs(y - cy) > 2:
+            t.blend(15, y, PHOS[1], 0.25)
+            t.blend(16, y, PHOS[1], 0.25)
+    # кольцо порта
+    for y in range(5, 22):
+        for x in range(6, 26):
+            d = math.hypot(x - cx, y - cy)
+            if abs(d - 5.2) < 0.55:
+                t.px(x, y, ramp(acc, 0.75 if y < cy else 0.55))
+            elif not plug and abs(d - 2.2) < 0.5:
+                t.px(x, y, ramp(acc, 0.9))
+    if plug:
+        # стрелка снизу-слева к центру кольца
+        for i in range(5):
+            t.px(9 + i, 19 - i, ramp(acc, 0.95))
+            t.px(10 + i, 19 - i, ramp(acc, 0.7))
+        for x, y in ((13, 14), (12, 14), (14, 15), (14, 16)):
+            t.px(x, y, ramp(acc, 0.95))
+        t.glow(cx, cy, 2.5, acc[-2], 0.5)
+    else:
+        # угловые метки площадки
+        for x0, y0, dx, dy in ((8, 6, 1, 1), (23, 6, -1, 1), (8, 20, 1, -1), (23, 20, -1, -1)):
+            t.px(x0, y0, ramp(acc, 0.9))
+            t.px(x0 + dx, y0, ramp(acc, 0.7))
+            t.px(x0, y0 + dy, ramp(acc, 0.7))
+        t.glow(cx, cy, 2.2, acc[-2], 0.45)
+    return t
+
+
 def main():
     textures = {
         'fcs_front': fcs_front(False),
         'fcs_front_engaged': fcs_front(True),
         'flight_bridge_front': flight_bridge_front(),
+        'docking_controller_port_front': docking_front(False),
+        'docking_controller_plug_front': docking_front(True),
         'memory_front': memory_front(True),
         'memory_front_off': memory_front(False),
         'camera_monitor_front': camera_monitor_front(),

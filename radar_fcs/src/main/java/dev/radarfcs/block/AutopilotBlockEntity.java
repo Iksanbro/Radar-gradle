@@ -4,6 +4,7 @@ import com.simibubi.create.api.equipment.goggles.IHaveGoggleInformation;
 import dev.radarfcs.compat.RadarLink;
 import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.core.Autopilot;
+import dev.radarfcs.core.Docking;
 import dev.radarfcs.core.EngageSettings;
 import dev.radarfcs.core.IffRule;
 import dev.radarfcs.core.Track;
@@ -51,7 +52,15 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         /** Нужен регулятор скорости (движение) / угловой скорости (повороты) / оба, связанные с компьютером и с вращением. */
         NEED_VELOCITY, NEED_ANGULAR, NEED_COUPLERS,
         /** Регуляторы заняты другим автопилотом (навигационный терминал) или их держит редстоун-прокси. */
-        BUSY;
+        BUSY,
+        /** Стыковка: нет штекера в сети на этом корабле / штекер не связан с портом Simulated. */
+        DOCK_NO_PLUG, DOCK_NO_CONNECTOR,
+        /** Стыковка: портов с номером штекера в сети нет / все заняты (режим «не лететь»). */
+        DOCK_NO_PORT, DOCK_PORTS_BUSY,
+        /** Стыковка: летит к порту / разворачивается у точки подхода / ждёт у занятого порта / ближний подход. */
+        DOCK_TRANSIT, DOCK_ALIGN, DOCK_WAITING, DOCK_FINAL,
+        /** Стыковка: штекер так не встанет к порту (наклон порта не тот), / пристыкован / отходит от порта. */
+        DOCK_TILT, DOCKED, DOCK_DEPART;
 
         public String key() {
             return "radar_fcs.autopilot.state." + name().toLowerCase(Locale.ROOT);
@@ -93,6 +102,9 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     public double maxPitch = Autopilot.PITCH_DEFAULT, maxRoll = Autopilot.ROLL_DEFAULT;
     public Autopilot.Mode mode = Autopilot.Mode.DISTANCE;
     public double distance = 48, height = 16, maxSpeed = 20;
+    /** Когда лететь на стыковку и что делать, если порты заняты. */
+    public Docking.Trigger dockTrigger = Docking.Trigger.OFF;
+    public Docking.Busy dockBusy = Docking.Busy.WAIT;
 
     @Nullable private UUID owner;
     private String ownerTeam = "";
@@ -102,6 +114,15 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     private final List<BlockPos> monitors = new ArrayList<>(), crMonitors = new ArrayList<>(), computers = new ArrayList<>();
     private long lastDiscover = Long.MIN_VALUE / 2;
     @Nullable private volatile Goal goal;
+    /** Штекеры стыковки сети на этом корабле. */
+    protected final List<BlockPos> plugs = new ArrayList<>();
+    /** С какого тика нет цели (для стыковки «нет цели»). */
+    private long noGoalSince = Long.MIN_VALUE;
+    /** Мост ведёт корабль на стыковку (или он пристыкован). */
+    protected boolean docking;
+    // сводка стыковки (сервер -> клиент): порт и расстояние
+    protected String dockName = "";
+    protected double dockDist = -1;
 
     // сводка (сервер -> клиент)
     protected State state = State.NO_TARGET;
@@ -125,9 +146,10 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     public abstract boolean indicatorLinked();
 
     /**
-     * Каждый тик на сервере: вести корабль к цели (goal) или отпустить управление (null - нет цели или пауза).
+     * Каждый тик на сервере: вести корабль на стыковку (dock), иначе к цели (goal) или отпустить управление (null - нет
+     * цели или пауза).
      */
-    protected abstract void drive(ServerLevel level, @Nullable Goal goal);
+    protected abstract void drive(ServerLevel level, @Nullable Goal goal, boolean dock);
 
     /** Состояние управления, когда цель есть (связь с компьютером уже проверена). */
     protected abstract State driveState();
@@ -150,13 +172,27 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
             lastDiscover = now;
             discover(level);
         }
-        if (now % 2 == 0) sense(level, now);
-        drive(level, level.hasNeighborSignal(worldPosition) ? null : goal);
+        boolean signal = level.hasNeighborSignal(worldPosition);
+        // стыковка по редстоуну: сигнал - на стыковку, а не пауза
+        boolean paused = signal && dockTrigger != Docking.Trigger.REDSTONE;
+        if (now % 2 == 0) sense(level, now, paused);
+        if (goal != null || paused) noGoalSince = Long.MIN_VALUE;
+        else if (noGoalSince == Long.MIN_VALUE) noGoalSince = now;
+        docking = switch (dockTrigger) {
+            case REDSTONE -> signal;
+            case NO_TARGET -> !paused && goal == null && noGoalSince != Long.MIN_VALUE && now - noGoalSince >= Docking.NO_TARGET_DELAY;
+            default -> false;
+        };
+        if (!docking) {
+            dockName = "";
+            dockDist = -1;
+        }
+        drive(level, paused ? null : goal, docking);
         if (now - lastSync >= 10) {
             lastSync = now;
             // клиенту (очки инженера) - только когда сводка изменилась; состояние не сохраняется - чанк не трогаем
-            state = computeState(level);
-            String summary = state + "|" + targetName + "|" + Math.round(targetDistance);
+            state = computeState(level, paused);
+            String summary = state + "|" + targetName + "|" + Math.round(targetDistance) + "|" + dockName + "|" + Math.round(dockDist);
             if (!summary.equals(lastSummary)) {
                 lastSummary = summary;
                 level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
@@ -164,10 +200,11 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         }
     }
 
-    private State computeState(ServerLevel level) {
-        if (level.hasNeighborSignal(worldPosition)) return State.PAUSED;
+    private State computeState(ServerLevel level, boolean paused) {
+        if (paused) return State.PAUSED;
         if (SableCompat.containingId(level, worldPosition) == null) return State.NO_SHIP;
         if (!computerLinked()) return State.NO_COMPUTER;
+        if (docking) return driveState();
         if (goal == null) return State.NO_TARGET;
         return driveState();
     }
@@ -178,6 +215,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         monitors.clear();
         crMonitors.clear();
         computers.clear();
+        plugs.clear();
+        UUID ship = SableCompat.containingId(level, worldPosition);
         for (BlockPos p : LinkRegistry.linkedTo(level, worldPosition)) {
             if (!level.isLoaded(p)) continue;
             BlockEntity be = level.getBlockEntity(p);
@@ -188,6 +227,11 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
                 case MONITOR -> monitors.add(p);
                 case CR_MONITOR -> crMonitors.add(p);
                 case FCS -> computers.add(p);
+                case DOCKING -> {
+                    // штекер на этом же корабле
+                    if (be instanceof DockingControllerBlockEntity d && d.role == Docking.Role.PLUG && ship != null
+                            && ship.equals(SableCompat.containingId(level, p))) plugs.add(p);
+                }
                 default -> { }
             }
         }
@@ -198,8 +242,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         lastDiscover = Long.MIN_VALUE / 2;
     }
 
-    private void sense(ServerLevel level, long now) {
-        if (level.hasNeighborSignal(worldPosition)) {
+    private void sense(ServerLevel level, long now, boolean paused) {
+        if (paused) {
             sensor.clear();
             fallback = null;
             setGoal(null, "", -1);
@@ -328,6 +372,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         t.putDouble("Distance", distance);
         t.putDouble("Height", height);
         t.putDouble("MaxSpeed", maxSpeed);
+        t.putString("Dock", dockTrigger.name());
+        t.putString("DockBusy", dockBusy.name());
         return t;
     }
 
@@ -345,6 +391,16 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         distance = Autopilot.cleanDistance(t.contains("Distance") ? t.getDouble("Distance") : Double.NaN);
         height = Autopilot.cleanHeight(t.contains("Height") ? t.getDouble("Height") : Double.NaN);
         maxSpeed = Autopilot.cleanSpeed(t.contains("MaxSpeed") ? t.getDouble("MaxSpeed") : Double.NaN);
+        dockTrigger = enumOr(Docking.Trigger.class, t.getString("Dock"), Docking.Trigger.OFF);
+        dockBusy = enumOr(Docking.Busy.class, t.getString("DockBusy"), Docking.Busy.WAIT);
+    }
+
+    public static <E extends Enum<E>> E enumOr(Class<E> c, String name, E fallback) {
+        try {
+            return Enum.valueOf(c, name);
+        } catch (IllegalArgumentException e) {
+            return fallback;
+        }
     }
 
     /** Новые настройки с экрана (значения чистятся). */
@@ -386,6 +442,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
             }
             targetName = tag.getString("TargetName");
             targetDistance = tag.getDouble("TargetDist");
+            dockName = tag.getString("DockName");
+            dockDist = tag.getDouble("DockDist");
         }
     }
 
@@ -396,6 +454,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         t.putString("State", state.name());
         t.putString("TargetName", targetName);
         t.putDouble("TargetDist", targetDistance);
+        t.putString("DockName", dockName);
+        t.putDouble("DockDist", dockDist);
         writeClientExtra(t);
         return t;
     }
@@ -413,8 +473,15 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
     @Override
     public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
         tooltip.add(Component.literal("    ").append(Component.translatable("block.radar_fcs.flight_bridge")).withStyle(ChatFormatting.GOLD));
-        ChatFormatting c = state == State.ACTIVE ? ChatFormatting.GREEN : state == State.NO_TARGET ? ChatFormatting.GRAY : ChatFormatting.RED;
+        ChatFormatting c = state == State.ACTIVE || state == State.DOCKED ? ChatFormatting.GREEN
+                : state == State.NO_TARGET ? ChatFormatting.GRAY
+                : state.name().startsWith("DOCK_") && state != State.DOCK_NO_PLUG && state != State.DOCK_NO_CONNECTOR
+                && state != State.DOCK_NO_PORT && state != State.DOCK_TILT ? ChatFormatting.AQUA : ChatFormatting.RED;
         tooltip.add(Component.literal("    ").append(Component.translatable(state.key())).withStyle(c));
+        if (!dockName.isEmpty()) {
+            tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.autopilot.dock_port", dockName,
+                    String.format(Locale.ROOT, "%.0f", dockDist))).withStyle(ChatFormatting.AQUA));
+        }
         if (!targetName.isEmpty()) {
             tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.autopilot.target", targetName,
                     String.format(Locale.ROOT, "%.0f", targetDistance))).withStyle(ChatFormatting.AQUA));
@@ -427,6 +494,9 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
             tooltip.add(Component.literal("    ").append(Component.translatable(mode == Autopilot.Mode.DISTANCE_ALTITUDE
                     ? "radar_fcs.autopilot.summary_alt" : "radar_fcs.autopilot.summary",
                     fmt(distance), fmt(height), fmt(maxSpeed))).withStyle(ChatFormatting.DARK_GRAY));
+        }
+        if (dockTrigger != Docking.Trigger.OFF) {
+            tooltip.add(Component.literal("    ").append(Component.translatable(dockTrigger.key())).withStyle(ChatFormatting.DARK_AQUA));
         }
         tooltip.add(Component.literal("    ").append(Component.translatable(indicatorLinked()
                 ? "radar_fcs.autopilot.indicator_linked" : "radar_fcs.autopilot.indicator_none"))
