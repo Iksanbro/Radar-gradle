@@ -80,7 +80,9 @@ public final class FcsControl {
             return;
         }
         if (d != null) {
-            if (!prepareMount(level, fcs, m, d, now, tu == null)) return;
+            // станок обычной пушки и пушки орудия с прицелом не поворачивается от своих валов: у орудия с прицелом
+            // ствол держится вместе с прицелом, наводится только прицел (сколько бы и каких пушек ни было)
+            if (!prepareMount(level, fcs, m, d, now, tu == null || tu.sight != null)) return;
         } else if (!claim(level, fcs, m, now)) {
             return;
         }
@@ -114,8 +116,8 @@ public final class FcsControl {
         Vec3 aimDir = null;
         if (tu != null) {
             if (sight != null) {
-                // прицел - главный: курс с прицела, угол места - со ствола (прицел на поворотной части не наклоняется)
-                aimDir = sightAim(sight.worldDirection(), d == null ? null : d.localBarrelDirection(1.0F), ship);
+                // есть прицел - наводится только он: стволы пушек орудия в наведении не участвуют
+                aimDir = sight.worldDirection().normalize();
             } else {
                 Vec3 bl = d.localBarrelDirection(1.0F);
                 if (bl == null) {
@@ -511,18 +513,6 @@ public final class FcsControl {
         }
     }
 
-    /** Направление наведения орудия с прицелом (см. {@link dev.radarfcs.core.Aim#sightAim}): ствол - в осях станка. */
-    static Vec3 sightAim(Vec3 sightW, @Nullable Vec3 barrelLocal, @Nullable SubLevelAccess ship) {
-        Vec s = new Vec(sightW.x, sightW.y, sightW.z);
-        Vec b = null;
-        if (barrelLocal != null) {
-            Vec3 bw = SableCompat.dirToWorld(ship, barrelLocal);
-            b = new Vec(bw.x, bw.y, bw.z);
-        }
-        Vec r = dev.radarfcs.core.Aim.sightAim(s, b);
-        return new Vec3(r.x(), r.y(), r.z()).normalize();
-    }
-
     private static boolean mountInArc(ServerLevel level, MountState m, @Nullable CbcMount d, @Nullable SubLevelAccess ship, Vec3 dir) {
         if (d == null) return true;
         AimControllerBlockEntity yc = AimControllerBlockEntity.find(level, d.pos(), false);
@@ -636,7 +626,7 @@ public final class FcsControl {
             m.status = Status.LOST;
             return;
         }
-        if (!prepareMount(level, fcs, m, d, now, false)) return;
+        if (!prepareMount(level, fcs, m, d, now, tu.sight != null)) return;
         CbcMount.Kind kind = d.kind();
         if (kind == CbcMount.Kind.UNSUPPORTED) {
             setTrigger(m, false);
@@ -657,7 +647,7 @@ public final class FcsControl {
         boolean fire = tu.fire && tu.fireTick == now && loaded;
         Vec3 pivotW = SableCompat.toWorld(level, d.localPivot());
         Vec3 bl = d.localBarrelDirection(kind == CbcMount.Kind.RAPID ? 1.0F : 0.0F);
-        Vec3 barrel = sight != null ? sightAim(sight.worldDirection(), bl, SableCompat.containing(level, d.pos())) : bl == null ? null
+        Vec3 barrel = sight != null ? sight.worldDirection().normalize() : bl == null ? null
                 : SableCompat.dirToWorld(SableCompat.containing(level, d.pos()), bl);
         if (manual != null) {
             manualTrigger(level, m, d, null, null, tu.fire && tu.fireTick == now, pivotW, barrel, m.muzzleDistance(d.muzzleDistance()), now);

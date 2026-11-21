@@ -119,6 +119,8 @@ public class TurretGameTests {
                             if (Math.abs(m.mount.yaw() - yaw0[0]) > 0.01) {
                                 throw new GameTestAssertException("turret mount was turned: " + yaw0[0] + " -> " + m.mount.yaw());
                             }
+                            // орудие с прицелом наводится только прицелом: валы его станка заблокированы
+                            if (!m.locked) throw new GameTestAssertException("mount of a turret with a sight is not locked");
                             h.setBlock(sight.above(), Blocks.AIR.defaultBlockState());   // прицел из орудия
                             be.requestDiscover();
                             since.set(t);
