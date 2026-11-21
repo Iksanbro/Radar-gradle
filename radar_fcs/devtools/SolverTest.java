@@ -901,6 +901,21 @@ public class SolverTest {
         System.out.println("orbit: " + (ok ? "all checks passed" : "failed"));
     }
 
+    /** Прицел - главный: курс с прицела, угол места со ствола; прицел, наклонённый со стволом, - он же. */
+    static void sightAim() {
+        boolean ok = true;
+        Vec east = new Vec(1, 0, 0), barrel20 = new Vec(Math.cos(Math.toRadians(20)), Math.sin(Math.toRadians(20)), 0);
+        Vec r = Aim.sightAim(east, barrel20);
+        ok &= r.distance(barrel20) < 1e-9;                                 // прицел без наклона, ствол поднят на 20°
+        Vec north = new Vec(0, 0, -1), barrelEast = new Vec(0.9, 0.3, 0.1).normalize();
+        r = Aim.sightAim(north, barrelEast);                                // курс - прицела (север), угол места - ствола
+        ok &= Math.abs(r.horizontal().normalize().dot(north) - 1) < 1e-9 && Math.abs(r.pitchDeg() - barrelEast.pitchDeg()) < 1e-9;
+        ok &= Aim.sightAim(barrel20, barrel20).distance(barrel20) < 1e-9;   // прицел наклоняется со стволом
+        ok &= Aim.sightAim(east, null).distance(east) < 1e-9;               // станок не собран - прицел
+        if (!ok) failures++;
+        System.out.println("sight aim: " + (ok ? "all checks passed" : "failed"));
+    }
+
     public static void main(String[] a) {
         ballisticCase("big cannon 4 charges", new Truth(8, -0.05, 0.01, false, 0, 0, 1, 1, 600), 300, false, 97);
         ballisticCase("big cannon 2 charges", new Truth(4, -0.05, 0.01, false, 0, 0, 1, 1, 600), 200, false, 97);
@@ -922,6 +937,7 @@ public class SolverTest {
         autopilot();
         docking();
         orbit();
+        sightAim();
         if (failures > 0) {
             System.out.println("FAILURES: " + failures);
             System.exit(1);

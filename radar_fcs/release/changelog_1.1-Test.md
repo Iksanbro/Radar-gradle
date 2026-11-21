@@ -9,6 +9,8 @@
 - Bridge screen split into **"Target"** and **"No target"** tabs.
 - **Fix:** "Drop static targets" (on by default) also dropped ships that hover, stand or keep their distance (below 0.6 blocks/s) — ships are never dropped as static now. Friend or foe for ships is decided only by transponders: a ship carrying guns of the same fire control computer is no longer "own" by itself — guns on other ships attack it, but a gun never targets the ship it stands on (nor anything on it), even when aimed by a camera.
 - After undocking the ship backs away along the port axis to the clearance distance. Broken equipment linked with the Flight Control Tool Gun (docking connectors, Flight Control Computer, Forward Indicator) is unlinked automatically.
+- **Fix:** an assembled gun with both a cannon and a Gun Sight no longer jerks back and forth: the sight has top priority — heading comes from the sight, elevation from the barrel (a sight on the turning platform does not pitch).
+- Radar monitor: target info now appears **above the target** you look at (and above the designated target), not in the top corner.
 - Optimizations: the bridge does not run its target sensor when there is no target; docking status and network lookups are throttled.
 
 ## Русский
@@ -20,4 +22,6 @@
 - Экран моста разделён на вкладки **«Цель»** и **«Без цели»**.
 - **Исправлено:** «Сбрасывать статичные» (включено по умолчанию) отсеивало и корабли, которые висят, стоят или держат дистанцию (медленнее 0,6 бл/с), — корабли больше не сбрасываются как статичные. Свой-чужой для кораблей — только по транспондеру: корабль с пушками того же вычислителя больше не «свой» сам по себе — пушки на других кораблях его атакуют, но пушка никогда не стреляет по кораблю, на котором стоит (и по тем, кто на нём), в том числе с камеры.
 - После расстыковки корабль отходит по оси порта на дистанцию обхода. Сломанное оборудование, подключённое пистолетом Flight Control (стыковочные порты, компьютер Flight Control, индикатор направления), отключается само.
+- **Исправлено:** сборное орудие с пушкой и прицелом больше не дёргается туда-сюда: прицел главный — курс берётся с прицела, угол места — со ствола (прицел на поворотной платформе не наклоняется).
+- Монитор радара: сведения о цели теперь появляются **над целью** под взглядом (и над назначенной целью), а не в верхнем углу.
 - Оптимизации: без цели мост не запускает сенсор; проверки сцепки и поиск сетей при стыковке — реже.

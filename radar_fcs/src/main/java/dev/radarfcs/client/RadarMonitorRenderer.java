@@ -211,17 +211,32 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         if (hp != null) {
             float o = s * 1.8f, t = s * 0.3f;
             frame(c, hp[0] - o, hp[1] - o, hp[0] + o, hp[1] + o, t, HOVER);
-            String name = hovered != null ? hovered.tag() : hoveredMark != null ? hoveredMark.name() : "";   // подпись метки и так видна
-            if (!always && !name.isEmpty()) labels.add(label(c, hp[0], o * 1.2f, hp[1], name, HOVER, LabelLayout.RANK_HOVER, ls));
+            // имя - в первой строке сведений над целью, отдельная подпись не нужна
         } else if (look != null) {
             // курсор взгляда
             float cs = s * 0.8f, t = s * 0.15f;
             c.rect(look[0] - cs, look[1] - t, look[0] + cs, look[1] + t, 0xA0FFFFFF);
             c.rect(look[0] - t, look[1] - cs, look[0] + t, look[1] + cs, 0xA0FFFFFF);
         }
-        // подложки подписей без наложения (текст - ниже, после всех квадов)
-        List<LabelLayout.Placed> placed = LabelLayout.place(labels);
+        // сведения о цели под взглядом (или назначенной) - рамкой над самой целью, не в углу экрана
+        float scale = 0.0075f * (float) Math.sqrt(Math.min(w, h));
+        float boxW = (w - 2 * e * 1.6f) / scale, boxH = (h - 2 * e * 1.6f) / scale;
+        float ox = -0.5f + e * 1.6f, oy = h - 0.5f - e * 1.6f;
+        Blip info = hovered;
+        float[] ip = hp;
+        if (info == null && hoveredMark == null && hPin == null) {
+            for (Blip b : blips) if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) info = b;
+            if (info != null) ip = c.toScreen(info.dx(), info.dz());
+        }
+        List<Component> lines = info != null ? RadarMonitorScreen.describe(be, info)
+                : hoveredMark != null ? RadarMonitorScreen.describeMark(be, hoveredMark)
+                : hPin != null ? RadarMonitorScreen.describePin(be, hPin, hoveredPin) : List.of();
+        float[] ib = ip == null || lines.isEmpty() ? null : infoBox(c, lines, ip, s * 1.8f, scale,
+                oy - (font.lineHeight + 2) * scale, oy - (boxH - font.lineHeight - 2) * scale);
+        // подложки подписей без наложения (текст - ниже, после всех квадов); под сведениями подписи не видны
+        List<LabelLayout.Placed> placed = new ArrayList<>(LabelLayout.place(labels));
         float lh = font.lineHeight * ls;
+        if (ib != null) placed.removeIf(pl -> overlaps(ib, pl.label().x(), pl.y() - lh / 2 - ls, pl.label().x() + pl.label().w(), pl.y() + lh / 2));
         for (LabelLayout.Placed pl : placed) {
             LabelLayout.Label lb = pl.label();
             c.rect(lb.x(), pl.y() - lh / 2 - ls, lb.x() + lb.w(), pl.y() + lh / 2, 0xB0000000);
@@ -233,21 +248,6 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         float nx = nd[0] > 0 ? c.x1 - pad - nw : nd[0] < 0 ? c.x0 + pad : cx - nw / 2;
         float ny = nd[1] > 0 ? c.y1 - pad - lh : nd[1] < 0 ? c.y0 + pad : cy - lh / 2;
         c.rect(nx - 1.5f * ls, ny - 1.5f * ls, nx + nw + 1.5f * ls, ny + lh + 0.5f * ls, 0xC0000000);
-        // сведения о цели под взглядом (или назначенной): подложка - квадом здесь, текст - ниже. Свой фон текста шрифта
-        // лежит почти в одной плоскости с буквами и на расстоянии перекрывает их (мерцание по глубине)
-        float scale = 0.0075f * (float) Math.sqrt(Math.min(w, h));
-        float boxW = (w - 2 * e * 1.6f) / scale, boxH = (h - 2 * e * 1.6f) / scale;
-        float ox = -0.5f + e * 1.6f, oy = h - 0.5f - e * 1.6f;
-        Blip info = hovered;
-        if (info == null && hoveredMark == null && hPin == null) {
-            for (Blip b : blips) if ((b.flags() & RadarMonitorBlockEntity.FLAG_DESIGNATED) != 0) info = b;
-        }
-        List<Component> lines = info != null ? RadarMonitorScreen.describe(be, info)
-                : hoveredMark != null ? RadarMonitorScreen.describeMark(be, hoveredMark)
-                : hPin != null ? RadarMonitorScreen.describePin(be, hPin, hoveredPin) : List.of();
-        int widest = 1;
-        for (Component cl : lines) widest = Math.max(widest, font.width(cl));
-        float k = Math.min(1f, boxW / widest);
         String mapText = Component.translatable("radar_fcs.monitor.range", be.mapSide()).getString();
         String right1 = Component.translatable("radar_fcs.monitor.targets", count).getString();
         String bottom = be.radarCount() == 0 ? Component.translatable("radar_fcs.monitor.no_radar").getString()
@@ -260,10 +260,12 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         blocked.add(textRect(ox, oy, scale, 0, 0, font.width(mapText)));
         blocked.add(textRect(ox, oy, scale, boxW - font.width(right1), 0, font.width(right1)));
         blocked.add(textRect(ox, oy, scale, 0, boxH - font.lineHeight, font.width(bottom)));
-        if (!lines.isEmpty()) {
-            float y0 = font.lineHeight + 2 - k, y1 = font.lineHeight + 2 + k * (lines.size() * (font.lineHeight + 1));
-            c.rect(ox - k * scale, oy - y1 * scale, ox + (widest + 1) * k * scale, oy - y0 * scale, 0xC0000000);
-            blocked.add(new float[]{ox - k * scale, oy - y1 * scale, ox + (widest + 1) * k * scale, oy - y0 * scale});
+        if (ib != null) {
+            // подложка - квадом здесь, текст - ниже. Свой фон текста шрифта лежит почти в одной плоскости с буквами и на
+            // расстоянии перекрывает их (мерцание по глубине)
+            c.rect(ib[0], ib[1], ib[2], ib[3], 0xC0000000);
+            frame(c, ib[0], ib[1], ib[2], ib[3], s * 0.15f, 0x80FFFFFF);
+            blocked.add(new float[]{ib[0], ib[1], ib[2], ib[3]});
         }
         // шкала дальности на обеих осях: не налезает на север, строки состояния, сведения и подписи целей
         blocked.add(new float[]{nx - 1.5f * ls, ny - 1.5f * ls, nx + nw + 1.5f * ls, ny + lh + 0.5f * ls});
@@ -290,11 +292,15 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         font.drawInBatch(mapText, 0, 0, TEXT, false, tm, buffers, Font.DisplayMode.POLYGON_OFFSET, 0, LightTexture.FULL_BRIGHT);
         font.drawInBatch(right1, boxW - font.width(right1), 0, TEXT, false, tm, buffers, Font.DisplayMode.POLYGON_OFFSET, 0,
                 LightTexture.FULL_BRIGHT);
-        if (!lines.isEmpty()) {
-            // сведения о цели под строкой масштаба; на маленьком экране - мельче, чтобы влезли
+        font.drawInBatch(bottom, 0, boxH - font.lineHeight, be.radarCount() == 0 ? 0xFFFF5050 : TEXT, false, tm, buffers,
+                Font.DisplayMode.POLYGON_OFFSET, 0, LightTexture.FULL_BRIGHT);
+        ps.popPose();
+        if (ib != null) {
+            // сведения: ib[4] - пикселей шрифта на единицу экрана (на маленьком экране мельче, чтобы влезли)
+            float k = ib[4];
             ps.pushPose();
-            ps.translate(0, font.lineHeight + 2, 0);
-            ps.scale(k, k, 1);
+            ps.translate(ib[0] + k, ib[3] - k, 0.003f);
+            ps.scale(k, -k, k);
             Matrix4f im = ps.last().pose();
             float ty = 0;
             for (Component cl : lines) {
@@ -304,9 +310,6 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
             }
             ps.popPose();
         }
-        font.drawInBatch(bottom, 0, boxH - font.lineHeight, be.radarCount() == 0 ? 0xFFFF5050 : TEXT, false, tm, buffers,
-                Font.DisplayMode.POLYGON_OFFSET, 0, LightTexture.FULL_BRIGHT);
-        ps.popPose();
 
         ps.popPose();
     }
@@ -318,6 +321,29 @@ public class RadarMonitorRenderer implements BlockEntityRenderer<RadarMonitorBlo
         ps.scale(ls, -ls, ls);
         font.drawInBatch(text, 0, 0, color, false, ps.last().pose(), buffers, Font.DisplayMode.POLYGON_OFFSET, 0, LightTexture.FULL_BRIGHT);
         ps.popPose();
+    }
+
+    /**
+     * Рамка сведений над точкой цели p (o - полуразмер рамки наведения): по центру над целью, у верхнего края - под ней,
+     * в пределах карты по ширине и между строками состояния (yTop, yBottom) по высоте.
+     *
+     * @return {x0, y0, x1, y1, единиц экрана на пиксель шрифта}
+     */
+    private float[] infoBox(MapCanvas c, List<Component> lines, float[] p, float o, float scale, float yTop, float yBottom) {
+        int widest = 1;
+        for (Component cl : lines) widest = Math.max(widest, font.width(cl));
+        float px = widest + 2, py = lines.size() * (font.lineHeight + 1) + 1;
+        float k = Math.min(scale, Math.min((c.x1 - c.x0) * 0.98f / px, (yTop - yBottom) * 0.5f / py));
+        float bw = px * k, bh = py * k, gap = o * 0.4f;
+        float x0 = Math.max(c.x0, Math.min(c.x1 - bw, p[0] - bw / 2));
+        float y0 = p[1] + o + gap;
+        if (y0 + bh > yTop) y0 = p[1] - o - gap - bh;                     // у верхнего края - под целью
+        y0 = Math.max(yBottom, Math.min(yTop - bh, y0));
+        return new float[]{x0, y0, x0 + bw, y0 + bh, k};
+    }
+
+    private static boolean overlaps(float[] r, float ax, float ay, float bx, float by) {
+        return ax < r[2] && bx > r[0] && ay < r[3] && by > r[1];
     }
 
     /** Подложка строки состояния: (tx, ty) и ширина tw - в пикселях шрифта от угла (ox, oy), ось y - вниз. */

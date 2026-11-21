@@ -114,7 +114,8 @@ public final class FcsControl {
         Vec3 aimDir = null;
         if (tu != null) {
             if (sight != null) {
-                aimDir = sight.worldDirection();
+                // прицел - главный: курс с прицела, угол места - со ствола (прицел на поворотной части не наклоняется)
+                aimDir = sightAim(sight.worldDirection(), d == null ? null : d.localBarrelDirection(1.0F), ship);
             } else {
                 Vec3 bl = d.localBarrelDirection(1.0F);
                 if (bl == null) {
@@ -510,6 +511,18 @@ public final class FcsControl {
         }
     }
 
+    /** Направление наведения орудия с прицелом (см. {@link dev.radarfcs.core.Aim#sightAim}): ствол - в осях станка. */
+    static Vec3 sightAim(Vec3 sightW, @Nullable Vec3 barrelLocal, @Nullable SubLevelAccess ship) {
+        Vec s = new Vec(sightW.x, sightW.y, sightW.z);
+        Vec b = null;
+        if (barrelLocal != null) {
+            Vec3 bw = SableCompat.dirToWorld(ship, barrelLocal);
+            b = new Vec(bw.x, bw.y, bw.z);
+        }
+        Vec r = dev.radarfcs.core.Aim.sightAim(s, b);
+        return new Vec3(r.x(), r.y(), r.z()).normalize();
+    }
+
     private static boolean mountInArc(ServerLevel level, MountState m, @Nullable CbcMount d, @Nullable SubLevelAccess ship, Vec3 dir) {
         if (d == null) return true;
         AimControllerBlockEntity yc = AimControllerBlockEntity.find(level, d.pos(), false);
@@ -644,7 +657,7 @@ public final class FcsControl {
         boolean fire = tu.fire && tu.fireTick == now && loaded;
         Vec3 pivotW = SableCompat.toWorld(level, d.localPivot());
         Vec3 bl = d.localBarrelDirection(kind == CbcMount.Kind.RAPID ? 1.0F : 0.0F);
-        Vec3 barrel = sight != null ? sight.worldDirection() : bl == null ? null
+        Vec3 barrel = sight != null ? sightAim(sight.worldDirection(), bl, SableCompat.containing(level, d.pos())) : bl == null ? null
                 : SableCompat.dirToWorld(SableCompat.containing(level, d.pos()), bl);
         if (manual != null) {
             manualTrigger(level, m, d, null, null, tu.fire && tu.fireTick == now, pivotW, barrel, m.muzzleDistance(d.muzzleDistance()), now);
