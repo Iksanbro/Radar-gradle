@@ -47,6 +47,8 @@ public class TurretGameTests {
 
     @BeforeBatch(batch = "turret") public static void b1(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "turret") public static void a1(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "turret_sable") public static void b2(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "turret_sable") public static void a2(ServerLevel l) { FcsGameTests.cleanup(l); }
 
     static GunLinkBlockEntity gunLink(GameTestHelper h, BlockPos attachedRel, Direction face, UUID net) {
         BlockPos at = attachedRel.relative(face);
@@ -307,6 +309,124 @@ public class TurretGameTests {
                 throw new GameTestAssertException("main gun did not hit: " + lead.status + " err " + lead.aimError);
             }
         });
+    }
+
+    /**
+     * Орудие на двух вращателях Sable, как у пользователя: вращатель курса (ось вверх), на его поворотной части -
+     * вращатель наклона (ось север-юг), на качающейся части - длинный ствол (8 корпусов, в 4 раза тяжелее площадки)
+     * и прицел. Цель неподвижна, сбоку и выше (поворот на 30° и подъём). Прицел должен довестись до цели и стоять, а не
+     * раскачиваться: размах направления прицела за последние 60 тиков - меньше 0.5°. До исправления (команда
+     * «фактический угол + вся ошибка», привод курса без инерции ствола, мягкий сервопривод) орудие застревало в 17-24°
+     * от цели или раскачивалось. Другой ствол/площадка - -Dradar_fcs.barrel=<блок>, -Dradar_fcs.platform=<блок>
+     * (-PfcsBarrel, -PfcsPlatform): ствол из камня или железа (в 5-7 раз тяжелее площадки) физика Sable держит
+     * неустойчиво, с железной площадкой - на цели. -PfcsDebugTurret - углы вращателей по тикам.
+     */
+    @GameTest(template = ARENA, batch = "turret_sable", timeoutTicks = 680)
+    public static void gunRotatorsSettleWithoutWobble(GameTestHelper h) {
+        if (!net.neoforged.fml.ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        // поворотная часть - колонна прямо над вращателем курса (ничем не нависает над блоками у основания)
+        BlockPos fcsPos = new BlockPos(6, 1, 26), yaw = new BlockPos(10, 2, 30), plat = yaw.above(), pitch = new BlockPos(10, 5, 30),
+                sight = new BlockPos(11, 6, 29);
+        FcsGameTests.motor(h, yaw.below(), Direction.UP, 128);
+        h.setBlock(yaw, FcsRegistry.GUN_ROTATOR.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP));
+        String pb = System.getProperty("radar_fcs.platform", "");
+        var platBlock = FcsGameTests.block(pb.isEmpty() ? "create:andesite_casing" : pb).defaultBlockState();
+        h.setBlock(plat, platBlock);
+        h.setBlock(plat.above(), platBlock);
+        h.setBlock(pitch, FcsRegistry.GUN_ROTATOR.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.NORTH));
+        FcsGameTests.motor(h, pitch.south(), Direction.NORTH, 128);
+        for (int i = 0; i < 8; i++) h.setBlock(pitch.north().east(i), barrelBlock());
+        h.setBlock(sight, FcsRegistry.SIGHT.get().defaultBlockState().setValue(SightBlock.FACING, Direction.EAST));
+        for (BlockPos p : List.of(yaw, pitch, sight)) FcsGameTests.CREATED.add(h.absolutePos(p));
+        UUID gun = UUID.randomUUID();
+        gunLink(h, sight, Direction.UP, gun);
+        gunLink(h, pitch, Direction.UP, gun);
+        gunLink(h, yaw, Direction.EAST, gun);
+        FireControlBlockEntity be = fcsBare(h, fcsPos);
+        SettingsGameTests.configure(be, st -> st.dropStatic = false);
+        link(h, yaw, Direction.WEST, fcsPos);
+        // клей: площадка с вращателем наклона и его мотором; ствол с прицелом и линком
+        BlockPos a = h.absolutePos(plat), b = h.absolutePos(pitch.north());
+        h.getLevel().addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(h.getLevel(),
+                new net.minecraft.world.phys.AABB(a.getX(), a.getY(), a.getZ(), a.getX() + 1, a.getY() + 4, a.getZ() + 2)));
+        h.getLevel().addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(h.getLevel(),
+                new net.minecraft.world.phys.AABB(b.getX(), b.getY(), b.getZ(), b.getX() + 8, b.getY() + 3, b.getZ() + 1)));
+        h.setBlock(new BlockPos(30, 8, 40), Blocks.STONE.defaultBlockState());
+        var husk = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(30.5, 9, 40.5), 0, 0));
+        net.minecraft.world.entity.player.Player pl = h.makeMockPlayer(net.minecraft.world.level.GameType.CREATIVE);
+        List<Vec3> dirs = new java.util.ArrayList<>();
+        double[] err = {Double.NaN};
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            if (t == 5) {
+                // сначала наклон (ствол - его поворотная часть), затем курс (площадка с вращателем наклона)
+                for (BlockPos r : List.of(pitch, yaw)) {
+                    if (h.getLevel().getBlockEntity(h.absolutePos(r)) instanceof dev.radarfcs.block.GunRotatorBlockEntity g) g.toggleAssembly(pl);
+                    else throw new GameTestAssertException("no gun rotator at " + r);
+                }
+                be.requestDiscover();
+                return;
+            }
+            if (t == 6) {
+                // клей после сборки не нужен (и без радара вычислитель видел бы его как цель)
+                for (var e : h.getLevel().getEntitiesOfClass(com.simibubi.create.content.contraptions.glue.SuperGlueEntity.class,
+                        new net.minecraft.world.phys.AABB(h.absolutePos(BlockPos.ZERO)).inflate(64))) e.discard();
+                return;
+            }
+            if (t < 7) return;
+            MountState m = be.mountStates().isEmpty() ? null : be.mountStates().get(0);
+            SightBlockEntity se = m == null || m.turret == null ? null : m.turret.sightEntity(h.getLevel());
+            if (se == null) {
+                if (t > 200) throw new GameTestAssertException("turret with sight not found: " + describe(be.mountStates()));
+                return;
+            }
+            if (Boolean.getBoolean("radar_fcs.debugTurret")) {
+                StringBuilder sb = new StringBuilder();
+                for (var r : m.turret.rotatorEntities(h.getLevel())) {
+                    Vec3 up = dev.radarfcs.compat.SableCompat.dirToWorld(dev.radarfcs.compat.SableCompat.containing(h.getLevel(), r.getBlockPos()), new Vec3(0, 1, 0));
+                    sb.append(String.format(java.util.Locale.ROOT, " [%s a %.2f t %.2f w %.2f baseUp %.3f %.3f %.3f]",
+                        r.facing(), r.angle(), r.target(), r.want(), up.x, up.y, up.z));
+                }
+                Vec3 d = se.worldDirection();
+                FcsMod.LOG.info("[radar_fcs test] t {} sight yaw {} pitch {} err {}{}", t, String.format(java.util.Locale.ROOT, "%.2f", Math.toDegrees(Math.atan2(-d.x, d.z))),
+                        String.format(java.util.Locale.ROOT, "%.2f", Math.toDegrees(Math.asin(d.y))), String.format(java.util.Locale.ROOT, "%.2f", m.aimError), sb);
+            }
+            if (t < 560) return;
+            dirs.add(se.worldDirection());
+            err[0] = m.aimError;
+            if (dirs.size() < 60) return;
+            Vec3 mean = Vec3.ZERO;
+            for (Vec3 d : dirs) mean = mean.add(d);
+            mean = mean.normalize();
+            double wobble = 0;
+            for (Vec3 d : dirs) wobble = Math.max(wobble, Math.toDegrees(Math.acos(Math.max(-1, Math.min(1, d.dot(mean))))));
+            Vec3 sd = se.worldDirection(), tc = husk.position().add(0, husk.getBbHeight() / 2, 0).subtract(se.worldCenter());
+            double yawErr = Math.abs(net.minecraft.util.Mth.wrapDegrees(Math.toDegrees(Math.atan2(-sd.x, sd.z) - Math.atan2(-tc.x, tc.z))));
+            FcsMod.LOG.info("[radar_fcs test] gun_rotators: target {} yaw err to husk {} sight pitch {}", m.targetName,
+                    String.format(java.util.Locale.ROOT, "%.2f", yawErr), String.format(java.util.Locale.ROOT, "%.2f", Math.toDegrees(Math.asin(sd.y))));
+            if (yawErr > 3) {
+                StringBuilder sb = new StringBuilder();
+                for (var r : m.turret.rotatorEntities(h.getLevel())) sb.append(String.format(java.util.Locale.ROOT, " [%s a %.1f t %.1f w %.1f]",
+                        r.facing(), r.angle(), r.target(), r.want()));
+                throw new GameTestAssertException("sight not turned to the target: yaw off by " + yawErr + ", target " + m.targetName
+                        + ", err " + m.aimError + ", status " + m.status + sb);
+            }
+            FcsMod.LOG.info("[radar_fcs test] gun_rotators: status {} err {} wobble {} deg", m.status,
+                    String.format(java.util.Locale.ROOT, "%.2f", err[0]), String.format(java.util.Locale.ROOT, "%.3f", wobble));
+            if (wobble > 0.5) throw new GameTestAssertException("turret wobbles: " + String.format(java.util.Locale.ROOT, "%.2f", wobble)
+                    + " deg, err " + err[0] + ", status " + m.status);
+            if (!(err[0] < 2)) throw new GameTestAssertException("turret not on target: err " + err[0] + ", status " + m.status);
+            h.succeed();
+        });
+    }
+
+    private static net.minecraft.world.level.block.state.BlockState barrelBlock() {
+        String b = System.getProperty("radar_fcs.barrel", "");
+        return b.isEmpty() ? FcsGameTests.block("create:andesite_casing").defaultBlockState() : FcsGameTests.block(b).defaultBlockState();
     }
 
     private static String describe(List<MountState> ms) {

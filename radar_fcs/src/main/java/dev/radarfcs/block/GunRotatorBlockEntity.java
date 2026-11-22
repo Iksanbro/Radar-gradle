@@ -118,6 +118,12 @@ public class GunRotatorBlockEntity extends KineticBlockEntity {
             want = target = lastTarget = 0;
             lastError = null;
             reattach(sl);
+            // вращатели, уехавшие в собранную часть (наклон на площадке курса), - сразу на новое основание: иначе их
+            // поворотная часть (ствол) пару тиков ничем не держится, падает на площадку и её отбрасывает
+            for (BlockPos mp : a.moved()) {
+                if (sl.isLoaded(mp) && sl.getBlockEntity(mp) instanceof GunRotatorBlockEntity r && r != this && r.subLevel != null
+                        && !SableRotor.valid(r.handle) && SableRotor.exists(sl, r.subLevel)) r.reattach(sl);
+            }
             setChanged();
             sendData();
             p.displayClientMessage(Component.translatable("radar_fcs.rotator.assembled").withStyle(ChatFormatting.GREEN), true);
@@ -155,7 +161,18 @@ public class GunRotatorBlockEntity extends KineticBlockEntity {
         double pt = SableRotor.partialPhysicsTick(sl);
         double goal = dev.radarfcs.core.Aim.wrap180(lastTarget
                 + dev.radarfcs.core.Aim.wrap180(target - lastTarget) * Math.max(0, Math.min(1, pt)));
-        SableRotor.servo(sl, handle, worldPosition, facing(), subLevel, Math.toRadians(goal));
+        if (plotFront == null) return;
+        SableRotor.servo(sl, handle, worldPosition, facing(), subLevel, plotFront, Math.toRadians(goal), id -> childSubs(sl, id));
+    }
+
+    /** Под-уровни вращателей, стоящих на под-уровне parent (их поворотные части держатся на нём). */
+    private static List<UUID> childSubs(ServerLevel sl, UUID parent) {
+        List<UUID> out = new java.util.ArrayList<>();
+        for (GunRotatorBlockEntity be : List.copyOf(ACTIVE)) {
+            if (be.isRemoved() || be.subLevel == null || be.level != sl) continue;
+            if (parent.equals(SableCompat.containingId(sl, be.worldPosition))) out.add(be.subLevel);
+        }
+        return out;
     }
 
     public static void physicsStepAll() {
