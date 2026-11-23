@@ -637,7 +637,7 @@
   "radar_fcs.ponder.flight_bridge.text_6": "\"Distance only\": the ship closes in and keeps the typed horizontal distance to the target; other blocks keep the altitude. \"Distance and altitude\": also the typed height above the target. The speed limit is typed too",
   "radar_fcs.ponder.flight_bridge.text_7": "A redstone signal pauses the bridge (in \"Docking: redstone\" mode it sends the ship to dock). With no target the ship hovers or orbits — the \"No target\" tab. Engineer's Goggles show the target, the distance and the links",
   "item.radar_fcs.laser_designator": "Laser Target Designator",
-  "radar_fcs.tooltip.laser_designator": "Shift+right-click a radar monitor to bind it. Hold right-click to aim (zoom, mouse wheel 2-10x), release: a beam up to 512 blocks — the target under the crosshair (mob, projectile, Sable ship) is designated on that monitor, like right-clicking its blip on the screen, and the computers of the network engage it first. Shift+right-click in the air: clear the designation. The target must be seen by the radars of the monitor's network.",
+  "radar_fcs.tooltip.laser_designator": "Shift+right-click a radar monitor to bind it. Hold right-click to aim (zoom, mouse wheel 2-10x, green beam); left-click while aiming — the target under the crosshair (mob, projectile, Sable ship) is designated on that monitor, like right-clicking its blip on the screen, and the computers of the network engage it first. Left-click or shift+right-click in the air: clear the designation. The target must be seen by the radars of the monitor's network.",
   "radar_fcs.designator.bound": "Designator bound to the monitor at [%s %s %s]",
   "radar_fcs.designator.unbound": "Designator is not bound: shift+right-click a radar monitor",
   "radar_fcs.designator.no_monitor": "Designator's monitor not found (broken, not loaded or in another dimension)",
@@ -655,5 +655,6 @@
   "radar_fcs.bearing.angle": "Angle: %s°",
   "radar_fcs.designator.no_target": "no target under the crosshair",
   "radar_fcs.designator.range": "range %s m, zoom %sx",
-  "radar_fcs.designator.aim_hint": "Release right-click to designate; mouse wheel: zoom"
+  "radar_fcs.designator.aim_hint": "Left-click: designate the target under the crosshair (in the air: clear); mouse wheel: zoom",
+  "radar_fcs.designator.designated_hint": "Target designated"
 }

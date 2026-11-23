@@ -42,6 +42,7 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
     @Nullable private BlockPos plotFront;
     /** Угол сервопривода сейчас и тиком раньше (градусы от положения при сборке). */
     private double target, lastTarget;
+    private long stepTick = Long.MIN_VALUE;
     @Nullable private Object handle;
     @Nullable private Component lastError;
 
@@ -62,11 +63,80 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
         return subLevel;
     }
 
-    /** Поворот за тик, градусов вокруг FACING (как у подшипника Create; 0 - нет вращения или перегрузка). */
+    /**
+     * Скорость кольца-шестерни: от шестерни Create рядом - малой вплотную сбоку (в зацеплении крутится навстречу) или
+     * большой по диагонали (кольцо вдвое быстрее, навстречу); ось шестерни - как у подшипника. 0 - шестерни нет.
+     */
+    public float ringSpeed() {
+        if (level == null) return 0;
+        Direction.Axis axis = facing().getAxis();
+        for (Direction d : Direction.values()) {
+            if (d.getAxis() == axis) continue;
+            BlockPos p = worldPosition.relative(d);
+            if (level.isLoaded(p) && level.getBlockEntity(p) instanceof KineticBlockEntity k && cogOnAxis(k, axis, false)) return -k.getSpeed();
+        }
+        for (Direction a : Direction.values()) {
+            for (Direction b : Direction.values()) {
+                if (a.getAxis() == axis || b.getAxis() == axis || a.getAxis() == b.getAxis() || a.ordinal() > b.ordinal()) continue;
+                BlockPos p = worldPosition.relative(a).relative(b);
+                if (level.isLoaded(p) && level.getBlockEntity(p) instanceof KineticBlockEntity k && cogOnAxis(k, axis, true)) return -2 * k.getSpeed();
+            }
+        }
+        return 0;
+    }
+
+    /** Ближняя шестерня, с которой кольцо в зацеплении (для отрисовки), или null. */
+    @Nullable
+    public KineticBlockEntity meshedCog() {
+        if (level == null) return null;
+        Direction.Axis axis = facing().getAxis();
+        for (Direction d : Direction.values()) {
+            if (d.getAxis() == axis) continue;
+            BlockPos p = worldPosition.relative(d);
+            if (level.isLoaded(p) && level.getBlockEntity(p) instanceof KineticBlockEntity k && cogOnAxis(k, axis, false)) return k;
+        }
+        return null;
+    }
+
+    private static boolean cogOnAxis(KineticBlockEntity k, Direction.Axis axis, boolean large) {
+        BlockState st = k.getBlockState();
+        if (!(st.getBlock() instanceof com.simibubi.create.content.kinetics.base.IRotate r)) return false;
+        boolean cog = large ? com.simibubi.create.content.kinetics.simpleRelays.ICogWheel.isLargeCog(st)
+                : com.simibubi.create.content.kinetics.simpleRelays.ICogWheel.isSmallCog(st);
+        return cog && r.getRotationAxis(st) == axis;
+    }
+
+    /** Поворот за тик, градусов вокруг FACING: от кольца-шестерни, как у подшипника Create (0 - шестерня стоит). */
     public double degPerTick() {
-        if (isOverStressed()) return 0;
-        double d = convertToAngular(getSpeed());
+        double d = convertToAngular(ringSpeed());
         return facing().getAxisDirection() == Direction.AxisDirection.POSITIVE ? d : -d;
+    }
+
+    /** Первый блок поворотной части (в плоте), куда идёт вал насквозь; null - не собран. */
+    @Nullable
+    public BlockPos plotFront() {
+        return plotFront;
+    }
+
+    // вал насквозь: подшипник передаёт вращение своего вала первому блоку поворотной части (он в плоте Sable, не сосед)
+    @Override
+    public List<BlockPos> addPropagationLocations(com.simibubi.create.content.kinetics.base.IRotate block, BlockState state, List<BlockPos> neighbours) {
+        if (plotFront != null && subLevel != null) neighbours.add(plotFront);
+        return super.addPropagationLocations(block, state, neighbours);
+    }
+
+    @Override
+    public float propagateRotationTo(KineticBlockEntity target, BlockState stateFrom, BlockState stateTo, BlockPos diff,
+                                     boolean connectedViaAxes, boolean connectedViaCogs) {
+        if (plotFront != null && subLevel != null && target.getBlockPos().equals(plotFront) && level != null
+                && stateTo.getBlock() instanceof com.simibubi.create.content.kinetics.base.IRotate r
+                && r.hasShaftTowards(level, plotFront, stateTo, facing().getOpposite())) return 1;
+        return super.propagateRotationTo(target, stateFrom, stateTo, diff, connectedViaAxes, connectedViaCogs);
+    }
+
+    @Override
+    public boolean isCustomConnection(KineticBlockEntity other, BlockState state, BlockState otherState) {
+        return plotFront != null && subLevel != null && other.getBlockPos().equals(plotFront) || super.isCustomConnection(other, state, otherState);
     }
 
     /** Угол сервопривода сейчас (градусы от положения при сборке). */
@@ -103,6 +173,9 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
             target = lastTarget = 0;
             lastError = null;
             reattach(sl);
+            // вал насквозь: переподключить кинетику - теперь соседом стал первый блок поворотной части в плоте
+            detachKinetics();
+            attachKinetics();
             // подшипники, уехавшие в собранную часть (наклон на площадке курса), - сразу на новое основание: иначе их
             // поворотная часть пару тиков ничем не держится, падает на площадку и её отбрасывает
             for (BlockPos mp : a.moved()) {
@@ -134,6 +207,26 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
             if (SableRotor.exists(sl, subLevel)) reattach(sl);
             return;
         }
+        // физика Sable спит, пока постройки стоят, - шага физики нет, и поворот не считался бы: шестерня крутится -
+        // разбудить поворотную часть; если шаг физики в прошлом тике всё же не прошёл - посчитать поворот здесь
+        double turn = degPerTick();
+        if (turn != 0) SableRotor.wake(sl, subLevel);
+        if (sl.getGameTime() - stepTick > 1) integrate(sl.getGameTime());
+        // вал насквозь: блок поворотной части сам подшипник не видит (он не сосед) - если он без вращения, а вал
+        // крутится, переподключить кинетику (поставили новый блок, загрузился плот)
+        if (sl.getGameTime() % 20 == 7 && plotFront != null && getSpeed() != 0 && sl.isLoaded(plotFront)
+                && sl.getBlockEntity(plotFront) instanceof KineticBlockEntity k && k.getSpeed() == 0
+                && k.getBlockState().getBlock() instanceof com.simibubi.create.content.kinetics.base.IRotate r
+                && r.hasShaftTowards(sl, plotFront, k.getBlockState(), facing().getOpposite())) {
+            detachKinetics();
+            attachKinetics();
+        }
+    }
+
+    /** Поворот за тик now (один раз за тик). */
+    private void integrate(long now) {
+        if (now == stepTick) return;
+        stepTick = now;
         lastTarget = target;
         double step = degPerTick();
         if (step != 0) {
@@ -145,6 +238,9 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
     /** Шаг физики: цель сервопривода - между углом прошлого и этого тика. */
     private void physicsStep() {
         if (!(level instanceof ServerLevel sl) || subLevel == null || handle == null || plotFront == null) return;
+        // угол за тик - здесь, на первом шаге физики тика: после команд вычислителя и приводов в этом же тике
+        // (в тике блока поворот запаздывал бы на тик, и привод учился бы не на той команде)
+        integrate(sl.getGameTime());
         double pt = SableRotor.partialPhysicsTick(sl);
         double goal = Aim.wrap180(lastTarget + Aim.wrap180(target - lastTarget) * Math.max(0, Math.min(1, pt)));
         SableRotor.drive(sl, handle, worldPosition, facing(), subLevel, plotFront, Math.toRadians(goal));
@@ -176,6 +272,11 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
             if (parent.equals(SableCompat.containingId(sl, be.worldPosition))) out.add(be.subLevel);
         }
         return out;
+    }
+
+    /** Собранные подшипники (для тестов). */
+    public static List<GunBearingBlockEntity> active() {
+        return List.copyOf(ACTIVE);
     }
 
     public static void physicsStepAll() {

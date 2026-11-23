@@ -23,8 +23,9 @@ import net.minecraft.world.phys.BlockHitResult;
 /**
  * Подшипник орудия (свой, не копия Aeronautics): FACING - сторона, к которой крепится поворачиваемая часть постройки;
  * вращение подаётся валом сзади. Shift+ПКМ пустой рукой - собрать постройку перед ним в физический под-уровень Sable
- * на шарнире (по правилам Create: суперклей, «липкие» блоки). Угол поворотной части идёт за валом, как у подшипника
- * Create; обычно вал крутит привод орудия.
+ * на шарнире (по правилам Create: суперклей, «липкие» блоки). Как поворотный подшипник Aeronautics: поворачивает
+ * шестерня рядом (малая вплотную сбоку или большая по диагонали, ось - как у подшипника; обычно её крутит привод
+ * орудия), а вал проходит насквозь - сзади в первый блок поворотной части, независимо от поворота.
  */
 public class GunBearingBlock extends DirectionalKineticBlock implements IBE<GunBearingBlockEntity> {
     public GunBearingBlock(Properties props) {
@@ -44,7 +45,8 @@ public class GunBearingBlock extends DirectionalKineticBlock implements IBE<GunB
     /** Вал входа - только сзади. */
     @Override
     public boolean hasShaftTowards(LevelReader world, BlockPos pos, BlockState state, Direction face) {
-        return face == state.getValue(FACING).getOpposite();
+        // вал насквозь: сзади и спереди (после сборки передний конец - первый блок поворотной части)
+        return face.getAxis() == state.getValue(FACING).getAxis();
     }
 
     @Override

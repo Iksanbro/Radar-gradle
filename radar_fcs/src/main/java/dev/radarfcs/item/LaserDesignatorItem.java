@@ -7,7 +7,6 @@ import java.util.UUID;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -31,14 +30,13 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import org.jetbrains.annotations.Nullable;
-import org.joml.Vector3f;
 
 /**
  * Лазерный целеуказатель: Shift+ПКМ по монитору радара - привязать к нему. ПКМ держать - прицеливание (как подзорная
- * труба: приближение, сетка прицела, см. {@code client/DesignatorClient}); отпустить - луч до {@link #RANGE} блоков,
- * цель под перекрестием (сущность, снаряд, корабль Sable) назначается на привязанном мониторе, как ПКМ по её отметке
- * на экране (вычислители сети ведут её вне очереди). Shift+ПКМ в воздух - снять назначение. Цель должна быть видна
- * радарам сети монитора.
+ * труба: приближение, сетка прицела, зелёный луч, см. {@code client/DesignatorClient}); ЛКМ при прицеливании - луч до
+ * {@link #RANGE} блоков: цель под перекрестием (сущность, снаряд, корабль Sable) назначается на привязанном мониторе,
+ * как ПКМ по её отметке на экране (вычислители сети ведут её вне очереди), луч на миг краснеет; ЛКМ в воздух (на луче
+ * нет цели) - снять назначение. Shift+ПКМ в воздух - тоже снять. Цель должна быть видна радарам сети монитора.
  */
 public class LaserDesignatorItem extends Item {
     /** Дальность луча, блоков (по загруженным чанкам). */
@@ -99,10 +97,7 @@ public class LaserDesignatorItem extends Item {
 
     @Override
     public void releaseUsing(ItemStack stack, Level level, net.minecraft.world.entity.LivingEntity entity, int timeLeft) {
-        if (entity instanceof Player p) {
-            p.playSound(SoundEvents.SPYGLASS_STOP_USING, 1.0f, 1.0f);
-            if (level instanceof ServerLevel sl) designate(sl, p, stack);
-        }
+        if (entity instanceof Player p) p.playSound(SoundEvents.SPYGLASS_STOP_USING, 1.0f, 1.0f);
     }
 
     private static void unboundMessage(Player p, ItemStack stack) {
@@ -110,26 +105,30 @@ public class LaserDesignatorItem extends Item {
                 : "radar_fcs.designator.no_monitor").withStyle(ChatFormatting.GOLD), true);
     }
 
-    /** Луч от глаз игрока и назначение цели на нём (сервер). */
-    public void designate(ServerLevel sl, Player p, ItemStack stack) {
+    /**
+     * ЛКМ при прицеливании (сервер): луч от глаз игрока; цель на нём - назначить, на луче нет цели - снять назначение.
+     *
+     * @return цель назначена
+     */
+    public boolean fire(ServerLevel sl, Player p, ItemStack stack) {
         RadarMonitorBlockEntity mon = monitor(sl, stack);
         if (mon == null) {
             unboundMessage(p, stack);
-            return;
+            return false;
         }
         Vec3 eye = p.getEyePosition();
         Vec3 end = eye.add(p.getLookAngle().scale(RANGE));
         Aim aim = trace(sl, p, eye, end);
-        beam(sl, eye, aim.point());
         sl.playSound(null, p.blockPosition(), SoundEvents.NOTE_BLOCK_HAT.value(), SoundSource.PLAYERS, 0.6f, 1.8f);
         if (aim.ids().isEmpty()) {
-            p.displayClientMessage(Component.translatable("radar_fcs.designator.nothing").withStyle(ChatFormatting.GRAY), true);
-            return;
+            mon.designate(null, p);                                        // ЛКМ в воздух - снять назначение
+            return false;
         }
         for (UUID id : aim.ids()) {
-            if (mon.designateTracked(id, p)) return;
+            if (mon.designateTracked(id, p)) return true;
         }
         p.displayClientMessage(Component.translatable("radar_fcs.designator.not_tracked").withStyle(ChatFormatting.GOLD), true);
+        return false;
     }
 
     /** Что под лучом: точка конца и id возможных целей по порядку (сущность, затем корабль, на котором она). */
@@ -168,20 +167,6 @@ public class LaserDesignatorItem extends Item {
         }
         if (shipId != null) ids.add(shipId);
         return new Aim(stop, ids);
-    }
-
-    /** Красный луч частицами (видят все рядом), не больше 160 точек. */
-    private static void beam(ServerLevel sl, Vec3 from, Vec3 to) {
-        Vec3 d = to.subtract(from);
-        double len = d.length();
-        if (len < 1e-3) return;
-        int n = (int) Math.min(160, Math.max(2, len / 1.5));
-        DustParticleOptions red = new DustParticleOptions(new Vector3f(1f, 0.1f, 0.1f), 0.8f);
-        Vec3 start = from.add(d.scale(1.0 / len));                           // не у самых глаз
-        for (int i = 0; i <= n; i++) {
-            Vec3 q = start.add(to.subtract(start).scale(i / (double) n));
-            sl.sendParticles(red, q.x, q.y, q.z, 1, 0, 0, 0, 0);
-        }
     }
 
     /** Привязанный монитор (в том же измерении, загруженный) или null. */

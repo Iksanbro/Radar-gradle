@@ -607,8 +607,8 @@ public class LinkGameTests {
     }
 
     /**
-     * Лазерный целеуказатель: Shift+ПКМ по монитору - привязка; ПКМ, глядя издалека на дальнюю из двух целей радара, -
-     * она назначена на мониторе (как ПКМ по отметке); луч в пустоту назначение не меняет; Shift+ПКМ в воздух - снято.
+     * Лазерный целеуказатель: Shift+ПКМ по монитору - привязка; прицеливание и ЛКМ издалека по дальней из двух целей
+     * радара - она назначена на мониторе (как ПКМ по отметке); ЛКМ в небо - назначение снято; Shift+ПКМ в воздух - снято.
      */
     @GameTest(template = ARENA, batch = "link_designator", timeoutTicks = 400)
     public static void laserDesignatorDesignates(GameTestHelper h) {
@@ -654,12 +654,16 @@ public class LinkGameTests {
                 case 1 -> {                                                     // издалека по дальней цели
                     Vec3 eye = h.absoluteVec(new Vec3(14.5, 2.5, 40.5)), aim = far.getBoundingBox().getCenter();
                     look(p, eye, aim);
-                    aimAndRelease(h, p, item, stack);
+                    boolean ok = aimAndFire(h, p, item, stack);
                     if (far.getUUID().equals(m.master().localDesignation(now))) {
-                        // луч в небо - назначение остаётся
+                        if (!ok) h.fail("designated, but fire() reported no designation");
+                        // ЛКМ в небо - назначение снято
                         look(p, eye, eye.add(0, 50, 5));
-                        aimAndRelease(h, p, item, stack);
-                        if (!far.getUUID().equals(m.master().localDesignation(now))) h.fail("empty beam changed the designation");
+                        if (aimAndFire(h, p, item, stack)) h.fail("empty beam reported a designation");
+                        if (m.master().localDesignation(now) != null) h.fail("left-click in the air did not clear the designation");
+                        look(p, eye, aim);                                  // снова назначить - для Shift+ПКМ
+                        aimAndFire(h, p, item, stack);
+                        if (!far.getUUID().equals(m.master().localDesignation(now))) h.fail("re-designation failed");
                         phase.set(2);
                     } else if (t > 300) {
                         h.fail("designator did not designate the far target; designated " + m.master().localDesignation(now));
@@ -677,11 +681,13 @@ public class LinkGameTests {
         });
     }
 
-    /** ПКМ целеуказателем: прицеливание (предмет в использовании) и отпускание - назначение. */
-    private static void aimAndRelease(GameTestHelper h, Player p, dev.radarfcs.item.LaserDesignatorItem item, ItemStack stack) {
+    /** Целеуказатель: ПКМ держать - прицеливание (предмет в использовании), ЛКМ - назначить/снять, отпустить ПКМ. */
+    private static boolean aimAndFire(GameTestHelper h, Player p, dev.radarfcs.item.LaserDesignatorItem item, ItemStack stack) {
         item.use(h.getLevel(), p, InteractionHand.MAIN_HAND);
         if (!p.isUsingItem()) throw new GameTestAssertException("designator is not aiming after right-click");
+        boolean ok = item.fire(h.getLevel(), p, p.getUseItem());
         p.releaseUsingItem();
+        return ok;
     }
 
     /** Поставить игрока глазами в eye и повернуть к точке target. */

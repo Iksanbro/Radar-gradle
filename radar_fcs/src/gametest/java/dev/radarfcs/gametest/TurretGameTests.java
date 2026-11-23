@@ -362,8 +362,57 @@ public class TurretGameTests {
     }
 
     /**
+     * Вал насквозь подшипника орудия: мотор под подшипником, над ним вал (поворотная часть). После сборки вал в плоте
+     * поворотной части крутится от мотора через подшипник, а сама поворотная часть стоит (шестерни рядом нет).
+     */
+    @GameTest(template = ARENA, batch = "turret_bearing", timeoutTicks = 200)
+    public static void gunBearingShaftPassesThrough(GameTestHelper h) {
+        if (!net.neoforged.fml.ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        BlockPos bearing = new BlockPos(20, 2, 20);
+        FcsGameTests.motor(h, bearing.below(), Direction.UP, 64);
+        h.setBlock(bearing, FcsRegistry.GUN_BEARING.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP));
+        h.setBlock(bearing.above(), FcsGameTests.block("create:shaft").defaultBlockState()
+                .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS, Direction.Axis.Y));
+        h.setBlock(bearing.above(2), FcsGameTests.block("create:andesite_casing").defaultBlockState());
+        FcsGameTests.CREATED.add(h.absolutePos(bearing));
+        BlockPos a = h.absolutePos(bearing.above());
+        h.getLevel().addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(h.getLevel(),
+                new net.minecraft.world.phys.AABB(a.getX(), a.getY(), a.getZ(), a.getX() + 1, a.getY() + 2, a.getZ() + 1)));
+        net.minecraft.world.entity.player.Player pl = h.makeMockPlayer(net.minecraft.world.level.GameType.CREATIVE);
+        pl.setShiftKeyDown(true);
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            if (!(h.getLevel().getBlockEntity(h.absolutePos(bearing)) instanceof dev.radarfcs.block.GunBearingBlockEntity g)) {
+                throw new GameTestAssertException("no gun bearing");
+            }
+            if (t == 5) {
+                g.toggleAssembly(pl);
+                SableTestSupport.trackId(h.getLevel(), g.subLevel());
+                if (!g.assembled() || g.plotFront() == null) throw new GameTestAssertException("bearing did not assemble");
+                return;
+            }
+            if (t < 40) return;
+            float in = g.getSpeed();
+            float out = h.getLevel().getBlockEntity(g.plotFront()) instanceof com.simibubi.create.content.kinetics.base.KineticBlockEntity k ? k.getSpeed() : 0;
+            FcsMod.LOG.info("[radar_fcs test] bearing passthrough t {} bearing {} rpm, shaft on the turning part {} rpm, angle {}", t, in, out,
+                    String.format(java.util.Locale.ROOT, "%.2f", g.angle()));
+            if (Math.abs(in) < 1 || Math.abs(out) < 1) {
+                if (t > 120) throw new GameTestAssertException("shaft does not pass through: bearing " + in + " rpm, turning part " + out + " rpm");
+                return;
+            }
+            if (Math.abs(g.angle()) > 0.5) throw new GameTestAssertException("turning part turned without a cogwheel: " + g.angle());
+            h.succeed();
+        });
+    }
+
+    /**
      * Подшипники орудия с приводами (как подшипники Aeronautics в постройке пользователя): мотор -> привод курса ->
-     * подшипник курса (выход вверх); на его площадке привод наклона с мотором -> подшипник наклона (выход на север);
+     * шестерня рядом с подшипником курса (выход вверх); на его площадке мотор -> привод наклона -> шестерня рядом с
+     * подшипником наклона (выход на север);
      * на качающейся части - ствол из 8 блоков камня и прицел. Цель сбоку и выше: вычислитель доводит прицел приводами и
      * держит без раскачки (размах прицела за 60 тиков < 0.5°, ошибка < 2°).
      */
@@ -374,16 +423,20 @@ public class TurretGameTests {
             return;
         }
         floor(h);
-        BlockPos fcsPos = new BlockPos(6, 1, 26), yawDrive = new BlockPos(10, 2, 30), yaw = yawDrive.above(),
-                pitch = new BlockPos(10, 6, 30), pitchDrive = pitch.south(), sight = new BlockPos(11, 7, 29);
+        BlockPos fcsPos = new BlockPos(6, 1, 26), yaw = new BlockPos(10, 3, 30), yawCog = yaw.east(), yawDrive = yawCog.below(),
+                pitch = new BlockPos(10, 6, 30), pitchCog = pitch.east(), pitchDrive = pitchCog.south(), sight = new BlockPos(11, 7, 29);
         FcsGameTests.motor(h, yawDrive.below(), Direction.UP, 64);
         h.setBlock(yawDrive, FcsRegistry.GUN_DRIVE.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP)
                 .setValue(GunDriveBlock.PITCH, false));
+        h.setBlock(yawCog, FcsGameTests.block("create:cogwheel").defaultBlockState()
+                .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS, Direction.Axis.Y));
         h.setBlock(yaw, FcsRegistry.GUN_BEARING.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP));
         var casing = FcsGameTests.block("create:andesite_casing").defaultBlockState();
         h.setBlock(yaw.above(), casing);
         h.setBlock(yaw.above(2), casing);
         h.setBlock(pitch, FcsRegistry.GUN_BEARING.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.NORTH));
+        h.setBlock(pitchCog, FcsGameTests.block("create:cogwheel").defaultBlockState()
+                .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS, Direction.Axis.Z));
         h.setBlock(pitchDrive, FcsRegistry.GUN_DRIVE.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.NORTH)
                 .setValue(GunDriveBlock.PITCH, true));
         FcsGameTests.motor(h, pitchDrive.south(), Direction.NORTH, 64);
@@ -396,11 +449,11 @@ public class TurretGameTests {
         gunLink(h, pitchDrive, Direction.UP, gun);
         FireControlBlockEntity be = fcsBare(h, fcsPos);
         SettingsGameTests.configure(be, st -> st.dropStatic = false);
-        link(h, yawDrive, Direction.WEST, fcsPos);
-        // клей: площадка с подшипником наклона, его приводом и мотором; ствол с прицелом и линком
+        link(h, yawDrive, Direction.SOUTH, fcsPos);
+        // клей: площадка с подшипником наклона, его шестернёй, приводом и мотором; ствол с прицелом и линком
         BlockPos a = h.absolutePos(yaw.above()), b = h.absolutePos(pitch.north());
         h.getLevel().addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(h.getLevel(),
-                new net.minecraft.world.phys.AABB(a.getX(), a.getY(), a.getZ(), a.getX() + 1, a.getY() + 4, a.getZ() + 3)));
+                new net.minecraft.world.phys.AABB(a.getX(), a.getY(), a.getZ(), a.getX() + 2, a.getY() + 4, a.getZ() + 3)));
         h.getLevel().addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(h.getLevel(),
                 new net.minecraft.world.phys.AABB(b.getX(), b.getY(), b.getZ(), b.getX() + 8, b.getY() + 3, b.getZ() + 1)));
         h.setBlock(new BlockPos(30, 8, 40), Blocks.STONE.defaultBlockState());
@@ -433,8 +486,15 @@ public class TurretGameTests {
                 if (t > 300) throw new GameTestAssertException("turret with sight not found: " + describe(be.mountStates()));
                 return;
             }
-            if (t % 40 == 0) FcsMod.LOG.info("[radar_fcs test] gun_bearings t {} status {} target {} err {}", t, m.status, m.targetName,
-                    String.format(java.util.Locale.ROOT, "%.2f", m.aimError));
+            if (t % 40 == 0) {
+                StringBuilder sb = new StringBuilder();
+                for (var dr : m.turret.driveEntities(h.getLevel())) sb.append(String.format(java.util.Locale.ROOT, " [%s out %.3f rate %.3f]",
+                        dr.pitch() ? "P" : "Y", dr.output(), dr.rate()));
+                for (var gb : dev.radarfcs.block.GunBearingBlockEntity.active()) sb.append(String.format(java.util.Locale.ROOT, " {%s ring %.2f t %.2f}",
+                        gb.facing(), gb.ringSpeed(), gb.target()));
+                FcsMod.LOG.info("[radar_fcs test] gun_bearings t {} status {} target {} err {}{}", t, m.status, m.targetName,
+                        String.format(java.util.Locale.ROOT, "%.2f", m.aimError), sb);
+            }
             if (t < 640) return;
             dirs.add(se.worldDirection());
             if (dirs.size() < 60) return;

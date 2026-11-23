@@ -33,6 +33,7 @@ public final class FcsMod {
         modBus.addListener(dev.radarfcs.net.AutopilotPayloads::register);
         modBus.addListener(dev.radarfcs.net.DockingPayloads::register);
         modBus.addListener(dev.radarfcs.net.BeaconPayloads::register);
+        modBus.addListener(dev.radarfcs.net.DesignatorPayloads::register);
         // обучающие сцены Ponder (как в Create) - только на клиенте
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) dev.radarfcs.client.ponder.FcsPonderPlugin.init();
         // подшипники орудия: сервопривод шарнира на каждом шаге физики Sable

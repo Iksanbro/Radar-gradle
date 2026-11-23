@@ -112,16 +112,14 @@ public final class SableRotor {
      * Жёсткое ведение поворотной части (подшипник орудия): поза под-уровня ставится на каждом шаге физики точно в угол
      * angleRad вокруг оси шарнира относительно основания (мир или поворотная часть другого подшипника), скорость -
      * как у основания в этой точке. Пружины нет - нет провисания под весом, отставания и раскачки; шарнир остаётся
-     * только ради выключенных касаний основания и поворотной части (мотор - без жёсткости, чтобы не спорить с позой).
+     * только ради выключенных касаний основания и поворотной части (без мотора, чтобы не спорить с позой). Поза ставится
+     * и до, и после каждого шага физики: за шаг часть уходит от позы, и вычислитель видел бы скачки.
      */
     public static void drive(ServerLevel level, @Nullable Object handle, BlockPos rotatorPos, Direction facing, UUID id,
                              BlockPos plotFront, double angleRad) {
         ServerSubLevel sub = subLevel(level, id);
         if (sub == null) return;
-        if (handle instanceof RotaryConstraintHandle h && h.isValid()) {
-            h.setMotor(RotaryConstraintHandle.DEFAULT_AXIS, angleRad, 0, 0, false, 0);
-            h.setContactsEnabled(false);
-        }
+        if (handle instanceof RotaryConstraintHandle h && h.isValid()) h.setContactsEnabled(false);
         dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle body = dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle.of(sub);
         if (body == null || !body.isValid()) return;
         SubLevel containing = Sable.HELPER.getContaining(level, rotatorPos);
@@ -153,6 +151,12 @@ public final class SableRotor {
         SubLevelContainer.getContainer(level).physicsSystem().getPipeline().wakeUp(sub);
     }
 
+    /** Разбудить под-уровень (физика Sable не шагает спящие постройки). */
+    public static void wake(ServerLevel level, UUID id) {
+        ServerSubLevel sub = subLevel(level, id);
+        if (sub != null) SubLevelContainer.getContainer(level).physicsSystem().getPipeline().wakeUp(sub);
+    }
+
     /** Текущий угол поворота под-уровня относительно основания вокруг оси подшипника, градусов (NaN - нет под-уровня). */
     public static double angleDeg(ServerLevel level, BlockPos rotatorPos, Direction facing, UUID id) {
         ServerSubLevel sub = subLevel(level, id);
@@ -175,5 +179,9 @@ public final class SableRotor {
     public static void init(Runnable onPhysicsStep) {
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
                 (dev.ryanhcode.sable.neoforge.event.ForgeSablePrePhysicsTickEvent e) -> onPhysicsStep.run());
+        // и после шага: за шаг физики поворотная часть уходит от поставленной позы (шарнир, вес) - вернуть её, иначе
+        // вычислитель видел бы то точную, то сдвинутую позу (скачки прицела портили обучение привода)
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
+                (dev.ryanhcode.sable.neoforge.event.ForgeSablePostPhysicsTickEvent e) -> onPhysicsStep.run());
     }
 }
