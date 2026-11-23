@@ -644,5 +644,13 @@
   "radar_fcs.designator.nothing": "На луче нет цели",
   "radar_fcs.designator.not_tracked": "Эту цель монитор не видит: она не на радарах его сети или своя",
   "radar_fcs.designator.tooltip_unbound": "Не привязан к монитору",
-  "radar_fcs.designator.tooltip_bound": "Монитор [%s %s %s]"
+  "radar_fcs.designator.tooltip_bound": "Монитор [%s %s %s]",
+  "block.radar_fcs.gun_bearing": "Подшипник орудия",
+  "radar_fcs.tooltip.gun_bearing": "Нужен Sable (Create Aeronautics). Как поворотный подшипник: вращение — валом сзади (обычно от привода орудия), поворотная часть идёт за валом, как у подшипника Create. Shift+ПКМ пустой рукой — собрать постройку перед ним (клей — как у подшипника) в поворотную часть на шарнире, повторно — показать угол. Держит угол жёстко и без раскачки даже с тяжёлым стволом; подшипник на поворотной части другого подшипника (наклон на площадке курса) тоже. Обычная схема: подшипник курса (выход вверх), на его площадке — подшипник наклона (выход вбок), на нём ствол и прицел; сначала собирайте подшипник наклона.",
+  "radar_fcs.bearing.no_sable": "Подшипнику орудия нужен Sable (Create Aeronautics)",
+  "radar_fcs.bearing.nothing": "Нечего собирать: перед подшипником нет блоков",
+  "radar_fcs.bearing.assembled": "Собрано: поворотная часть на шарнире",
+  "radar_fcs.bearing.assembled_info": "Собран, угол %s°",
+  "radar_fcs.bearing.not_assembled": "Не собран: Shift+ПКМ пустой рукой — собрать",
+  "radar_fcs.bearing.angle": "Угол: %s°"
 }

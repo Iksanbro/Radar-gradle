@@ -24,6 +24,7 @@
     {
       "id": "radar_fcs:orbit_beacon",
       "required": false
-    }
+    },
+    "radar_fcs:gun_bearing"
   ]
 }

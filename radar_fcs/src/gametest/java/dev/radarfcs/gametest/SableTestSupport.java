@@ -113,6 +113,13 @@ final class SableTestSupport {
         return sub;
     }
 
+    /** Запомнить постройку, собранную не тестом (подшипник орудия), - её тоже убрать после пакета. */
+    static void trackId(net.minecraft.server.level.ServerLevel level, java.util.UUID id) {
+        if (id == null) return;
+        var s = dev.ryanhcode.sable.api.sublevel.SubLevelContainer.getContainer(level).getSubLevel(id);
+        if (s instanceof ServerSubLevel ss) track(ss);
+    }
+
     /** Убрать постройки, собранные тестами. */
     static void removeAll(net.minecraft.server.level.ServerLevel level) {
         var container = dev.ryanhcode.sable.api.sublevel.SubLevelContainer.getContainer(level);

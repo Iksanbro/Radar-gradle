@@ -35,6 +35,8 @@ public final class FcsMod {
         modBus.addListener(dev.radarfcs.net.BeaconPayloads::register);
         // обучающие сцены Ponder (как в Create) - только на клиенте
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) dev.radarfcs.client.ponder.FcsPonderPlugin.init();
+        // подшипники орудия: сервопривод шарнира на каждом шаге физики Sable
+        if (dev.radarfcs.compat.Mods.SABLE) dev.radarfcs.compat.sable.SableRotor.init(dev.radarfcs.block.GunBearingBlockEntity::physicsStepAll);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onEntityJoin);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onLevelTick);
         // после ShotObserver: снаряд своей пушки уже помечен вычислителем, здесь - только точка запуска чужих
