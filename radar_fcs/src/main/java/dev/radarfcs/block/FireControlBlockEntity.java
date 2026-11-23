@@ -66,6 +66,11 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     @Nullable private UUID owner;
     private String ownerTeam = "";
     private Set<UUID> platformShips = Set.of();
+    /**
+     * Постройки Sable самих сборных орудий (поворотные части на подшипниках и платформы между ними): для всех пушек
+     * этого вычислителя - свои, не цели и не помеха (как в 1.0). Корабль, на котором орудие стоит, сюда не входит.
+     */
+    private Set<UUID> turretShips = Set.of();
     @Nullable private UUID ownShip;
     /** Настройки этого вычислителя (экран настроек). */
     private EngageSettings settings = new EngageSettings();
@@ -201,8 +206,9 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             Vec3 w = SableCompat.toWorld(level, Vec3.atCenterOf(m.pos));
             guard.add(new Vec(w.x, w.y, w.z));
         }
-        // корабли для вычислителя - свой-чужой только по транспондеру (свой корабль каждой пушки - MountState.ownShips)
-        return new TargetSensor.Context(owner, ownerTeam, effectiveSettings().iffRule(), Set.of(), o, guard, worldPosition,
+        // корабли для вычислителя - свой-чужой только по транспондеру (свой корабль каждой пушки - MountState.ownShips);
+        // свои - только постройки самих сборных орудий (их поворотные части)
+        return new TargetSensor.Context(owner, ownerTeam, effectiveSettings().iffRule(), turretShips, o, guard, worldPosition,
                 interceptAllowed());
     }
 
@@ -373,7 +379,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         // корабли, на которых стоит каждая пушка (и поворотные части её орудия): по ним эта пушка не стреляет, их
         // корпус ей не помеха. Свой-чужой для кораблей - только транспондер: корабль с пушками этого вычислителя
         // для других его пушек - обычная цель
-        Set<UUID> ships = new HashSet<>();
+        Set<UUID> ships = new HashSet<>(), turretParts = new HashSet<>();
         ownShip = SableCompat.containingId(level, worldPosition);
         for (MountState m : mounts.values()) {
             Set<UUID> own = new HashSet<>();
@@ -388,11 +394,17 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                     UUID c = level.isLoaded(rp) ? SableCompat.containingId(level, rp) : null;
                     if (c != null) own.add(c);
                 }
+                // поворотные части орудия (и платформа между подшипниками без блоков мода) - своя постройка орудия:
+                // радар видит их как корабли, и без этого орудие наводилось на собственную поворотную часть
+                Set<UUID> gun = FcsControl.gunShips(level, m.turret, m.turret.driveEntities(level));
+                own.addAll(gun);
+                turretParts.addAll(gun);
             }
             m.ownShips = Set.copyOf(own);
             ships.addAll(own);
         }
         platformShips = Set.copyOf(ships);
+        turretShips = Set.copyOf(turretParts);
         updateCapacity(level);
     }
 

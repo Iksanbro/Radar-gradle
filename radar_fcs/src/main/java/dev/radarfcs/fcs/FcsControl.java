@@ -611,7 +611,7 @@ public final class FcsControl {
             m.status = Status.LOST;
             return;
         }
-        if (!prepareMount(level, fcs, m, d, now, tu.sight != null)) return;
+        if (!prepareMount(level, fcs, m, d, now, false)) return;
         CbcMount.Kind kind = d.kind();
         if (kind == CbcMount.Kind.UNSUPPORTED) {
             setTrigger(m, false);
@@ -671,7 +671,7 @@ public final class FcsControl {
      * с ними (поворотная платформа между подшипниками), без основания - постройки под приводами курса (корабль с
      * орудием).
      */
-    static Set<UUID> gunShips(ServerLevel level, Turret tu, @Nullable List<GunDriveBlockEntity> drives) {
+    public static Set<UUID> gunShips(ServerLevel level, Turret tu, @Nullable List<GunDriveBlockEntity> drives) {
         Set<UUID> base = new HashSet<>();
         List<net.minecraft.core.BlockPos> parts = new ArrayList<>(tu.mounts);
         if (tu.sight != null) parts.add(tu.sight);

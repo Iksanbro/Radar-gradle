@@ -47,6 +47,8 @@ public class TurretGameTests {
 
     @BeforeBatch(batch = "turret") public static void b1(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "turret") public static void a1(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "turret_parts") public static void b2(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "turret_parts") public static void a2(ServerLevel l) { FcsGameTests.cleanup(l); }
 
     static GunLinkBlockEntity gunLink(GameTestHelper h, BlockPos attachedRel, Direction face, UUID net) {
         BlockPos at = attachedRel.relative(face);
@@ -304,6 +306,55 @@ public class TurretGameTests {
                 h.succeed();
             } else if (h.getTick() > 460) {
                 throw new GameTestAssertException("main gun did not hit: " + lead.status + " err " + lead.aimError);
+            }
+        });
+    }
+
+    /**
+     * Своя поворотная часть сборного орудия - не цель (как в 1.0): прицел на постройке Sable (поворотная часть
+     * подшипника), рядом - вторая постройка без блоков мода (платформа между подшипниками). Радар видит обе как
+     * корабли; с 1.1-Test корабли - свой-чужой только по транспондеру и неподвижные не сбрасываются, и орудие наводилось
+     * на собственную платформу. Орудие должно вести хаска и ни разу не взять свою постройку.
+     */
+    @GameTest(template = ARENA, batch = "turret_parts", timeoutTicks = 300)
+    public static void gunNeverTargetsItsOwnTurretParts(GameTestHelper h) {
+        if (!net.neoforged.fml.ModList.get().isLoaded("sable")) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        BlockPos fcsPos = new BlockPos(6, 1, 28), drive = new BlockPos(10, 1, 30), sight = new BlockPos(12, 2, 30);
+        FireControlBlockEntity be = fcsBare(h, fcsPos);
+        SettingsGameTests.configure(be, st -> st.dropStatic = false);
+        h.setBlock(drive, FcsRegistry.GUN_DRIVE.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP)
+                .setValue(GunDriveBlock.PITCH, false));
+        FcsGameTests.CREATED.add(h.absolutePos(drive));
+        h.setBlock(sight.below(), Blocks.IRON_BLOCK.defaultBlockState());
+        h.setBlock(sight, FcsRegistry.SIGHT.get().defaultBlockState().setValue(SightBlock.FACING, Direction.EAST));
+        FcsGameTests.CREATED.add(h.absolutePos(sight));
+        UUID gun = UUID.randomUUID();
+        gunLink(h, sight, Direction.UP, gun);
+        gunLink(h, drive, Direction.EAST, gun);
+        link(h, drive, Direction.WEST, fcsPos);
+        for (int x = 13; x <= 14; x++) for (int y = 1; y <= 2; y++) h.setBlock(new BlockPos(x, y, 30), Blocks.IRON_BLOCK.defaultBlockState());
+        Object part = SableTestSupport.staticSub(h, sight.below(), sight.above());        // поворотная часть с прицелом
+        Object platform = SableTestSupport.staticSub(h, new BlockPos(13, 1, 30), new BlockPos(14, 2, 30));   // без блоков мода
+        UUID partId = SableTestSupport.subId(part), platformId = SableTestSupport.subId(platform);
+        var husk = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(34.5, 1, 40.5), 0, 0));
+        AtomicInteger huskTicks = new AtomicInteger();
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            if (t < 30) return;
+            for (MountState m : be.mountStates()) {
+                if (m.targetId == null) continue;
+                if (m.targetId.equals(partId.toString()) || m.targetId.equals(platformId.toString())) {
+                    throw new GameTestAssertException("gun targets its own turret part " + m.targetId + " (" + m.targetName + ")");
+                }
+                if (m.targetId.equals(husk.getUUID().toString())) huskTicks.incrementAndGet();
+            }
+            if (t >= 200) {
+                if (huskTicks.get() < 20) throw new GameTestAssertException("gun did not engage the husk: " + describe(be.mountStates()));
+                h.succeed();
             }
         });
     }
