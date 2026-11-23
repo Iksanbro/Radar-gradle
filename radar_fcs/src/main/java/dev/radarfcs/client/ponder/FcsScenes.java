@@ -313,7 +313,7 @@ final class FcsScenes {
         sayAt(s, 100, face(u, 2, 1, 2, Direction.WEST), true);                                    // 1 вращатель
         ElementLink<WorldSectionElement> top = s.world().showIndependentSection(u.select().fromTo(2, 2, 2, 4, 2, 2), Direction.DOWN);
         s.idle(10);
-        s.overlay().showControls(face(u, 2, 1, 2, Direction.WEST), Pointing.LEFT, 40).rightClick();
+        s.overlay().showControls(face(u, 2, 1, 2, Direction.WEST), Pointing.LEFT, 40).rightClick().whileSneaking();
         sayAt(s, 110, u.vector().topOf(3, 2, 2), true);                                           // 2 сборка, схема
         s.world().showSectionAndMerge(u.select().position(3, 3, 2), Direction.DOWN, top);
         s.idle(10);
@@ -341,7 +341,7 @@ final class FcsScenes {
         show(s, u.select().position(3, 1, 2), Direction.EAST, 10);
         sayAt(s, 110, face(u, 3, 1, 2, Direction.WEST), true);                                    // 1 привод
         show(s, u.select().fromTo(3, 2, 3, 3, 2, 4), Direction.NORTH, 10);
-        s.overlay().showControls(face(u, 3, 2, 3, Direction.UP), Pointing.DOWN, 50).rightClick();
+        s.overlay().showControls(face(u, 3, 2, 3, Direction.UP), Pointing.DOWN, 50).rightClick().whileSneaking();
         sayAt(s, 100, face(u, 3, 2, 3, Direction.WEST), true);                                    // 2 курс/наклон
         Selection yaw = u.select().position(3, 0, 2).add(u.select().position(3, 1, 2));
         Selection pitch = u.select().fromTo(3, 2, 3, 3, 2, 4);

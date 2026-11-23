@@ -61,6 +61,8 @@ public class GunDriveBlock extends DirectionalKineticBlock implements IBE<GunDri
 
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
+        // режим - Shift+ПКМ: простой ПКМ (в том числе удержание на ползунке предела поворота) режим не меняет
+        if (!player.isShiftKeyDown()) return InteractionResult.PASS;
         if (!level.isClientSide) {
             boolean pitch = !state.getValue(PITCH);
             level.setBlock(pos, state.setValue(PITCH, pitch), 3);

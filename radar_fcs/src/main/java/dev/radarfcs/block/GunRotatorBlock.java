@@ -48,6 +48,8 @@ public class GunRotatorBlock extends DirectionalKineticBlock implements IBE<GunR
 
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
+        // сборка - Shift+ПКМ: простой ПКМ не должен ничего собирать (им пользуются и для другого - ключ, гоглы, клей)
+        if (!player.isShiftKeyDown()) return InteractionResult.PASS;
         if (!level.isClientSide && level.getBlockEntity(pos) instanceof GunRotatorBlockEntity be) be.toggleAssembly(player);
         return InteractionResult.sidedSuccess(level.isClientSide);
     }
