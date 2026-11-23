@@ -23,7 +23,7 @@ import org.jetbrains.annotations.Nullable;
 public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInformation {
     @Nullable private UUID network;
     private boolean registered, disabled;
-    /** Для очков инженера: прицелы, вращатели, станки CBC в сети. */
+    /** Для очков инженера: прицелы, станки CBC в сети. */
     private int[] counts = {0, 0, 0};
     /** Настройки орудия (одинаковые у всех линков сети; новее - по метке времени). */
     private dev.radarfcs.fcs.GunSettings settings = dev.radarfcs.fcs.GunSettings.DEFAULT;
@@ -54,9 +54,9 @@ public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInform
         if (level != null) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
     }
 
-    /** Можно ли поставить орудийный линк на этот блок: прицел, вращатель или привод орудия, станок CBC. */
+    /** Можно ли поставить орудийный линк на этот блок: прицел, привод орудия, станок CBC. */
     public static boolean isGunPart(@Nullable BlockEntity be) {
-        return be instanceof SightBlockEntity || be instanceof GunRotatorBlockEntity || be instanceof GunDriveBlockEntity
+        return be instanceof SightBlockEntity || be instanceof GunDriveBlockEntity
                 || (be != null && CbcMount.of(be) != null);
     }
 
@@ -83,7 +83,7 @@ public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInform
                 if (!level.isLoaded(p)) continue;
                 BlockEntity be = level.getBlockEntity(p);
                 if (be instanceof SightBlockEntity) c[0]++;
-                else if (be instanceof GunRotatorBlockEntity || be instanceof GunDriveBlockEntity) c[1]++;
+                else if (be instanceof GunDriveBlockEntity) c[1]++;
                 else if (be != null && CbcMount.of(be) != null) c[2]++;
             }
         }

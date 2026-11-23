@@ -5,7 +5,6 @@ import dev.radarfcs.FcsMod;
 import dev.radarfcs.block.AimControllerBlockEntity;
 import dev.radarfcs.block.FireControlBlockEntity;
 import dev.radarfcs.block.GunDriveBlockEntity;
-import dev.radarfcs.block.GunRotatorBlockEntity;
 import dev.radarfcs.block.SightBlockEntity;
 import dev.radarfcs.compat.CbcBallistics;
 import dev.radarfcs.compat.CbcMount;
@@ -80,24 +79,18 @@ public final class FcsControl {
             return;
         }
         if (d != null) {
-            // станок обычной пушки и пушки орудия с прицелом не поворачивается от своих валов: у орудия с прицелом
-            // ствол держится вместе с прицелом, наводится только прицел (сколько бы и каких пушек ни было)
-            if (!prepareMount(level, fcs, m, d, now, tu == null || tu.sight != null)) return;
+            // валы блокируются только у обычной пушки: станок орудия поворачивают приводы (в том числе его же валами)
+            if (!prepareMount(level, fcs, m, d, now, tu == null)) return;
         } else if (!claim(level, fcs, m, now)) {
             return;
         }
-        // орудие на вращателях: вращатели, которые поворачивают прицел
-        List<GunRotatorBlockEntity> chain = null;
+        // орудие: приводы, которые его поворачивают (подшипники Aeronautics, валы станка CBC...)
         List<GunDriveBlockEntity> drives = null;
         if (tu != null) {
-            List<GunRotatorBlockEntity> all = tu.rotatorEntities(level);
-            chain = Turret.chain(level, tu.sight != null ? tu.sight : d.pos(), all);
             drives = tu.driveEntities(level);
-            if (chain.isEmpty() && drives.isEmpty()) {
+            if (drives.isEmpty()) {
                 setTrigger(m, false);
-                boolean unassembled = false;
-                for (GunRotatorBlockEntity r : all) if (!r.assembled()) unassembled = true;
-                m.status = unassembled ? Status.NOT_ASSEMBLED : Status.TURRET_NO_ROTATOR;
+                m.status = Status.TURRET_NO_ROTATOR;
                 return;
             }
         }
@@ -143,13 +136,7 @@ public final class FcsControl {
                 cam.ignoreGun(gunShips, now);
             }
         }
-        if (manual != null && aimsAtItself(level, m, d, tu, chain, drives, manual.hit(), gunShips)) {
-            if (chain != null) {
-                for (GunRotatorBlockEntity r : chain) {
-                    double ang = r.angle();
-                    if (!Double.isNaN(ang)) r.setWant(ang);
-                }
-            }
+        if (manual != null && aimsAtItself(level, m, d, tu, drives, manual.hit(), gunShips)) {
             if (drives != null) for (GunDriveBlockEntity dr : drives) dr.command(0);
             m.targetId = null;
             m.targetName = null;
@@ -196,7 +183,7 @@ public final class FcsControl {
         double muzzleDist = d != null ? m.muzzleDistance(d.muzzleDistance()) : 0.5;
         BallisticSolver.Muzzle muzzle = BallisticSolver.Muzzle.offset(pivot, muzzleDist);
         boolean discrete = FcsConfig.DISCRETE_INTERCEPT.get();
-        // орудие на вращателях: пределы наклона задаёт постройка, а не станок
+        // сборное орудие: пределы наклона задаёт постройка, а не станок
         BallisticSolver solver = (tu != null ? new BallisticSolver(-90, 90, FcsConfig.HIGH_ARC.get())
                 : new BallisticSolver(-d.maxDepression(), d.maxElevation(), FcsConfig.HIGH_ARC.get())).discrete(discrete);
 
@@ -295,13 +282,11 @@ public final class FcsControl {
         m.flightTicks = sol.flightTicks();
         m.distance = sol.aimPoint().distance(sol.muzzle());
 
-        // желаемые углы станка или поворот вращателей орудия
+        // желаемые углы станка или команды приводам орудия
         Vec3 wantW = new Vec3(sol.direction().x(), sol.direction().y(), sol.direction().z());
         boolean outOfArc = false, noPower, noController = false;
         if (tu != null) {
-            Turret.Drive drv = Turret.aim(chain, aimDir, wantW, FcsConfig.DEADBAND.get());
-            noPower = drv.noPower();
-            if (tu.drive(level, drives, aimDir, drv.after(), wantW, FcsConfig.DEADBAND.get(), now)) noPower = true;
+            noPower = tu.drive(level, drives, aimDir, aimDir, wantW, FcsConfig.DEADBAND.get(), now);
             if (!drives.isEmpty() && tu.outOfArc) outOfArc = true;
         } else {
             Vec3 wantL = SableCompat.dirToLocal(ship, wantW);
@@ -356,7 +341,7 @@ public final class FcsControl {
         // Проверка выстрела фактическим положением ствола, которое возьмёт CBC:
         // большая пушка стреляет сразу - по положению на начало тика, снаряд появляется сейчас;
         // автопушка стреляет в следующем тике - по только что выставленным углам, снаряд на тик позже.
-        // у орудия на вращателях ствол смотрит туда же, куда прицел
+        // у сборного орудия с прицелом ствол смотрит туда же, куда прицел
         boolean big = kind != CbcMount.Kind.RAPID;
         Vec3 shotW;
         if (tu != null && sight != null) {
@@ -579,7 +564,7 @@ public final class FcsControl {
             m.status = Status.MANUAL;
             return false;
         }
-        // станок орудия поворачивают валы (приводы орудия) или вращатели - его валы не блокируются
+        // станок орудия поворачивают приводы (через подшипник или его же валы) - его валы не блокируются
         if (lock && !m.locked) {
             d.setDriveLock(true);
             m.locked = true;
@@ -615,7 +600,7 @@ public final class FcsControl {
     }
 
     /**
-     * Второй (и следующий) станок орудия на вращателях: наводит ведущий, этот стреляет вместе с ним - когда ствол
+     * Второй (и следующий) станок сборного орудия: наводит ведущий, этот стреляет вместе с ним - когда ствол
      * (по прицелу) на цели и этот станок заряжен.
      */
     private static void follow(ServerLevel level, FireControlBlockEntity fcs, MountState m, Turret tu, long now,
@@ -678,19 +663,16 @@ public final class FcsControl {
     }
 
     /**
-     * Взгляд камеры упёрся в само орудие: в блок станка, прицела, вращателя, привода или линк/контроллер на них, в
-     * поворотную часть орудия (постройку Sable его вращателя или подшипника с приводом) или в пушку станка.
+     * Взгляд камеры упёрся в само орудие: в блок станка, прицела, привода или линк/контроллер на них, в
+     * поворотную часть орудия (постройку Sable подшипника с приводом) или в пушку станка.
      */
     /**
-     * Постройки Sable орудия, которые оно поворачивает: где стоят его части (прицел, станки, приводы наклона, вращатели
-     * и их поворотные части) и соседние с ними (поворотная платформа между подшипниками), без основания - постройки под
-     * приводами курса и под внешними вращателями (корабль с орудием).
+     * Постройки Sable орудия, которые оно поворачивает: где стоят его части (прицел, станки, приводы наклона) и соседние
+     * с ними (поворотная платформа между подшипниками), без основания - постройки под приводами курса (корабль с
+     * орудием).
      */
     static Set<UUID> gunShips(ServerLevel level, Turret tu, @Nullable List<GunDriveBlockEntity> drives) {
         Set<UUID> base = new HashSet<>();
-        Set<UUID> rotorSubs = new HashSet<>();
-        List<GunRotatorBlockEntity> rotators = tu.rotatorEntities(level);
-        for (GunRotatorBlockEntity r : rotators) if (r.subLevel() != null) rotorSubs.add(r.subLevel());
         List<net.minecraft.core.BlockPos> parts = new ArrayList<>(tu.mounts);
         if (tu.sight != null) parts.add(tu.sight);
         if (drives != null) for (GunDriveBlockEntity dr : drives) {
@@ -700,18 +682,11 @@ public final class FcsControl {
                 if (b != null) base.add(b);
             }
         }
-        for (GunRotatorBlockEntity r : rotators) {
-            UUID c = SableCompat.containingId(level, r.getBlockPos());
-            if (c != null && !rotorSubs.contains(c)) base.add(c);          // внешний вращатель стоит на основании
-            else parts.add(r.getBlockPos());
-        }
-        Set<UUID> out = new HashSet<>(SableCompat.cluster(level, parts, base, 1));
-        for (UUID id : rotorSubs) if (!base.contains(id)) out.add(id);
-        return out;
+        return new HashSet<>(SableCompat.cluster(level, parts, base, 1));
     }
 
     static boolean aimsAtItself(ServerLevel level, MountState m, @Nullable CbcMount d, @Nullable Turret tu,
-                                @Nullable List<GunRotatorBlockEntity> chain, @Nullable List<GunDriveBlockEntity> drives,
+                                @Nullable List<GunDriveBlockEntity> drives,
                                 ManualAim.Hit hit, Set<UUID> gunShips) {
         if (hit == null || hit == ManualAim.Hit.NONE) return false;
         if (hit.ship() != null && gunShips.contains(hit.ship())) return true;
@@ -723,7 +698,6 @@ public final class FcsControl {
         if (tu != null) {
             if (tu.sight != null) parts.add(tu.sight);
             parts.addAll(tu.mounts);
-            parts.addAll(tu.rotators);
             parts.addAll(tu.drives);
             for (net.minecraft.core.BlockPos p : tu.mounts) {
                 if (d != null && p.equals(d.pos())) continue;

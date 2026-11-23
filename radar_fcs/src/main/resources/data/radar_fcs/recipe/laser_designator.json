@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "tools",
+  "pattern": [
+    "GRB",
+    "SPS"
+  ],
+  "key": {
+    "G": {"item": "minecraft:glass_pane"},
+    "R": {"item": "minecraft:redstone"},
+    "B": {"item": "create:brass_ingot"},
+    "S": {"item": "create:iron_sheet"},
+    "P": {"item": "create:precision_mechanism"}
+  },
+  "result": {"id": "radar_fcs:laser_designator", "count": 1}
+}

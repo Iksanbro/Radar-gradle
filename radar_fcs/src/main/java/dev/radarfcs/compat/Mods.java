@@ -8,7 +8,7 @@ public final class Mods {
     /** CBC Interception: снаряды CBC сбивают друг друга в полёте (без него перехват снарядов бесполезен). */
     public static final boolean INTERCEPTION = ModList.get().isLoaded("cbcintercept");
 
-    /** Sable (физические под-уровни): нужен вращателям орудий. */
+    /** Sable (физические под-уровни): постройки кораблей и поворотных частей. */
     public static final boolean SABLE = ModList.get().isLoaded("sable");
 
     /** CBC: Firepower Components: компактные станки (обычный и для автопушек). */

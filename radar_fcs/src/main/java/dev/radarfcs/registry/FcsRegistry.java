@@ -72,9 +72,6 @@ public final class FcsRegistry {
     public static final DeferredBlock<dev.radarfcs.block.CameraMonitorBlock> CAMERA_MONITOR = BLOCKS.register("camera_monitor",
             () -> new dev.radarfcs.block.CameraMonitorBlock(metal(MapColor.COLOR_BLACK, 2.5f).lightLevel(s -> 6)));
 
-    public static final DeferredBlock<dev.radarfcs.block.GunRotatorBlock> GUN_ROTATOR = BLOCKS.register("gun_rotator",
-            () -> new dev.radarfcs.block.GunRotatorBlock(metal(MapColor.STONE, 3.0f).noOcclusion()));
-
     public static final DeferredBlock<dev.radarfcs.block.SightBlock> SIGHT = BLOCKS.register("sight",
             () -> new dev.radarfcs.block.SightBlock(metal(MapColor.COLOR_GRAY, 2.0f).noOcclusion()
                     .lightLevel(s -> s.getValue(dev.radarfcs.block.SightBlock.FIRING) ? 7 : 0)));
@@ -85,7 +82,6 @@ public final class FcsRegistry {
             () -> new dev.radarfcs.block.GunDriveBlock(metal(MapColor.COLOR_ORANGE, 3.0f).noOcclusion()));
 
     public static final DeferredItem<BlockItem> FIRE_CONTROL_ITEM = ITEMS.registerSimpleBlockItem(FIRE_CONTROL);
-    public static final DeferredItem<BlockItem> GUN_ROTATOR_ITEM = ITEMS.registerSimpleBlockItem(GUN_ROTATOR);
     public static final DeferredItem<dev.radarfcs.item.CameraItem> CAMERA_ITEM = ITEMS.register("camera",
             () -> new dev.radarfcs.item.CameraItem(CAMERA.get(), new net.minecraft.world.item.Item.Properties()));
     public static final DeferredItem<BlockItem> CAMERA_MONITOR_ITEM = ITEMS.registerSimpleBlockItem(CAMERA_MONITOR);
@@ -99,6 +95,8 @@ public final class FcsRegistry {
     public static final DeferredItem<dev.radarfcs.item.GunLinkItem> GUN_LINK_ITEM = ITEMS.register("gun_link",
             () -> new dev.radarfcs.item.GunLinkItem(GUN_LINK.get(), new net.minecraft.world.item.Item.Properties()));
     public static final DeferredItem<BlockItem> IFF_TRANSPONDER_ITEM = ITEMS.registerSimpleBlockItem(IFF_TRANSPONDER);
+    public static final DeferredItem<dev.radarfcs.item.LaserDesignatorItem> LASER_DESIGNATOR = ITEMS.register("laser_designator",
+            () -> new dev.radarfcs.item.LaserDesignatorItem(new net.minecraft.world.item.Item.Properties()));
     public static final DeferredItem<BlockItem> RADAR_MONITOR_ITEM = ITEMS.registerSimpleBlockItem(RADAR_MONITOR);
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FireControlBlockEntity>> FIRE_CONTROL_BE =
@@ -131,10 +129,6 @@ public final class FcsRegistry {
             BLOCK_ENTITIES.register("camera_monitor",
                     () -> BlockEntityType.Builder.of(dev.radarfcs.block.CameraMonitorBlockEntity::new, CAMERA_MONITOR.get()).build(null));
 
-    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<dev.radarfcs.block.GunRotatorBlockEntity>> GUN_ROTATOR_BE =
-            BLOCK_ENTITIES.register("gun_rotator", () -> BlockEntityType.Builder.of(
-                    (pos, state) -> new dev.radarfcs.block.GunRotatorBlockEntity(FcsRegistry.GUN_ROTATOR_BE.get(), pos, state),
-                    GUN_ROTATOR.get()).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<dev.radarfcs.block.GunDriveBlockEntity>> GUN_DRIVE_BE =
             BLOCK_ENTITIES.register("gun_drive", () -> BlockEntityType.Builder.of(
@@ -164,7 +158,7 @@ public final class FcsRegistry {
                         out.accept(RADAR_MONITOR_ITEM.get());
                         out.accept(CAMERA_ITEM.get());
                         out.accept(CAMERA_MONITOR_ITEM.get());
-                        out.accept(GUN_ROTATOR_ITEM.get());
+                        out.accept(LASER_DESIGNATOR.get());
                         out.accept(GUN_DRIVE_ITEM.get());
                         out.accept(SIGHT_ITEM.get());
                         out.accept(GUN_LINK_ITEM.get());
@@ -208,7 +202,6 @@ public final class FcsRegistry {
         DisplaySource.BY_BLOCK.add(FIRE_CONTROL.get(), FCS_DISPLAY_SOURCE.get());
         BlockStressValues.IMPACTS.register(YAW_CONTROLLER.get(), () -> FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
         BlockStressValues.IMPACTS.register(PITCH_CONTROLLER.get(), () -> FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
-        BlockStressValues.IMPACTS.register(GUN_ROTATOR.get(), () -> 2 * FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
         BlockStressValues.IMPACTS.register(GUN_DRIVE.get(), () -> FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
     }
 

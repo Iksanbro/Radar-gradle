@@ -652,6 +652,19 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         m.pushToClients(sl);
     }
 
+    /**
+     * Назначить цель, если она есть среди чужих целей экрана (лазерный целеуказатель): как ПКМ по её отметке.
+     *
+     * @return false - экран эту цель не видит (не на радарах сети, своя или монитор без питания); назначение не меняется
+     */
+    public boolean designateTracked(UUID id, @Nullable Player p) {
+        RadarMonitorBlockEntity m = masterBe();
+        if (m == null || !(level instanceof ServerLevel sl) || !m.powered) return false;
+        if (m.targets.stream().noneMatch(x -> x.id().equals(id))) return false;
+        designate(id, p);
+        return true;
+    }
+
     private void setDesignation(Target t, long now, @Nullable Player p) {
         localTarget = t.id();
         localSince = now;

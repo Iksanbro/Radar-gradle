@@ -267,7 +267,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         return out;
     }
 
-    /** Ключ орудия для выбора с камеры: орудие на вращателях/приводах - его ключ, обычная пушка - станок. */
+    /** Ключ орудия для выбора с камеры: сборное орудие/приводах - его ключ, обычная пушка - станок. */
     public static long gunKey(MountState m) {
         return (m.turret != null ? m.turret.key : m.pos).asLong();
     }
@@ -334,8 +334,8 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             BlockEntity be = level.getBlockEntity(p);
             LinkKind k = LinkKind.of(be);
             if (k == null) continue;
-            // часть орудия на вращателях (прицел, вращатель или станок в орудийной сети с прицелом) - всё орудие
-            if ((k == LinkKind.MOUNT || k == LinkKind.SIGHT || k == LinkKind.GUN_ROTATOR || k == LinkKind.GUN_DRIVE)
+            // часть сборного орудия (прицел, привод или станок в орудийной сети с прицелом) - всё орудие
+            if ((k == LinkKind.MOUNT || k == LinkKind.SIGHT || k == LinkKind.GUN_DRIVE)
                     && addTurret(level, p, turrets, found)) continue;
             switch (k) {
                 case MOUNT -> {
@@ -364,7 +364,7 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
                 it.remove();
             }
         }
-        // ведущий каждого орудия - его первое состояние: он наводит вращатели
+        // ведущий каждого орудия - его первое состояние: он командует приводами
         for (dev.radarfcs.fcs.Turret t : turrets.values()) t.leader = null;
         for (MountState m : mounts.values()) {
             if (m.turret != null && m.turret.main != null && m.pos.equals(m.turret.main)) m.turret.leader = m.pos;
@@ -380,10 +380,12 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
             UUID s = SableCompat.containingId(level, m.pos);
             if (s != null) own.add(s);
             if (m.turret != null) {
-                for (BlockPos rp : m.turret.rotators) {
-                    if (!level.isLoaded(rp) || !(level.getBlockEntity(rp) instanceof GunRotatorBlockEntity r)) continue;
-                    if (r.subLevel() != null) own.add(r.subLevel());
-                    UUID c = SableCompat.containingId(level, rp);
+                // корабль и поворотные части (подшипники) под прицелом, приводами и станками орудия
+                List<BlockPos> parts = new ArrayList<>(m.turret.mounts);
+                parts.addAll(m.turret.drives);
+                if (m.turret.sight != null) parts.add(m.turret.sight);
+                for (BlockPos rp : parts) {
+                    UUID c = level.isLoaded(rp) ? SableCompat.containingId(level, rp) : null;
                     if (c != null) own.add(c);
                 }
             }
@@ -395,30 +397,28 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
     }
 
     /**
-     * Орудие на вращателях по его части p: прицел, вращатели и станки CBC орудийной сети. Станки орудия - состояния
+     * Сборное орудие по его части p: прицел, приводы и станки CBC орудийной сети. Станки орудия - состояния
      * пушек с общим орудием; орудие без станков - одно состояние на прицеле (огонь сигналом прицела).
-     * Без прицела орудие - станки с вращателями или приводами (наводится ствол первого станка).
-     * false - не орудие (станок без прицела, вращателей и приводов - обычная пушка).
+     * Без прицела орудие - станки с приводами (наводится ствол первого станка).
+     * false - не орудие (станок без прицела, приводов - обычная пушка).
      */
     private boolean addTurret(ServerLevel level, BlockPos p, Map<BlockPos, dev.radarfcs.fcs.Turret> turrets, Set<BlockPos> found) {
         List<BlockPos> group = dev.radarfcs.link.GunLinks.group(level, p);
         BlockPos sight = null;
-        List<BlockPos> rot = new ArrayList<>(), guns = new ArrayList<>(), drv = new ArrayList<>();
+        List<BlockPos> guns = new ArrayList<>(), drv = new ArrayList<>();
         for (BlockPos q : group) {
             if (!level.isLoaded(q)) continue;
             BlockEntity be = level.getBlockEntity(q);
             if (be instanceof SightBlockEntity) {
                 if (sight == null) sight = q.immutable();
-            } else if (be instanceof GunRotatorBlockEntity) {
-                rot.add(q.immutable());
             } else if (be instanceof GunDriveBlockEntity) {
                 drv.add(q.immutable());
             } else if (be != null && CbcMount.of(be) != null) {
                 guns.add(q.immutable());
             }
         }
-        // орудие - есть прицел или станок с вращателями/приводами (тогда наводится его ствол)
-        if (sight == null && (guns.isEmpty() || (rot.isEmpty() && drv.isEmpty()))) return false;
+        // орудие - есть прицел или станок с приводами (тогда наводится его ствол)
+        if (sight == null && (guns.isEmpty() || drv.isEmpty())) return false;
         // основная пушка из настроек орудия (Shift+ПКМ по орудийному линку на станке) - ключ орудия без прицела и ведущий
         java.util.Set<UUID> nets = java.util.Set.copyOf(dev.radarfcs.link.GunLinks.groupNetworks(level, p));
         BlockPos main = dev.radarfcs.link.GunLinks.settingsOf(level, nets).mainMount;
@@ -426,7 +426,6 @@ public class FireControlBlockEntity extends BlockEntity implements IHaveGoggleIn
         BlockPos key = sight != null ? sight : main != null ? main : guns.get(0);
         if (turrets.containsKey(key)) return true;
         dev.radarfcs.fcs.Turret t = turretFor(sight, key);
-        t.rotators = List.copyOf(rot);
         t.drives = List.copyOf(drv);
         t.networks = nets;
         t.main = main;

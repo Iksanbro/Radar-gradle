@@ -22,7 +22,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Орудийный линк: как радарный, но собирает части одного орудия (прицел, вращатели, станки CBC) в орудийную сеть.
+ * Орудийный линк: как радарный, но собирает части одного орудия (прицел, станки CBC) в орудийную сеть.
  * Форма, установка на грань и отключение полным сигналом редстоуна - как у радарного линка.
  */
 public class GunLinkBlock extends RadarLinkBlock {

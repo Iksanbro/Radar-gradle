@@ -17,9 +17,9 @@ import org.jetbrains.annotations.Nullable;
 /** Состояние одной пушки под управлением вычислителя. */
 public final class MountState implements ShotObserver.Listener {
     public final BlockPos pos;
-    /** Станок CBC; null - орудие на вращателях без станка (огонь сигналом прицела). */
+    /** Станок CBC; null - сборное орудие без станка (огонь сигналом прицела). */
     @Nullable public CbcMount mount;
-    /** Орудие на вращателях, в которое входит этот станок (или прицел без станка), иначе null. */
+    /** Сборное орудие, в которое входит этот станок (или прицел без станка), иначе null. */
     @Nullable public Turret turret;
     /** Настройки орудия на этот тик (у орудия; у обычной пушки null). */
     @Nullable public GunSettings gunSettings;

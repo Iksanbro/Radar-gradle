@@ -169,9 +169,6 @@ neoForge {
             sourceSet = sourceSets.gametest
             systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
             if (project.hasProperty('fcsProbe')) systemProperty 'radarfcs.probe', 'true'
-            if (project.hasProperty('fcsDebugTurret')) systemProperty 'radar_fcs.debugTurret', 'true'
-            if (project.hasProperty('fcsBarrel')) systemProperty 'radar_fcs.barrel', project.property('fcsBarrel')
-            if (project.hasProperty('fcsPlatform')) systemProperty 'radar_fcs.platform', project.property('fcsPlatform')
             // только тесты с этими подстроками в имени (класс.метод): -PfcsTests=mountinunloading,staletrigger
             if (project.hasProperty('fcsTests')) systemProperty 'radar_fcs.tests', project.property('fcsTests')
         }

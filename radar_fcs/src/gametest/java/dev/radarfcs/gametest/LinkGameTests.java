@@ -66,6 +66,8 @@ public class LinkGameTests {
     @BeforeBatch(batch = "link_monitor_exclude") public static void b5(ServerLevel l) { FcsGameTests.beforeRadar(l); }
     @AfterBatch(batch = "link_monitor_exclude") public static void a5(ServerLevel l) { FcsGameTests.cleanup(l); }
     @AfterBatch(batch = "monitor_pins") public static void a6(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "link_designator") public static void b9(ServerLevel l) { FcsGameTests.beforeRadar(l); }
+    @AfterBatch(batch = "link_designator") public static void a9(ServerLevel l) { FcsGameTests.cleanup(l); }
     @AfterBatch(batch = "link_sticky") public static void a7(ServerLevel l) { FcsGameTests.cleanup(l); }
     @AfterBatch(batch = "link_limit") public static void a8(ServerLevel l) { FcsGameTests.cleanup(l); }
 
@@ -602,5 +604,86 @@ public class LinkGameTests {
             FcsMod.LOG.info("[radar_fcs test] link_limit: 18 links -> 16 active, with a memory block -> all active");
             h.succeed();
         });
+    }
+
+    /**
+     * Лазерный целеуказатель: Shift+ПКМ по монитору - привязка; ПКМ, глядя издалека на дальнюю из двух целей радара, -
+     * она назначена на мониторе (как ПКМ по отметке); луч в пустоту назначение не меняет; Shift+ПКМ в воздух - снято.
+     */
+    @GameTest(template = ARENA, batch = "link_designator", timeoutTicks = 400)
+    public static void laserDesignatorDesignates(GameTestHelper h) {
+        floor(h);
+        BlockPos fcsPos = new BlockPos(6, 1, 28), radar = new BlockPos(8, 1, 40);
+        fcsBare(h, fcsPos);
+        h.setBlock(radar, block("create_radar:plane_radar").defaultBlockState()
+                .trySetValue(BlockStateProperties.HORIZONTAL_FACING, Direction.WEST));
+        FcsGameTests.CREATED.add(h.absolutePos(radar));
+        link(h, radar, Direction.UP, fcsPos);
+        BlockState mon = FcsRegistry.RADAR_MONITOR.get().defaultBlockState().setValue(RadarMonitorBlock.FACING, Direction.SOUTH);
+        for (int x = 2; x <= 3; x++) for (int y = 2; y <= 3; y++) {
+            h.setBlock(new BlockPos(x, y, 44), mon);
+            FcsGameTests.CREATED.add(h.absolutePos(new BlockPos(x, y, 44)));
+        }
+        link(h, new BlockPos(3, 3, 44), Direction.UP, fcsPos);
+        Mob near = movingTarget(h, EntityType.HUSK, new Vec3(26.5, 1, 30.5), 0, 0);
+        Mob far = movingTarget(h, EntityType.HUSK, new Vec3(50.5, 1, 52.5), 0, 0);
+        for (Mob mob : new Mob[]{near, far}) SettingsGameTests.tough(mob);
+        Player p = h.makeMockPlayer(GameType.CREATIVE);
+        ItemStack stack = new ItemStack(FcsRegistry.LASER_DESIGNATOR.get());
+        p.setItemInHand(InteractionHand.MAIN_HAND, stack);
+        var item = FcsRegistry.LASER_DESIGNATOR.get();
+        AtomicInteger phase = new AtomicInteger();
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            if (!(h.getLevel().getBlockEntity(h.absolutePos(new BlockPos(2, 2, 44))) instanceof RadarMonitorBlockEntity m)) {
+                h.fail("monitor missing");
+                return;
+            }
+            long now = h.getLevel().getGameTime();
+            switch (phase.get()) {
+                case 0 -> {                                                     // привязка: Shift+ПКМ по монитору
+                    if (t < 5) return;
+                    p.setShiftKeyDown(true);
+                    BlockPos mp = h.absolutePos(new BlockPos(2, 3, 44));
+                    InteractionResult r = item.useOn(new UseOnContext(p, InteractionHand.MAIN_HAND,
+                            new BlockHitResult(Vec3.atCenterOf(mp), Direction.SOUTH, mp, false)));
+                    p.setShiftKeyDown(false);
+                    if (!r.consumesAction()) h.fail("designator did not bind: " + r);
+                    phase.set(1);
+                }
+                case 1 -> {                                                     // издалека по дальней цели
+                    Vec3 eye = h.absoluteVec(new Vec3(14.5, 2.5, 40.5)), aim = far.getBoundingBox().getCenter();
+                    look(p, eye, aim);
+                    item.use(h.getLevel(), p, InteractionHand.MAIN_HAND);
+                    p.getCooldowns().removeCooldown(item);
+                    if (far.getUUID().equals(m.master().localDesignation(now))) {
+                        // луч в небо - назначение остаётся
+                        look(p, eye, eye.add(0, 50, 5));
+                        item.use(h.getLevel(), p, InteractionHand.MAIN_HAND);
+                        if (!far.getUUID().equals(m.master().localDesignation(now))) h.fail("empty beam changed the designation");
+                        phase.set(2);
+                    } else if (t > 300) {
+                        h.fail("designator did not designate the far target; designated " + m.master().localDesignation(now));
+                    }
+                }
+                case 2 -> {                                                     // Shift+ПКМ в воздух - снять
+                    p.setShiftKeyDown(true);
+                    item.use(h.getLevel(), p, InteractionHand.MAIN_HAND);
+                    p.setShiftKeyDown(false);
+                    if (m.master().localDesignation(now) != null) h.fail("designation not cleared");
+                    else h.succeed();
+                }
+                default -> { }
+            }
+        });
+    }
+
+    /** Поставить игрока глазами в eye и повернуть к точке target. */
+    private static void look(Player p, Vec3 eye, Vec3 target) {
+        Vec3 d = target.subtract(eye);
+        float yaw = (float) Math.toDegrees(Math.atan2(-d.x, d.z));
+        float pitch = (float) -Math.toDegrees(Math.atan2(d.y, d.horizontalDistance()));
+        p.moveTo(eye.x, eye.y - p.getEyeHeight(), eye.z, yaw, pitch);
+        p.setYHeadRot(yaw);
     }
 }

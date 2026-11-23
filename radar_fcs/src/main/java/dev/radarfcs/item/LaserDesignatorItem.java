@@ -1,0 +1,185 @@
+package dev.radarfcs.item;
+
+import dev.radarfcs.block.RadarMonitorBlockEntity;
+import dev.radarfcs.compat.SableCompat;
+import java.util.List;
+import java.util.UUID;
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.particles.DustParticleOptions;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import org.jetbrains.annotations.Nullable;
+import org.joml.Vector3f;
+
+/**
+ * Лазерный целеуказатель: Shift+ПКМ по монитору радара - привязать к нему; ПКМ - луч до {@link #RANGE} блоков,
+ * цель на луче (сущность, снаряд, корабль Sable) назначается на привязанном мониторе, как ПКМ по её отметке на экране
+ * (вычислители сети ведут её вне очереди). Shift+ПКМ в воздух - снять назначение. Цель должна быть видна радарам
+ * сети монитора.
+ */
+public class LaserDesignatorItem extends Item {
+    /** Дальность луча, блоков (по загруженным чанкам). */
+    public static final double RANGE = 512;
+    /** Допуск попадания по сущности: запас габарита на блок дальности (≈0.3°) - издалека легче попасть. */
+    private static final double SLACK_PER_BLOCK = 0.005;
+
+    public LaserDesignatorItem(Properties props) {
+        super(props.stacksTo(1));
+    }
+
+    @Override
+    public InteractionResult useOn(UseOnContext ctx) {
+        Player p = ctx.getPlayer();
+        Level level = ctx.getLevel();
+        if (p == null || !p.isShiftKeyDown()) return InteractionResult.PASS;     // простой ПКМ - луч (use)
+        if (!(level.getBlockEntity(ctx.getClickedPos()) instanceof RadarMonitorBlockEntity mon)) return InteractionResult.PASS;
+        if (!level.isClientSide) {
+            BlockPos m = mon.master().getBlockPos();
+            CompoundTag t = new CompoundTag();
+            t.putLong("Monitor", m.asLong());
+            t.putString("Dim", level.dimension().location().toString());
+            ctx.getItemInHand().set(DataComponents.CUSTOM_DATA, CustomData.of(t));
+            p.displayClientMessage(Component.translatable("radar_fcs.designator.bound", m.getX(), m.getY(), m.getZ())
+                    .withStyle(ChatFormatting.GREEN), true);
+        }
+        return InteractionResult.sidedSuccess(level.isClientSide);
+    }
+
+    @Override
+    public InteractionResultHolder<ItemStack> use(Level level, Player p, InteractionHand hand) {
+        ItemStack stack = p.getItemInHand(hand);
+        if (level.isClientSide) return InteractionResultHolder.success(stack);
+        ServerLevel sl = (ServerLevel) level;
+        RadarMonitorBlockEntity mon = monitor(sl, stack);
+        if (mon == null) {
+            p.displayClientMessage(Component.translatable(bound(stack) == null ? "radar_fcs.designator.unbound"
+                    : "radar_fcs.designator.no_monitor").withStyle(ChatFormatting.GOLD), true);
+            return InteractionResultHolder.fail(stack);
+        }
+        if (p.isShiftKeyDown()) {
+            mon.designate(null, p);                                        // снять назначение
+            return InteractionResultHolder.success(stack);
+        }
+        Vec3 eye = p.getEyePosition();
+        Vec3 end = eye.add(p.getLookAngle().scale(RANGE));
+        Aim aim = trace(sl, p, eye, end);
+        beam(sl, eye, aim.point());
+        sl.playSound(null, p.blockPosition(), SoundEvents.NOTE_BLOCK_HAT.value(), SoundSource.PLAYERS, 0.6f, 1.8f);
+        if (aim.ids().isEmpty()) {
+            p.displayClientMessage(Component.translatable("radar_fcs.designator.nothing").withStyle(ChatFormatting.GRAY), true);
+            return InteractionResultHolder.consume(stack);
+        }
+        for (UUID id : aim.ids()) {
+            if (mon.designateTracked(id, p)) {
+                p.getCooldowns().addCooldown(this, 10);
+                return InteractionResultHolder.consume(stack);
+            }
+        }
+        p.displayClientMessage(Component.translatable("radar_fcs.designator.not_tracked").withStyle(ChatFormatting.GOLD), true);
+        return InteractionResultHolder.consume(stack);
+    }
+
+    /** Что под лучом: точка конца и id возможных целей по порядку (сущность, затем корабль, на котором она). */
+    record Aim(Vec3 point, List<UUID> ids) {}
+
+    /** Луч от глаз игрока: блоки мира (только загруженные чанки), постройки Sable, сущности с допуском по дальности. */
+    static Aim trace(ServerLevel sl, Player p, Vec3 eye, Vec3 end) {
+        BlockHitResult bh = SableCompat.plain(sl).clip(new ClipContext(eye, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE,
+                CollisionContext.empty()));
+        Vec3 stop = bh.getType() == HitResult.Type.MISS ? end : bh.getLocation();
+        UUID own = SableCompat.trackingShipId(p);
+        UUID shipId = null;
+        SableCompat.ShipHit ship = SableCompat.clipShips(sl, eye, stop, id -> id.equals(own), SableCompat.plain(sl), false);
+        if (ship != null) {
+            stop = ship.point();
+            shipId = ship.ship();
+        }
+        Entity best = null;
+        double bestD = Double.POSITIVE_INFINITY;
+        for (Entity e : sl.getEntities(p, new AABB(eye, stop).inflate(2.0), e -> !e.isSpectator() && e != p.getVehicle())) {
+            double slack = 0.3 + SLACK_PER_BLOCK * e.position().distanceTo(eye);
+            var hit = e.getBoundingBox().inflate(slack).clip(eye, stop);
+            if (hit.isEmpty()) continue;
+            double d = hit.get().distanceToSqr(eye);
+            if (d < bestD) {
+                bestD = d;
+                best = e;
+            }
+        }
+        List<UUID> ids = new java.util.ArrayList<>();
+        if (best != null) {
+            ids.add(best.getUUID());
+            UUID on = SableCompat.trackingShipId(best);
+            if (on != null && !on.equals(own)) ids.add(on);
+            return new Aim(best.getBoundingBox().getCenter(), ids);
+        }
+        if (shipId != null) ids.add(shipId);
+        return new Aim(stop, ids);
+    }
+
+    /** Красный луч частицами (видят все рядом), не больше 160 точек. */
+    private static void beam(ServerLevel sl, Vec3 from, Vec3 to) {
+        Vec3 d = to.subtract(from);
+        double len = d.length();
+        if (len < 1e-3) return;
+        int n = (int) Math.min(160, Math.max(2, len / 1.5));
+        DustParticleOptions red = new DustParticleOptions(new Vector3f(1f, 0.1f, 0.1f), 0.8f);
+        Vec3 start = from.add(d.scale(1.0 / len));                           // не у самых глаз
+        for (int i = 0; i <= n; i++) {
+            Vec3 q = start.add(to.subtract(start).scale(i / (double) n));
+            sl.sendParticles(red, q.x, q.y, q.z, 1, 0, 0, 0, 0);
+        }
+    }
+
+    /** Привязанный монитор (в том же измерении, загруженный) или null. */
+    @Nullable
+    static RadarMonitorBlockEntity monitor(ServerLevel sl, ItemStack stack) {
+        BlockPos pos = bound(stack);
+        if (pos == null) return null;
+        CompoundTag t = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
+        if (!sl.dimension().location().toString().equals(t.getString("Dim"))) return null;
+        if (!sl.isLoaded(pos)) return null;
+        return sl.getBlockEntity(pos) instanceof RadarMonitorBlockEntity m ? m.master() : null;
+    }
+
+    @Nullable
+    static BlockPos bound(ItemStack stack) {
+        CompoundTag t = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
+        return t.contains("Monitor") ? BlockPos.of(t.getLong("Monitor")) : null;
+    }
+
+    @Override
+    public void appendHoverText(ItemStack stack, TooltipContext ctx, List<Component> tooltip, TooltipFlag flag) {
+        BlockPos b = bound(stack);
+        tooltip.add(b == null ? Component.translatable("radar_fcs.designator.tooltip_unbound").withStyle(ChatFormatting.GOLD)
+                : Component.translatable("radar_fcs.designator.tooltip_bound", b.getX(), b.getY(), b.getZ()).withStyle(ChatFormatting.AQUA));
+        tooltip.add(Component.translatable("radar_fcs.tooltip.laser_designator").withStyle(ChatFormatting.GRAY));
+    }
+
+    @Override
+    public boolean isFoil(ItemStack stack) {
+        return false;
+    }
+}

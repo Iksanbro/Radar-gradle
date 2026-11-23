@@ -21,7 +21,7 @@ public class SightBlockEntity extends BlockEntity implements IHaveGoggleInformat
     /** Сигнал огня гаснет сам, если вычислитель перестал его подтверждать. */
     private static final int FIRE_HOLD_TICKS = 2;
     private long fireUntil = Long.MIN_VALUE / 2;
-    /** Состав орудия для очков инженера (считается на сервере): вращатели, станки CBC. */
+    /** Состав орудия для очков инженера (считается на сервере): станки CBC. */
     private int[] counts = {0, 0};
 
     public SightBlockEntity(BlockPos pos, BlockState state) {
@@ -74,14 +74,14 @@ public class SightBlockEntity extends BlockEntity implements IHaveGoggleInformat
         level.setBlock(worldPosition, st.setValue(SightBlock.FIRING, on), 3);
     }
 
-    /** Состав орудия по орудийным линкам: {вращатели, станки CBC}. */
+    /** Состав орудия по орудийным линкам: {станки CBC}. */
     public int[] composition() {
         int rot = 0, mounts = 0;
         if (level == null) return new int[]{0, 0};
         for (BlockPos p : GunLinks.group(level, worldPosition)) {
             if (!level.isLoaded(p)) continue;
             BlockEntity be = level.getBlockEntity(p);
-            if (be instanceof GunRotatorBlockEntity || be instanceof GunDriveBlockEntity) rot++;
+            if (be instanceof GunDriveBlockEntity) rot++;
             else if (be != null && CbcMount.of(be) != null) mounts++;
         }
         return new int[]{rot, mounts};

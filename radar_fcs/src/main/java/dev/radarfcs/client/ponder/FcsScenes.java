@@ -301,34 +301,6 @@ final class FcsScenes {
         s.markAsFinished();
     }
 
-    // ------------------------------------------------------------------ вращатель орудия (свой блок, нужен Sable)
-    static void gunRotator(SceneBuilder builder, SceneBuildingUtil u) {
-        CreateSceneBuilder s = new CreateSceneBuilder(builder);
-        s.title("gun_rotator", "");
-        s.configureBasePlate(0, 0, 5);
-        s.showBasePlate();
-        s.idle(10);
-        show(s, u.select().position(2, 1, 2), Direction.DOWN, 10);
-        s.world().setKineticSpeed(u.select().position(2, 0, 2).add(u.select().position(2, 1, 2)), 32);
-        sayAt(s, 100, face(u, 2, 1, 2, Direction.WEST), true);                                    // 1 вращатель
-        ElementLink<WorldSectionElement> top = s.world().showIndependentSection(u.select().fromTo(2, 2, 2, 4, 2, 2), Direction.DOWN);
-        s.idle(10);
-        s.overlay().showControls(face(u, 2, 1, 2, Direction.WEST), Pointing.LEFT, 40).rightClick().whileSneaking();
-        sayAt(s, 110, u.vector().topOf(3, 2, 2), true);                                           // 2 сборка, схема
-        s.world().showSectionAndMerge(u.select().position(3, 3, 2), Direction.DOWN, top);
-        s.idle(10);
-        sayAt(s, 100, face(u, 3, 3, 2, Direction.NORTH), true);                                   // 3 прицел
-        s.world().showSectionAndMerge(u.select().position(3, 4, 2), Direction.DOWN, top);
-        show(s, u.select().position(1, 1, 2), Direction.EAST, 10);
-        show(s, u.select().position(2, 1, 1), Direction.SOUTH, 10);
-        sayAt(s, 110, u.vector().topOf(3, 4, 2), true);                                           // 4 линки
-        s.world().configureCenterOfRotation(top, u.vector().centerOf(2, 2, 2));
-        s.world().rotateSection(top, 0, 45, 0, 30);
-        s.idle(30);
-        sayAt(s, 100, u.vector().centerOf(3, 3, 2), true);                                        // 5 когда что выбрать
-        s.markAsFinished();
-    }
-
     // ------------------------------------------------------------------ привод орудия
     static void gunDrive(SceneBuilder builder, SceneBuildingUtil u) {
         CreateSceneBuilder s = new CreateSceneBuilder(builder);

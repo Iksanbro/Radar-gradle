@@ -5,7 +5,6 @@ import dev.radarfcs.core.Aim;
 import dev.radarfcs.core.AngleLimit;
 
 import dev.radarfcs.block.GunDriveBlockEntity;
-import dev.radarfcs.block.GunRotatorBlockEntity;
 import dev.radarfcs.block.SightBlockEntity;
 import dev.radarfcs.compat.SableCompat;
 import java.util.ArrayList;
@@ -22,8 +21,8 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Орудие на вращателях: прицел, вращатели и станки CBC одной орудийной сети. Вычислитель наводит не станок, а всю
- * постройку: поворачивает вращатели так, чтобы направление прицела совпало с решением. Огонь - станками CBC орудия
+ * Сборное орудие: прицел, приводы и станки CBC одной орудийной сети. Вычислитель наводит не станок, а всю постройку:
+ * приводы (на подшипники Aeronautics, валы станка) поворачивают её так, чтобы направление прицела совпало с решением. Огонь - станками CBC орудия
  * или, если их нет, сигналом редстоуна от прицела.
  */
 public final class Turret {
@@ -31,7 +30,6 @@ public final class Turret {
     @Nullable public final BlockPos sight;
     /** Ключ орудия: прицел или (без прицела) первый станок. */
     public final BlockPos key;
-    public List<BlockPos> rotators = List.of();
     public List<BlockPos> drives = List.of();
     public List<BlockPos> mounts = List.of();
     /** Орудийные сети орудия - по ним настройки (тип, автоприцел, стрельба, имя). */
@@ -64,14 +62,6 @@ public final class Turret {
         return sight != null && level.isLoaded(sight) && level.getBlockEntity(sight) instanceof SightBlockEntity s && !s.isRemoved() ? s : null;
     }
 
-    public List<GunRotatorBlockEntity> rotatorEntities(Level level) {
-        List<GunRotatorBlockEntity> out = new ArrayList<>();
-        for (BlockPos p : rotators) {
-            if (level.isLoaded(p) && level.getBlockEntity(p) instanceof GunRotatorBlockEntity r && !r.isRemoved()) out.add(r);
-        }
-        return out;
-    }
-
     public List<GunDriveBlockEntity> driveEntities(Level level) {
         List<GunDriveBlockEntity> out = new ArrayList<>();
         for (BlockPos p : drives) {
@@ -81,84 +71,13 @@ public final class Turret {
     }
 
     /**
-     * Вращатели, которые поворачивают прицел, от внешнего (основание) к внутреннему: прицел - в под-уровне последнего,
-     * тот стоит в под-уровне предыдущего и т.д. Вращатели орудия вне этой цепочки прицел не двигают.
-     */
-    public static List<GunRotatorBlockEntity> chain(Level level, BlockPos sightPos, List<GunRotatorBlockEntity> rotators) {
-        // sightPos - прицел или (без прицела) станок орудия: что поворачивается последним вращателем
-        Map<UUID, GunRotatorBlockEntity> bySub = new HashMap<>();
-        for (GunRotatorBlockEntity r : rotators) if (r.subLevel() != null) bySub.put(r.subLevel(), r);
-        List<GunRotatorBlockEntity> out = new ArrayList<>();
-        Set<UUID> seen = new HashSet<>();
-        UUID sub = SableCompat.containingId(level, sightPos);
-        while (sub != null && seen.add(sub)) {
-            GunRotatorBlockEntity r = bySub.get(sub);
-            if (r == null) break;                                   // дальше - корабль или обычный мир
-            out.add(r);
-            sub = SableCompat.containingId(level, r.getBlockPos());
-        }
-        Collections.reverse(out);
-        return out;
-    }
-
-    /**
-     * Доля ошибки прицела, на которую за тик сдвигается уставка вращателя: при запаздывании физики на тик контур
-     * x(n+1) = x(n) + g(цель - x(n-1)) устойчив при g < 1 и почти без колебаний при g около 0.3.
-     */
-    static final double AIM_GAIN = 0.15;
-    /**
-     * Насколько уставка вращателя может уйти от фактического угла сверх нужного поворота, градусов: провисание ствола
-     * и сдвиг между углом, к которому ведёт шарнир Sable, и измеренным углом (в игре - до 20° и разный от сборки к
-     * сборке). Без запаса контур упирался бы и оставлял постоянную ошибку; предел - от разгона при упоре.
-     */
-    static final double MAX_SAG = 10;
-
-    /** Итог наведения: нет вращения на нужном вращателе; направление прицела после поворота вращателей. */
-    public record Drive(boolean noPower, Vec3 after) {}
-
-    /**
-     * Повернуть вращатели цепочки, чтобы прицел смотрел в want. Замкнутый контур по направлению прицела:
-     * для каждого вращателя (от внешнего) поворот - угол между проекциями направления прицела и нужного направления на
-     * плоскость, перпендикулярную его оси; поворот внешнего учитывается в направлении прицела и осях внутренних.
-     * Угол вращателя = его уставка + доля {@link #AIM_GAIN} поворота (интегральный контур). Раньше было «фактический
-     * угол + весь поворот»: физика Sable отвечает с запаздыванием, тяжёлый ствол на лёгкой поворотной части качает её,
-     * фактический угол скачет - и команда металась на ±5° за тик, раскачивая орудие. Уставка не уходит от фактического
-     * угла дальше, чем на поворот плюс {@link #MAX_SAG} (провисание ствола выбирается, но без разгона при упоре).
-     */
-    public static Drive aim(List<GunRotatorBlockEntity> chain, Vec3 sightDir, Vec3 want, double deadband) {
-        Vec3 s = sightDir.normalize(), d = want.normalize();
-        List<Vec3> axes = new ArrayList<>();
-        for (GunRotatorBlockEntity r : chain) axes.add(r.worldAxis().normalize());
-        boolean noPower = false;
-        for (int i = 0; i < chain.size(); i++) {
-            GunRotatorBlockEntity r = chain.get(i);
-            Vec3 a = axes.get(i);
-            double delta = signedAngle(s, d, a);
-            double deg = Math.toDegrees(delta);
-            double angle = r.angle();
-            if (Double.isNaN(angle)) continue;
-            if (Math.abs(deg) > deadband) {
-                double w = r.target() + AIM_GAIN * deg;
-                double lim = Math.abs(deg) + MAX_SAG;
-                w = angle + Math.max(-lim, Math.min(lim, Aim.wrap180(w - angle)));
-                r.setWant(w);
-                if (r.degPerTick() <= 0) noPower = true;
-            }
-            // поворот этого вращателя уносит прицел и оси внутренних вращателей
-            s = rotate(s, a, delta);
-            for (int j = i + 1; j < axes.size(); j++) axes.set(j, rotate(axes.get(j), a, delta));
-        }
-        return new Drive(noPower, s);
-    }
-
-    /**
      * Приводы орудия (выдают вращение - на подшипник, вал станка CBC...): курс - вокруг «верха» основания привода
      * курса, наклон - вокруг горизонтали, перпендикулярной направлению наведения. Выход привода пропорционален
      * нужному повороту (дойти примерно за {@link #DRIVE_TICKS} тиков) по выученному отклику; отклик учится по тому,
      * как на самом деле повернулось направление наведения за прошлый тик.
      *
      * @param aim   фактическое направление наведения (прицел или ствол)
-     * @param after направление после поворота вращателей Sable (если их нет - то же aim)
+     * @param after направление наведения для команды (обычно то же aim)
      * @return true - нужному приводу не подано вращение
      */
     public boolean drive(Level level, List<GunDriveBlockEntity> list, Vec3 aim, Vec3 after, Vec3 want, double deadband, long now) {
