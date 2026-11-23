@@ -654,12 +654,11 @@ public class LinkGameTests {
                 case 1 -> {                                                     // издалека по дальней цели
                     Vec3 eye = h.absoluteVec(new Vec3(14.5, 2.5, 40.5)), aim = far.getBoundingBox().getCenter();
                     look(p, eye, aim);
-                    item.use(h.getLevel(), p, InteractionHand.MAIN_HAND);
-                    p.getCooldowns().removeCooldown(item);
+                    aimAndRelease(h, p, item, stack);
                     if (far.getUUID().equals(m.master().localDesignation(now))) {
                         // луч в небо - назначение остаётся
                         look(p, eye, eye.add(0, 50, 5));
-                        item.use(h.getLevel(), p, InteractionHand.MAIN_HAND);
+                        aimAndRelease(h, p, item, stack);
                         if (!far.getUUID().equals(m.master().localDesignation(now))) h.fail("empty beam changed the designation");
                         phase.set(2);
                     } else if (t > 300) {
@@ -676,6 +675,13 @@ public class LinkGameTests {
                 default -> { }
             }
         });
+    }
+
+    /** ПКМ целеуказателем: прицеливание (предмет в использовании) и отпускание - назначение. */
+    private static void aimAndRelease(GameTestHelper h, Player p, dev.radarfcs.item.LaserDesignatorItem item, ItemStack stack) {
+        item.use(h.getLevel(), p, InteractionHand.MAIN_HAND);
+        if (!p.isUsingItem()) throw new GameTestAssertException("designator is not aiming after right-click");
+        p.releaseUsingItem();
     }
 
     /** Поставить игрока глазами в eye и повернуть к точке target. */

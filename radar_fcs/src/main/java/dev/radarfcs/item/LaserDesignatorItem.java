@@ -34,10 +34,11 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3f;
 
 /**
- * Лазерный целеуказатель: Shift+ПКМ по монитору радара - привязать к нему; ПКМ - луч до {@link #RANGE} блоков,
- * цель на луче (сущность, снаряд, корабль Sable) назначается на привязанном мониторе, как ПКМ по её отметке на экране
- * (вычислители сети ведут её вне очереди). Shift+ПКМ в воздух - снять назначение. Цель должна быть видна радарам
- * сети монитора.
+ * Лазерный целеуказатель: Shift+ПКМ по монитору радара - привязать к нему. ПКМ держать - прицеливание (как подзорная
+ * труба: приближение, сетка прицела, см. {@code client/DesignatorClient}); отпустить - луч до {@link #RANGE} блоков,
+ * цель под перекрестием (сущность, снаряд, корабль Sable) назначается на привязанном мониторе, как ПКМ по её отметке
+ * на экране (вычислители сети ведут её вне очереди). Shift+ПКМ в воздух - снять назначение. Цель должна быть видна
+ * радарам сети монитора.
  */
 public class LaserDesignatorItem extends Item {
     /** Дальность луча, блоков (по загруженным чанкам). */
@@ -67,20 +68,54 @@ public class LaserDesignatorItem extends Item {
         return InteractionResult.sidedSuccess(level.isClientSide);
     }
 
+    /** Прицеливание - как у подзорной трубы (поза руки у глаза в третьем лице). */
+    @Override
+    public net.minecraft.world.item.UseAnim getUseAnimation(ItemStack stack) {
+        return net.minecraft.world.item.UseAnim.SPYGLASS;
+    }
+
+    @Override
+    public int getUseDuration(ItemStack stack, net.minecraft.world.entity.LivingEntity entity) {
+        return 72000;
+    }
+
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player p, InteractionHand hand) {
         ItemStack stack = p.getItemInHand(hand);
-        if (level.isClientSide) return InteractionResultHolder.success(stack);
-        ServerLevel sl = (ServerLevel) level;
+        if (p.isShiftKeyDown()) {
+            // Shift+ПКМ в воздух - снять назначение
+            if (level instanceof ServerLevel sl) {
+                RadarMonitorBlockEntity mon = monitor(sl, stack);
+                if (mon == null) unboundMessage(p, stack);
+                else mon.designate(null, p);
+            }
+            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
+        }
+        // ПКМ держать - прицеливаться, отпустить - назначить цель под перекрестием
+        p.playSound(SoundEvents.SPYGLASS_USE, 1.0f, 1.0f);
+        p.startUsingItem(hand);
+        return InteractionResultHolder.consume(stack);
+    }
+
+    @Override
+    public void releaseUsing(ItemStack stack, Level level, net.minecraft.world.entity.LivingEntity entity, int timeLeft) {
+        if (entity instanceof Player p) {
+            p.playSound(SoundEvents.SPYGLASS_STOP_USING, 1.0f, 1.0f);
+            if (level instanceof ServerLevel sl) designate(sl, p, stack);
+        }
+    }
+
+    private static void unboundMessage(Player p, ItemStack stack) {
+        p.displayClientMessage(Component.translatable(bound(stack) == null ? "radar_fcs.designator.unbound"
+                : "radar_fcs.designator.no_monitor").withStyle(ChatFormatting.GOLD), true);
+    }
+
+    /** Луч от глаз игрока и назначение цели на нём (сервер). */
+    public void designate(ServerLevel sl, Player p, ItemStack stack) {
         RadarMonitorBlockEntity mon = monitor(sl, stack);
         if (mon == null) {
-            p.displayClientMessage(Component.translatable(bound(stack) == null ? "radar_fcs.designator.unbound"
-                    : "radar_fcs.designator.no_monitor").withStyle(ChatFormatting.GOLD), true);
-            return InteractionResultHolder.fail(stack);
-        }
-        if (p.isShiftKeyDown()) {
-            mon.designate(null, p);                                        // снять назначение
-            return InteractionResultHolder.success(stack);
+            unboundMessage(p, stack);
+            return;
         }
         Vec3 eye = p.getEyePosition();
         Vec3 end = eye.add(p.getLookAngle().scale(RANGE));
@@ -89,23 +124,19 @@ public class LaserDesignatorItem extends Item {
         sl.playSound(null, p.blockPosition(), SoundEvents.NOTE_BLOCK_HAT.value(), SoundSource.PLAYERS, 0.6f, 1.8f);
         if (aim.ids().isEmpty()) {
             p.displayClientMessage(Component.translatable("radar_fcs.designator.nothing").withStyle(ChatFormatting.GRAY), true);
-            return InteractionResultHolder.consume(stack);
+            return;
         }
         for (UUID id : aim.ids()) {
-            if (mon.designateTracked(id, p)) {
-                p.getCooldowns().addCooldown(this, 10);
-                return InteractionResultHolder.consume(stack);
-            }
+            if (mon.designateTracked(id, p)) return;
         }
         p.displayClientMessage(Component.translatable("radar_fcs.designator.not_tracked").withStyle(ChatFormatting.GOLD), true);
-        return InteractionResultHolder.consume(stack);
     }
 
     /** Что под лучом: точка конца и id возможных целей по порядку (сущность, затем корабль, на котором она). */
-    record Aim(Vec3 point, List<UUID> ids) {}
+    public record Aim(Vec3 point, List<UUID> ids) {}
 
     /** Луч от глаз игрока: блоки мира (только загруженные чанки), постройки Sable, сущности с допуском по дальности. */
-    static Aim trace(ServerLevel sl, Player p, Vec3 eye, Vec3 end) {
+    public static Aim trace(ServerLevel sl, Player p, Vec3 eye, Vec3 end) {
         BlockHitResult bh = SableCompat.plain(sl).clip(new ClipContext(eye, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE,
                 CollisionContext.empty()));
         Vec3 stop = bh.getType() == HitResult.Type.MISS ? end : bh.getLocation();
