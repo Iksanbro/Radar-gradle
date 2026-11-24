@@ -42,7 +42,9 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
 
     /** Сводка для очков инженера и экрана. */
     public enum Status {
-        NO_CONNECTOR, IDLE, RESERVED, EXTENDED, LOCKED;
+        NO_CONNECTOR, IDLE, RESERVED, EXTENDED, LOCKED,
+        /** Порт под сигналом редстоуна: пристыкован - расстыковка запрещена / свободен - стыковка запрещена. */
+        HELD_DOCKED, HELD_CLOSED;
 
         public String key() {
             return "radar_fcs.docking.status." + name().toLowerCase(Locale.ROOT);
@@ -50,6 +52,9 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
     }
 
     public Docking.Role role = Docking.Role.PORT;
+    /** Порт под сигналом редстоуна; был ли он сцеплен (null - сигнала нет). */
+    private boolean held;
+    @Nullable private Boolean heldLocked;
     public int number = 1;
     /** Дистанция обхода, бл: точка выхода на прямую перед портом; ближе корабль не подходит, пока не выйдет на ось. */
     public double approach = Docking.APPROACH_DIST;
@@ -203,19 +208,26 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
             status = Status.NO_CONNECTOR;
         } else if (role == Docking.Role.PORT) {
             DockingRegistry.Reservation r = DockingRegistry.reservation(level, worldPosition, now);
-            extend = r != null && r.extend();
+            // сигнал редстоуна держит порт как есть: пристыкован - порты выдвинуты (расстыковка запрещена), свободен -
+            // не выдвигается (стыковка запрещена, мост ищет другой порт или ждёт); сцепку смотрим раз в полсекунды
+            boolean wasHeld = held;
+            held = level.hasNeighborSignal(worldPosition);
+            if (held && (sync || heldLocked == null)) heldLocked = locked();
+            if (!held) heldLocked = null;
+            extend = held ? Boolean.TRUE.equals(heldLocked) : r != null && r.extend();
             if (now - lastNetworks >= 20) {
                 lastNetworks = now;
                 networks = Set.copyOf(LinkRegistry.networksOf(level, worldPosition));
             }
             // занятый порт (корабль подходит) - положение каждый тик, иначе раз в полсекунды
-            if (r != null || now - lastPut >= 10) {
+            if (r != null || held != wasHeld || now - lastPut >= 10) {
                 lastPut = now;
                 DockingRegistry.PortInfo info = describe(level, facing);
                 if (info != null) DockingRegistry.put(level, info);
             }
             // сцепку (рефлексия по каждому порту) - только для сводки, раз в полсекунды
-            if (sync) status = locked() ? Status.LOCKED : extend ? Status.EXTENDED : r != null ? Status.RESERVED : Status.IDLE;
+            if (sync) status = held ? (Boolean.TRUE.equals(heldLocked) ? Status.HELD_DOCKED : Status.HELD_CLOSED)
+                    : locked() ? Status.LOCKED : extend ? Status.EXTENDED : r != null ? Status.RESERVED : Status.IDLE;
         } else {
             extend = now <= extendUntil;
             if (sync) status = locked() ? Status.LOCKED : extend ? Status.EXTENDED : Status.IDLE;
@@ -270,7 +282,7 @@ public class DockingControllerBlockEntity extends BlockEntity implements IHaveGo
         }
         Vec3 v = SableCompat.pointVelocity(level, ship, tip).scale(20);
         return new DockingRegistry.PortInfo(worldPosition, number, networks, new Vec(w.x, w.y, w.z), new Vec(f.x, f.y, f.z).normalize(),
-                new Vec(v.x, v.y, v.z), ship == null ? null : ship.getUniqueId(), locked(), true, List.copyOf(wt), approach);
+                new Vec(v.x, v.y, v.z), ship == null ? null : ship.getUniqueId(), locked(), true, List.copyOf(wt), approach, held);
     }
 
     @Override

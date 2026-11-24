@@ -97,7 +97,8 @@ public final class DesignatorClient {
     private static Vec3 hitPoint(Minecraft mc, Player p, Vec3 eye, Vec3 look, float pt) {
         Vec3 end = eye.add(look.scale(RANGE));
         HitResult block = p.pick(RANGE, pt, false);
-        Vec3 stop = block.getType() == HitResult.Type.MISS ? end : block.getLocation();
+        // попадание в постройку Sable - точка в координатах её плота: перевести в мир
+        Vec3 stop = block.getType() == HitResult.Type.MISS ? end : dev.radarfcs.compat.SableCompat.toWorld(p.level(), block.getLocation());
         EntityHitResult eh = ProjectileUtil.getEntityHitResult(p, eye, stop, new AABB(eye, stop).inflate(1.0),
                 e -> !e.isSpectator() && e != p, eye.distanceToSqr(stop));
         return eh != null ? eh.getLocation() : stop;
@@ -153,7 +154,8 @@ public final class DesignatorClient {
         float pt = event.getPartialTick().getGameTimeDeltaPartialTick(true);
         Vec3 eye = mc.player.getEyePosition(pt), end = eye.add(mc.player.getViewVector(pt).scale(RANGE));
         HitResult block = mc.player.pick(RANGE, pt, false);
-        Vec3 stop = block.getType() == HitResult.Type.MISS ? end : block.getLocation();
+        // попадание в постройку Sable - точка в координатах её плота (дальность была бы в миллионах блоков): в мир
+        Vec3 stop = block.getType() == HitResult.Type.MISS ? end : dev.radarfcs.compat.SableCompat.toWorld(mc.level, block.getLocation());
         EntityHitResult eh = ProjectileUtil.getEntityHitResult(mc.player, eye, stop, new AABB(eye, stop).inflate(1.0),
                 e -> !e.isSpectator() && e != mc.player, eye.distanceToSqr(stop));
         String dist;

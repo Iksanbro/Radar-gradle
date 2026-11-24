@@ -63,6 +63,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         DOCK_TILT, DOCKED, DOCK_DEPART,
         /** Стыковка: расстановка портов корабля не совпадает с расстановкой портов стыковки (сядет не на все). */
         DOCK_LAYOUT,
+        /** Пристыкован, расстыковка запрещена: порт держат сигналом редстоуна. */
+        DOCK_HELD,
         /** Цели нет: висит на месте / летит по орбите / орбита вокруг маяка, а маяка в сети нет (висит). */
         IDLE_HOVER, IDLE_ORBIT, IDLE_NO_BEACON;
 

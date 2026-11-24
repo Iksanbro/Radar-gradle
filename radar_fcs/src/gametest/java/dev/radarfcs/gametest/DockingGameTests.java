@@ -614,7 +614,21 @@ public class DockingGameTests {
                     if (b.state() != AutopilotBlockEntity.State.DOCKED || plug[0].lockedCount() < 2) {
                         h.fail("ship undocked after the pause: " + b.state() + ", locked " + plug[0].lockedCount());
                     }
-                    b.dockTrigger = Docking.Trigger.OFF;                    // стыковка выключена - расстыковка
+                    // сигнал на порт - расстыковка запрещена: стыковку выключили, а корабль остаётся пристыкованным
+                    level.setBlock(h.absolutePos(new BlockPos(15, 0, 31)), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
+                    phase.set(6);
+                    since.set(t);
+                }
+                case 6 -> {
+                    if (t - since.get() < 5) DockingRegistry.reserve(level, portPos, plug[0].key(), now, true);
+                    if (t - since.get() == 5) b.dockTrigger = Docking.Trigger.OFF;
+                    if (t - since.get() < 25) return;
+                    FcsMod.LOG.info("[radar_fcs test] docking: port held by redstone - {} locked {} port {}", b.state(),
+                            plug[0].lockedCount(), port.status());
+                    if (b.state() != AutopilotBlockEntity.State.DOCK_HELD) h.fail("expected DOCK_HELD with the port held, got " + b.state());
+                    if (plug[0].lockedCount() < 2) h.fail("held port let the ship undock");
+                    if (port.status() != DockingControllerBlockEntity.Status.HELD_DOCKED) h.fail("port status " + port.status());
+                    level.removeBlock(h.absolutePos(new BlockPos(15, 0, 31)), false);   // сигнал снят - расстыковка
                     phase.set(4);
                     since.set(t);
                 }
@@ -636,6 +650,16 @@ public class DockingGameTests {
                 case 5 -> {
                     if (t - since.get() < 25) return;
                     if (b.computerLinked()) h.fail("bridge still linked to the broken flight control computer");
+                    // сигнал на свободный порт - стыковка запрещена: порт не свободен ни для какого штекера
+                    level.setBlock(h.absolutePos(new BlockPos(15, 0, 31)), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
+                    phase.set(7);
+                    since.set(t);
+                }
+                case 7 -> {
+                    if (t - since.get() < 15) return;
+                    DockingRegistry.PortInfo pi = DockingRegistry.get(level, portPos);
+                    if (port.status() != DockingControllerBlockEntity.Status.HELD_CLOSED) h.fail("free held port status " + port.status());
+                    if (pi == null || DockingRegistry.freeFor(level, pi, 12345L, now)) h.fail("held free port still offered for docking: " + pi);
                     h.succeed();
                 }
                 default -> { }

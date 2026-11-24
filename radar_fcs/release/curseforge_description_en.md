@@ -24,6 +24,7 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 - **Radar Links** work like Create's Stock Links: everything on one network is connected — at any distance.
 - Multiblock **Radar Monitor**: a live **map** with radar beams synced to the radar's rotation, target icons, names, friendly/hostile colors, player pins, range scale and a full GUI (designate a target, exclude a target, filters, zoom up to 1,000,000 blocks).
 - Pick a target on your monitor (or on a Create: Radars monitor) — the guns engage it out of turn.
+- **Laser Target Designator**: bind it to a monitor, aim like a spyglass (zoom, laser beam, target name and range) and designate a mob, projectile or ship block from afar.
 - **Memory Blocks** extend list capacity and network size.
 
 ### 🛡️ IFF Transponders (friend or foe)
@@ -36,7 +37,8 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 - Choose which guns each camera controls. Works with targets on moving Sable ships, with lead.
 
 ### 🔧 Custom guns (Create Aeronautics / Sable)
-- Build your own turret on **Swivel Bearings**: a **Sight**, **Gun Drives** (yaw and pitch from any shafts, gear ratio learned automatically), **Gun Rotators** and **Gun Links** that join all parts into one gun.
+- Build your own turret on **Swivel Bearings** or this mod's **Gun Bearings**: a **Sight**, **Gun Drives** (yaw and pitch from any shafts, gear ratio learned automatically) and **Gun Links** that join all parts into one gun.
+- **Gun Bearing** (crafted from an Aeronautics Swivel Bearing and 4 springs): works like the Aeronautics swivel bearing — cog ring, shaft through the plate, lock modes — but damps inertia, so the turret does not overshoot or sway even with a heavy barrel.
 - Gun settings: type (autocannon, medium, big, custom), auto-aim on/off, firing on/off, main cannon, name.
 
 ### 🛩️ Autopilot Bridge (requires Create: Flight Control)
@@ -50,6 +52,7 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 - One block, two roles: **port** (next to the connectors ships dock to — ground, station, another ship) and **plug** (on the ship next to its own connectors). Up to **8 Docking Connectors** per controller, linked with the Flight Control Tool Gun and highlighted like Flight Control links.
 - The bridge takes the ship to the **nearest free port with the plug's number**, turning in advance so every connector meets its own port, keeping the **clearance distance** and flying around the port until it is on the port axis. Controllers extend the connectors; the connectors lock on their own.
 - When to dock: when there is no target or on a redstone signal. While docked, the ship's Flight Control engines are off and its guns are inactive.
+- Redstone on a port controller locks it: a docked ship cannot undock, a free port cannot be docked to.
 
 ### 💥 Shell & rocket interception (requires CBC Interception)
 - Shoots down incoming **big cannon shells** and **rockets** (CBC, CBC Advanced Technologies and other addons): threat filter, types and priorities, "first to arrive first".

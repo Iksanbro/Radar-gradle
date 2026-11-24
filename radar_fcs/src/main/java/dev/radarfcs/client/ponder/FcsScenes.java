@@ -267,12 +267,14 @@ final class FcsScenes {
         ElementLink<WorldSectionElement> top = s.world().showIndependentSection(
                 u.select().fromTo(2, 3, 3, 3, 3, 4).add(u.select().position(3, 4, 3)), Direction.DOWN);
         s.idle(10);
+        s.overlay().showControls(face(u, 3, 2, 3, Direction.WEST), Pointing.LEFT, 50).rightClick();
         sayAt(s, 110, u.vector().topOf(3, 4, 3), true);                                           // 3 клей и сборка
         s.world().showSectionAndMerge(u.select().position(3, 4, 2), Direction.SOUTH, top);
         s.idle(10);
         sayAt(s, 110, face(u, 3, 4, 2, Direction.NORTH), true);                                   // 4 подшипник наклона
         s.world().showSectionAndMerge(u.select().fromTo(2, 4, 2, 2, 4, 4), Direction.DOWN, top);
         s.idle(10);
+        s.overlay().showControls(face(u, 2, 4, 3, Direction.WEST), Pointing.LEFT, 50).rightClick().whileSneaking();
         sayAt(s, 120, face(u, 2, 4, 3, Direction.WEST), true);                                    // 5 привод наклона
         ElementLink<WorldSectionElement> barrel = s.world().showIndependentSection(u.select().fromTo(3, 4, 1, 6, 4, 1), Direction.SOUTH);
         s.idle(10);
@@ -382,6 +384,133 @@ final class FcsScenes {
         s.world().rotateSection(ship, 0, 25, 0, 40);
         sayAt(s, 130, bridge, false);                                                             // 6 режимы
         sayAt(s, 90, u.vector().topOf(3, 3, 2), false);                                           // 7 редстоун, очки
+        s.markAsFinished();
+    }
+
+    // ------------------------------------------------------------------ подшипник орудия
+    static void gunBearing(SceneBuilder builder, SceneBuildingUtil u) {
+        CreateSceneBuilder s = new CreateSceneBuilder(builder);
+        s.title("gun_bearing", "");
+        s.configureBasePlate(0, 0, 7);
+        s.showBasePlate();
+        s.idle(10);
+        show(s, u.select().position(3, 1, 3), Direction.DOWN, 10);
+        sayAt(s, 110, face(u, 3, 1, 3, Direction.WEST), true);                                    // 1 подшипник
+        show(s, u.select().fromTo(2, 0, 3, 2, 1, 3), Direction.DOWN, 10);
+        Selection cog = u.select().fromTo(2, 0, 3, 2, 1, 3);
+        s.world().setKineticSpeed(cog, 32);
+        sayAt(s, 110, face(u, 2, 1, 3, Direction.WEST), true);                                    // 2 кольцо-шестерня
+        s.world().setKineticSpeed(cog, 0);
+        ElementLink<WorldSectionElement> part = s.world().showIndependentSection(
+                u.select().fromTo(2, 2, 2, 4, 2, 4).add(u.select().fromTo(3, 3, 3, 5, 3, 3)), Direction.DOWN);
+        s.idle(15);
+        s.overlay().showControls(face(u, 3, 1, 3, Direction.WEST), Pointing.LEFT, 50).rightClick();
+        sayAt(s, 120, u.vector().topOf(3, 2, 3), true);                                           // 3 сборка, пластина
+        s.world().setKineticSpeed(cog, 32);
+        s.world().configureCenterOfRotation(part, u.vector().centerOf(3, 2, 3));
+        s.world().rotateSection(part, 0, 90, 0, 60);
+        s.idle(60);
+        s.world().setKineticSpeed(cog, 0);
+        sayAt(s, 120, u.vector().topOf(4, 3, 3), true);                                           // 4 гасит инерцию
+        show(s, u.select().position(3, 0, 3), Direction.UP, 10);
+        s.world().setKineticSpeed(u.select().position(3, 0, 3), 64);
+        sayAt(s, 100, face(u, 3, 1, 3, Direction.NORTH), true);                                   // 5 вал насквозь
+        show(s, u.select().position(3, 1, 2), Direction.SOUTH, 10);
+        s.overlay().showControls(face(u, 3, 1, 3, Direction.NORTH), Pointing.DOWN, 60).rightClick();
+        s.world().toggleRedstonePower(u.select().position(3, 1, 2));
+        s.effects().indicateRedstone(new BlockPos(3, 1, 2));
+        sayAt(s, 130, face(u, 3, 1, 3, Direction.NORTH), true);                                   // 6 блокировка
+        sayAt(s, 120, u.vector().topOf(4, 3, 3), false);                                          // 7 упор, редуктор, предел
+        s.markAsFinished();
+    }
+
+    // ------------------------------------------------------------------ стыковочный контроллер (Create: Flight Control)
+    static void docking(SceneBuilder builder, SceneBuildingUtil u) {
+        CreateSceneBuilder s = new CreateSceneBuilder(builder);
+        s.title("docking", "");
+        s.configureBasePlate(0, 0, 7);
+        s.showBasePlate();
+        s.idle(10);
+        show(s, u.select().position(1, 1, 3), Direction.DOWN, 5);
+        show(s, u.select().position(3, 1, 2).add(u.select().position(3, 1, 4)), Direction.DOWN, 10);
+        Vec3 ctrl = u.vector().topOf(1, 1, 3);
+        s.overlay().showControls(ctrl, Pointing.DOWN, 50).rightClick();
+        sayAt(s, 110, ctrl, true);                                                                // 1 роль
+        ItemStack gun = stack(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("create_flight_control", "flight_control_tool_gun")));
+        s.overlay().showControls(ctrl, Pointing.DOWN, 40).rightClick().withItem(gun);
+        s.idle(20);
+        s.overlay().showControls(u.vector().topOf(3, 1, 2), Pointing.DOWN, 40).rightClick().withItem(gun);
+        s.overlay().showOutline(PonderPalette.OUTPUT, "ports", u.select().position(3, 1, 2).add(u.select().position(3, 1, 4)), 110);
+        sayAt(s, 120, u.vector().topOf(3, 1, 2), true);                                           // 2 порты пистолетом
+        show(s, u.select().position(1, 2, 3), Direction.DOWN, 10);
+        sayAt(s, 110, u.vector().topOf(1, 2, 3), true);                                           // 3 номер и сеть
+        ElementLink<WorldSectionElement> ship = s.world().showIndependentSection(u.select().fromTo(2, 4, 1, 5, 6, 5), Direction.DOWN);
+        s.world().moveSection(ship, new Vec3(0, 2, 0), 0);
+        s.idle(10);
+        s.world().moveSection(ship, new Vec3(0, -2, 0), 40);
+        s.idle(40);
+        sayAt(s, 130, u.vector().topOf(5, 6, 3), true);                                           // 4 мост ведёт на стыковку
+        sayAt(s, 110, u.vector().topOf(3, 5, 3), false);                                          // 5 пристыкован
+        show(s, u.select().position(0, 1, 3), Direction.EAST, 10);
+        s.world().toggleRedstonePower(u.select().position(0, 1, 3));
+        s.effects().indicateRedstone(new BlockPos(0, 1, 3));
+        sayAt(s, 130, face(u, 1, 1, 3, Direction.WEST), true);                                    // 6 сигнал держит порт
+        s.world().toggleRedstonePower(u.select().position(0, 1, 3));
+        s.world().moveSection(ship, new Vec3(0, 2, 0), 40);
+        s.idle(40);
+        sayAt(s, 120, u.vector().topOf(3, 1, 3), true);                                           // 7 дистанция обхода
+        s.markAsFinished();
+    }
+
+    // ------------------------------------------------------------------ маяк орбиты (Create: Flight Control)
+    static void orbitBeacon(SceneBuilder builder, SceneBuildingUtil u) {
+        CreateSceneBuilder s = new CreateSceneBuilder(builder);
+        s.title("orbit_beacon", "");
+        s.configureBasePlate(0, 0, 7);
+        s.showBasePlate();
+        s.idle(10);
+        show(s, u.select().position(3, 1, 3), Direction.DOWN, 10);
+        sayAt(s, 100, face(u, 3, 1, 3, Direction.NORTH), true);                                   // 1 маяк
+        show(s, u.select().position(3, 2, 3), Direction.DOWN, 10);
+        s.overlay().showControls(face(u, 3, 1, 3, Direction.NORTH), Pointing.DOWN, 50).rightClick();
+        sayAt(s, 110, face(u, 3, 1, 3, Direction.NORTH), true);                                   // 2 сеть и код
+        ElementLink<WorldSectionElement> ship = s.world().showIndependentSection(u.select().fromTo(5, 3, 2, 6, 3, 4), Direction.DOWN);
+        s.idle(10);
+        s.world().configureCenterOfRotation(ship, u.vector().centerOf(3, 3, 3));
+        s.world().rotateSection(ship, 0, 180, 0, 100);
+        sayAt(s, 120, u.vector().topOf(5, 3, 3), true);                                           // 3 мост летит вокруг
+        s.world().rotateSection(ship, 0, 180, 0, 100);
+        sayAt(s, 110, u.vector().topOf(3, 2, 3), false);                                          // 4 маяк на корабле
+        sayAt(s, 100, u.vector().topOf(3, 2, 3), false);                                          // 5 радиус, высота, направление
+        s.markAsFinished();
+    }
+
+    // ------------------------------------------------------------------ лазерный целеуказатель
+    static void designator(SceneBuilder builder, SceneBuildingUtil u) {
+        CreateSceneBuilder s = new CreateSceneBuilder(builder);
+        s.title("designator", "");
+        s.configureBasePlate(0, 0, 7);
+        s.showBasePlate();
+        s.idle(10);
+        show(s, u.select().fromTo(1, 1, 1, 2, 2, 1), Direction.DOWN, 5);
+        show(s, u.select().fromTo(5, 1, 1, 5, 2, 1), Direction.DOWN, 10);
+        ItemStack des = stack(FcsRegistry.LASER_DESIGNATOR.get());
+        Vec3 mon = face(u, 1, 1, 1, Direction.SOUTH);
+        s.overlay().showControls(mon, Pointing.DOWN, 50).rightClick().whileSneaking().withItem(des);
+        sayAt(s, 110, mon, true);                                                                 // 1 привязка к монитору
+        show(s, u.select().position(5, 1, 5), Direction.DOWN, 10);
+        Vec3 eye = new Vec3(0.5, 2.6, 6.5), target = u.vector().centerOf(5, 1, 5);
+        s.overlay().showControls(eye, Pointing.UP, 60).rightClick().withItem(des);
+        s.overlay().showLine(PonderPalette.GREEN, eye, target, 100);
+        sayAt(s, 110, eye, true);                                                                 // 2 прицеливание
+        s.overlay().showControls(eye, Pointing.UP, 40).leftClick().withItem(des);
+        s.overlay().showLine(PonderPalette.RED, eye, target, 60);
+        s.overlay().showOutline(PonderPalette.RED, "target", u.select().position(5, 1, 5), 100);
+        sayAt(s, 120, target, true);                                                              // 3 назначить
+        s.overlay().showControls(eye, Pointing.UP, 40).leftClick().withItem(des);
+        sayAt(s, 100, eye, true);                                                                 // 4 снять
+        sayAt(s, 100, face(u, 5, 1, 1, Direction.SOUTH), false);                                  // 5 видна радарам
         s.markAsFinished();
     }
 }

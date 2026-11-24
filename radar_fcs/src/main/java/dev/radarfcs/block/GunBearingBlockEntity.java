@@ -149,6 +149,10 @@ public class GunBearingBlockEntity extends KineticBlockEntity implements ExtraKi
     private long stepTick = Long.MIN_VALUE;
     @Nullable private Object handle;
     private ScrollOptionBehaviour<LockMode> lockMode;
+    /** Поворачиваемые под-уровни и их момент инерции (пересчёт раз в тик). */
+    private final List<UUID> parts = new java.util.ArrayList<>();
+    private double inertia = 10;
+    private long partsTick = Long.MIN_VALUE;
 
     public GunBearingBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
@@ -338,10 +342,14 @@ public class GunBearingBlockEntity extends KineticBlockEntity implements ExtraKi
         double pt = Math.max(0, Math.min(1, SableRotor.partialPhysicsTick(sl)));
         double delta = Aim.wrap180(target - lastTarget);
         double goal = lastTarget + delta * pt;
-        List<UUID> parts = new java.util.ArrayList<>();
-        parts.add(subLevel);
-        for (int i = 0; i < parts.size() && parts.size() < 32; i++) parts.addAll(childSubs(sl, parts.get(i)));
-        double inertia = Math.max(10, SableRotor.inertia(sl, worldPosition, facing(), parts));
+        // что поворачивается и его момент инерции - раз в тик (поиск вложенных подшипников и масс - не на каждом шаге)
+        if (partsTick != stepTick) {
+            partsTick = stepTick;
+            parts.clear();
+            parts.add(subLevel);
+            for (int i = 0; i < parts.size() && parts.size() < 32; i++) parts.addAll(childSubs(sl, parts.get(i)));
+            inertia = Math.max(10, SableRotor.inertia(sl, worldPosition, facing(), parts));
+        }
         double k = OMEGA * OMEGA * inertia, c = 2 * ZETA * OMEGA * inertia;
         // упреждение: на ходу демпфер тянет назад на c/k·скорость - цель на столько же вперёд
         double rate = Math.toRadians(delta) * 20;

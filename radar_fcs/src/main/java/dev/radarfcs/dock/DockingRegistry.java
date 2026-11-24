@@ -22,7 +22,7 @@ import org.jetbrains.annotations.Nullable;
 public final class DockingRegistry {
     /** Порт: контроллер pos, номер, сети, конец порта и направление (мир), скорость (бл/с), корабль порта, сцеплен ли. */
     public record PortInfo(BlockPos pos, int number, Set<UUID> networks, Vec tip, Vec facing, Vec vel, @Nullable UUID ship,
-                           boolean locked, boolean loaded, List<Vec> tips, double clearance) {
+                           boolean locked, boolean loaded, List<Vec> tips, double clearance, boolean held) {
         public Docking.Port port() {
             return new Docking.Port(tip, facing, vel, tips, clearance);
         }
@@ -60,7 +60,7 @@ public final class DockingRegistry {
         Map<BlockPos, PortInfo> m = PORTS.get(level.dimension());
         if (m == null) return;
         m.computeIfPresent(pos, (k, p) -> new PortInfo(p.pos(), p.number(), p.networks(), p.tip(), p.facing(), Vec.ZERO, p.ship(),
-                p.locked(), false, p.tips(), p.clearance()));
+                p.locked(), false, p.tips(), p.clearance(), p.held()));
     }
 
     @Nullable
@@ -98,6 +98,7 @@ public final class DockingRegistry {
 
     /** Порт свободен для штекера owner: не занят чужой бронью и не сцеплен (сцеплен с ним самим - его). */
     public static boolean freeFor(Level level, PortInfo p, long owner, long now) {
+        if (p.held() && !p.locked()) return false;                      // сигнал редстоуна на свободном порту - стыковка запрещена
         Reservation r = reservation(level, p.pos(), now);
         if (r != null) return r.owner() == owner;
         return !p.locked();
@@ -130,6 +131,21 @@ public final class DockingRegistry {
             }
         }
         return bestFree != null ? new Choice(bestFree, true) : new Choice(bestAny, false);
+    }
+
+    /**
+     * Сцепленный порт держат сигналом редстоуна (расстыковка запрещена): порт pos или, если он неизвестен, сцепленный порт
+     * с концом не дальше 3 блоков от середины портов корабля tip.
+     */
+    public static boolean heldDocked(Level level, @Nullable BlockPos pos, Vec tip) {
+        Map<BlockPos, PortInfo> m = PORTS.get(level.dimension());
+        if (m == null) return false;
+        if (pos != null) {
+            PortInfo p = m.get(pos);
+            return p != null && p.held() && p.locked();
+        }
+        for (PortInfo p : m.values()) if (p.held() && p.locked() && p.tip().distanceSqr(tip) < 9) return true;
+        return false;
     }
 
     /** Занять (продлить) порт за штекером owner; extend - выдвигать порт. */

@@ -55,10 +55,23 @@ public final class FcsPonderPlugin implements PonderPlugin {
         var gun = helper.forComponents(id(FcsRegistry.SIGHT.get()), id(FcsRegistry.GUN_LINK_ITEM.get()), id(FcsRegistry.GUN_DRIVE.get()));
         if (swivel) gun.addStoryBoard("swivel_turret", FcsScenes::swivelTurret, TAG);
         gun.addStoryBoard("gun_drive", FcsScenes::gunDrive, TAG);
-        // мост автопилота - только с Create: Flight Control
+        if (swivel) {
+            helper.forComponents(id(dev.radarfcs.block.GunBearings.ITEM.get()))
+                    .addStoryBoard("gun_bearing", FcsScenes::gunBearing, TAG)
+                    .addStoryBoard("swivel_turret", FcsScenes::swivelTurret, TAG);
+        }
+        helper.forComponents(id(FcsRegistry.LASER_DESIGNATOR.get()))
+                .addStoryBoard("designator", FcsScenes::designator, TAG);
+        // мост автопилота, стыковочный контроллер и маяк орбиты - только с Create: Flight Control
         if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) {
             helper.forComponents(id(dev.radarfcs.compat.flight.FlightBridge.ITEM.get()))
-                    .addStoryBoard("flight_bridge", FcsScenes::flightBridge, TAG);
+                    .addStoryBoard("flight_bridge", FcsScenes::flightBridge, TAG)
+                    .addStoryBoard("docking", FcsScenes::docking, TAG)
+                    .addStoryBoard("orbit_beacon", FcsScenes::orbitBeacon, TAG);
+            helper.forComponents(id(dev.radarfcs.block.DockingBlocks.ITEM.get()))
+                    .addStoryBoard("docking", FcsScenes::docking, TAG);
+            helper.forComponents(id(dev.radarfcs.block.DockingBlocks.BEACON_ITEM.get()))
+                    .addStoryBoard("orbit_beacon", FcsScenes::orbitBeacon, TAG);
         }
     }
 
@@ -83,6 +96,12 @@ public final class FcsPonderPlugin implements PonderPlugin {
                 .add(id(FcsRegistry.SIGHT.get()))
                 .add(id(FcsRegistry.GUN_LINK_ITEM.get()))
                 .add(id(FcsRegistry.GUN_DRIVE.get()));
-        if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) helper.addToTag(TAG).add(id(dev.radarfcs.compat.flight.FlightBridge.ITEM.get()));
+        helper.addToTag(TAG).add(id(FcsRegistry.LASER_DESIGNATOR.get()));
+        if (dev.radarfcs.compat.Mods.SIMULATED) helper.addToTag(TAG).add(id(dev.radarfcs.block.GunBearings.ITEM.get()));
+        if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) {
+            helper.addToTag(TAG).add(id(dev.radarfcs.compat.flight.FlightBridge.ITEM.get()))
+                    .add(id(dev.radarfcs.block.DockingBlocks.ITEM.get()))
+                    .add(id(dev.radarfcs.block.DockingBlocks.BEACON_ITEM.get()));
+        }
     }
 }

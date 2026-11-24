@@ -214,8 +214,12 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
                 driveState = dockSteer(level, cc, now);
                 return;
             }
-            // пауза пристыкованного корабля - остаётся пристыкованным (пауза отпускает управление, а не расстыковывает)
-            if (paused && wasLocked && holdDocked(level, now)) return;
+            // пауза пристыкованного корабля - остаётся пристыкованным (пауза отпускает управление, а не расстыковывает);
+            // порт стыковки держат сигналом редстоуна - расстыковка запрещена
+            if (wasLocked && (paused || portHeld(level)) && holdDocked(level, now)) {
+                if (!paused) driveState = State.DOCK_HELD;
+                return;
+            }
             endDock(level, now);
             if (now < departUntil && cc != null && departDir != null) {        // отход от порта после расстыковки
                 State ds = depart(level, cc);
@@ -495,6 +499,16 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
     private void summary(DockingRegistry.PortInfo p, Vec tip) {
         dockName = String.valueOf(p.number());
         dockDist = p.tip().distance(tip);
+    }
+
+    /** Порт, к которому пристыкован корабль, держат сигналом редстоуна (расстыковываться нельзя). */
+    private boolean portHeld(ServerLevel level) {
+        DockingControllerBlockEntity plug = plug(level);
+        if (plug == null) return false;
+        Vec3 lt = plug.localTip();
+        if (lt == null) return false;
+        Vec3 wt = SableCompat.toWorld(level, lt);
+        return DockingRegistry.heldDocked(level, dockTarget, new Vec(wt.x, wt.y, wt.z));
     }
 
     /** Держать сцепку на паузе: порты выдвинуты, порт стыковки занят, корабль отмечен; false - уже не сцеплен. */

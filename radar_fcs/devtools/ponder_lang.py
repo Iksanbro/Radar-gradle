@@ -369,6 +369,141 @@ SCENES = {
 }
 
 
+
+# ---------------------------------------------------------------- 1.1: правки и новые сцены
+SCENES.pop('gun_rotator', None)                      # вращатель орудия убран
+
+
+def _set(scene, n, ru, en):
+    SCENES[scene][1][n - 1] = (ru, en)
+
+
+_set('swivel_turret', 1,
+     'Своё орудие на Sable строится на подшипниках орудия (есть с Create Aeronautics; подшипники Aeronautics тоже подходят). '
+     'Курс — подшипник выходом вверх',
+     'A custom Sable gun is built on Gun Bearings (available with Create Aeronautics; Aeronautics Swivel Bearings work too). '
+     'Yaw: a bearing facing up')
+_set('swivel_turret', 2,
+     'Подшипник крутит его встроенное кольцо-шестерня. Вращение подаёт привод орудия в режиме «курс» — через шестерню рядом. '
+     'Скорость и направление выхода привода задаёт вычислитель',
+     'The bearing is turned by its built-in cog ring. A Gun Drive in yaw mode feeds it through a cogwheel next to it; the '
+     'computer sets the drive output speed and direction')
+_set('swivel_turret', 3,
+     'Поворотную часть выделите суперклеем. ПКМ пустой рукой по подшипнику собирает её на пластину подшипника (или он '
+     'соберётся сам, когда закрутится кольцо)',
+     'Select the rotating part with Super Glue. Right-click the bearing with an empty hand to assemble it onto the bearing '
+     'plate (or it assembles itself once its ring starts turning)')
+_set('swivel_turret', 5,
+     'Подшипник наклона крутит второй привод: Shift+ПКМ по приводу — режим «наклон». Вращение на поворотную часть можно '
+     'провести валом сквозь подшипник курса',
+     'A second drive turns the pitch bearing: Shift+right-click the drive for pitch mode. Rotation can reach the rotating '
+     'part through a shaft passing through the yaw bearing')
+_set('gun_drive', 2,
+     'Shift+ПКМ пустой рукой — режим привода: курс (↔) или наклон (↕)',
+     'Shift+right-click with an empty hand to switch the drive between yaw (↔) and pitch (↕)')
+_set('camera', 4,
+     'Пока вы смотрите, автоприцеливание орудий сети на паузе: они наводятся туда, куда смотрит камера, до 384 блоков, с '
+     'упреждением по движущимся кораблям и сущностям. Курсор в воздухе — стволы смотрят по направлению взгляда',
+     'While you look, auto aim of the network guns pauses: they aim where the camera looks, up to 384 blocks, leading moving '
+     'ships and entities. With the cursor in the air the barrels point along the view')
+
+SCENES['gun_bearing'] = (('Подшипник орудия', 'Gun Bearing'), [
+    ('Подшипник орудия работает как поворотный подшипник Create Aeronautics, но гасит инерцию: поворотная часть не '
+     'перелетает угол и не раскачивается. Есть только с Create Aeronautics',
+     'The Gun Bearing works like the Create Aeronautics Swivel Bearing but damps inertia: the turning part does not '
+     'overshoot or sway. Available only with Create Aeronautics'),
+    ('Его поворачивает встроенное кольцо-шестерня: малая шестерня вплотную сбоку или большая по диагонали (обычно её '
+     'крутит привод орудия). Закрутилось у несобранного подшипника — он соберётся сам',
+     'Its built-in cog ring turns it: a small cogwheel right beside it or a large one diagonally (usually driven by a Gun '
+     'Drive). If the ring starts turning before assembly, the bearing assembles itself'),
+    ('ПКМ пустой рукой — собрать постройку перед подшипником (правила клея) на его пластину; повторно или ПКМ по '
+     'пластине — разобрать обратно в блоки. Перед подшипником пусто — одна пластина, на ней можно строить. Сломали '
+     'пластину — ломается и подшипник',
+     'Right-click with an empty hand to assemble the structure in front (glue rules) onto its plate; again, or right-click '
+     'the plate, to disassemble it back into blocks. With nothing in front you get a bare plate to build on. Breaking the '
+     'plate breaks the bearing'),
+    ('Сервопривод с критическим демпфированием: жёсткость — по массе всего, что поворачивается (вместе с подшипником '
+     'наклона и стволом), цель — с упреждением по скорости. Поэтому часть встаёт точно в угол без качки',
+     'A critically damped servo: stiffness follows the mass of everything it turns (including a pitch bearing and the '
+     'barrel), the target leads by speed. The part stops exactly at the angle without swaying'),
+    ('Вал сзади проходит насквозь: через пластину в первый блок постройки — например, к приводу наклона на поворотной '
+     'части',
+     'A shaft at the back passes through the plate into the first block of the structure, for example to a pitch drive '
+     'on the turning part'),
+    ('Режим блокировки — на панели сбоку: всегда / пока нет сигнала редстоуна / пока есть сигнал / никогда. Без '
+     'блокировки поворотная часть крутится свободно; включили блокировку — угол берётся текущий',
+     'The lock mode is on the side panel: always / while unpowered / while powered / never. Unlocked, the turning part '
+     'spins freely; when it locks, it keeps its current angle'),
+    ('Упёрлась в блок — стоит, кольцо проскальзывает. Секвенсорный редуктор поворачивает на точный угол; выше предела '
+     'скорости подшипника Aeronautics — скрежет',
+     'Blocked by a block, it stops and the ring slips. A Sequenced Gearshift turns it by an exact angle; above the '
+     'Aeronautics bearing speed limit it grinds'),
+])
+
+SCENES['docking'] = (('Стыковочный контроллер (Create: Flight Control)', 'Docking Controller (Create: Flight Control)'), [
+    ('Стыковочный контроллер — автостыковка кораблей Sable через мост автопилота, только с Create: Flight Control. ПКМ — '
+     'настройки: роль «порт» (станция, куда садятся) или «штекер» (на корабле), номер, дистанция обхода',
+     'The Docking Controller docks Sable ships automatically through the autopilot bridge, only with Create: Flight '
+     'Control. Right-click for settings: role "port" (where ships land) or "plug" (on the ship), number, approach distance'),
+    ('Инструментальным пистолетом Flight Control: ПКМ по контроллеру, затем по стыковочным портам Aeronautics на той же '
+     'постройке — до 8 портов, смотрящих в одну сторону. Повторный ПКМ по порту — убрать, Shift+ПКМ по контроллеру — снять все',
+     'With the Flight Control tool gun: right-click the controller, then the Aeronautics docking connectors on the same '
+     'structure, up to 8 facing one way. Right-click a connector again to remove it, Shift+right-click the controller to '
+     'clear all'),
+    ('В радарную сеть — передатчиком. Штекер ведёт корабль к ближайшему свободному порту с тем же номером в той же сети; '
+     'порты заняты — ждать у точки подхода или не лететь (настройки моста)',
+     'Join the radar network with a Radar Link. A plug leads the ship to the nearest free port with the same number in its '
+     'network; if all are busy it waits at the approach point or stays (bridge settings)'),
+    ('Мост в режиме стыковки (по команде, без цели или по редстоуну) ведёт корабль к порту, заранее разворачивает его по '
+     'расстановке портов и выдвигает порты — каждый садится на свой. Пистолет подсвечивает связи контроллера',
+     'A bridge in docking mode (on command, without a target or by redstone) flies the ship to the port, turns it to the '
+     'connector layout in advance and extends the connectors so each meets its own. The tool gun highlights the links'),
+    ('Пристыкован — компьютер управления полётом выключен, пушки корабля неактивны. Стыковку сняли — расстыковка и отход '
+     'по оси порта',
+     'While docked the flight control computer is off and the ship guns are inactive. When docking is switched off the '
+     'ship undocks and backs away along the port axis'),
+    ('Сигнал редстоуна на контроллер порта держит его как есть: пристыкован — расстыковка запрещена, свободен — стыковка '
+     'к нему запрещена (корабли ищут другой порт или ждут)',
+     'A redstone signal on a port controller holds it as it is: docked, undocking is not allowed; free, nobody may dock '
+     'to it (ships look for another port or wait)'),
+    ('Дистанция обхода — на каком расстоянии перед портом корабль выходит на прямую к нему: пока не на оси порта, ближе '
+     'не подходит и облетает станцию (берётся большая из порта и штекера)',
+     'The approach distance is how far in front of the port the ship lines up: until it is on the port axis it does not '
+     'come closer and flies around the station (the larger of port and plug is used)'),
+])
+
+SCENES['orbit_beacon'] = (('Маяк орбиты (Create: Flight Control)', 'Orbit Beacon (Create: Flight Control)'), [
+    ('Маяк орбиты — центр орбиты для моста автопилота, только с Create: Flight Control',
+     'The Orbit Beacon is an orbit center for the autopilot bridge, only with Create: Flight Control'),
+    ('Ставится в радарную сеть моста передатчиком. ПКМ — код маяка',
+     'Put it into the bridge radar network with a Radar Link. Right-click to set the beacon code'),
+    ('Мост без цели в режиме «орбита вокруг маяка» (вкладка «Без цели») летает вокруг маяка своей сети с этим кодом; '
+     'без кода — вокруг первого маяка сети, маяка нет — висит',
+     'A bridge without a target in "orbit a beacon" mode (No Target tab) circles the beacon of its network with that code; '
+     'without a code, the first beacon of the network; with no beacon it hovers'),
+    ('Маяк может стоять на другом корабле — орбита пойдёт за ним',
+     'The beacon can stand on another ship: the orbit follows it'),
+    ('Радиус, высота и направление орбиты, куда смотрит нос — в настройках моста',
+     'Orbit radius, height, direction and where the nose points are set in the bridge'),
+])
+
+SCENES['designator'] = (('Лазерный целеуказатель', 'Laser Designator'), [
+    ('Лазерный целеуказатель назначает цель издалека. Shift+ПКМ по монитору радара — привязать к нему',
+     'The Laser Designator designates a target from afar. Shift+right-click a Radar Monitor to bind it'),
+    ('ПКМ держать — прицеливание: приближение (колесо мыши — 2–10x), перекрестие и зелёный луч. Под перекрестием — имя '
+     'цели и дальность',
+     'Hold right-click to aim: zoom (mouse wheel 2-10x), a reticle and a green beam. The target name and range show under '
+     'the reticle'),
+    ('ЛКМ при прицеливании — цель под перекрестием (моб, снаряд, корабль Sable) назначается на этом мониторе, как ПКМ по '
+     'её отметке на экране: вычислители сети ведут её вне очереди. Луч на миг краснеет',
+     'Left-click while aiming designates the target under the reticle (mob, projectile, Sable ship) on that monitor, like '
+     'right-clicking its blip: the network computers engage it first. The beam flashes red'),
+    ('ЛКМ в воздух (или Shift+ПКМ в воздух) — снять назначение',
+     'Left-click the air (or Shift+right-click the air) to clear the designation'),
+    ('Цель должна быть видна радарам сети монитора, иначе назначить её нельзя',
+     'The target must be seen by the radars of the monitor network, otherwise it cannot be designated'),
+])
+
 def say_counts():
     src = open(SCENES_JAVA, encoding='utf-8').read()
     counts = {}

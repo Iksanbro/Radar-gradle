@@ -8,13 +8,13 @@
   "type": "minecraft:crafting_shaped",
   "category": "redstone",
   "pattern": [
-    " B ",
+    "PBP",
     "SMS",
-    " G "
+    "PGP"
   ],
   "key": {
     "B": {
-      "item": "create:mechanical_bearing"
+      "item": "simulated:swivel_bearing"
     },
     "S": {
       "item": "create:iron_sheet"
@@ -24,6 +24,9 @@
     },
     "G": {
       "item": "create:gearbox"
+    },
+    "P": {
+      "item": "simulated:spring"
     }
   },
   "result": {

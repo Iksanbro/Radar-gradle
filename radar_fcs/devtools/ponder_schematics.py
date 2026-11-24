@@ -194,8 +194,8 @@ def computer():
 
 
 def swivel_turret():
-    """Своё орудие на подшипниках-шарнирах Create Aeronautics (Simulated): курс - подшипник выходом вверх, наклон -
-    подшипник выходом на север на его поворотной части; приводы через шестерни, ствол из блоков и прицел."""
+    """Своё орудие на подшипниках орудия (с Create Aeronautics): курс - подшипник выходом вверх, наклон - подшипник
+    выходом на север на его поворотной части; приводы через шестерни, ствол из блоков и прицел."""
     s = Schematic(7, 7, 7).plate()
     motor(s, 1, 0, 3, 'up')
     s.set(1, 1, 3, FCS + 'gun_drive', facing='up', pitch='false')
@@ -203,11 +203,11 @@ def swivel_turret():
     link(s, 1, 1, 2, 'north')
     s.set(1, 2, 3, 'create:cogwheel', axis='y')
     s.set(2, 2, 3, 'create:cogwheel', axis='y')
-    s.set(3, 2, 3, 'simulated:swivel_bearing', facing='up')
+    s.set(3, 2, 3, FCS + 'gun_bearing', facing='up', assembled='false', powered='false')
     for x, z in ((3, 3), (2, 3), (2, 4), (3, 4)):
         s.set(x, 3, z, 'create:andesite_casing')
     s.set(3, 4, 3, 'create:andesite_casing')
-    s.set(3, 4, 2, 'simulated:swivel_bearing', facing='north')
+    s.set(3, 4, 2, FCS + 'gun_bearing', facing='north', assembled='false', powered='false')
     s.set(2, 4, 2, 'create:cogwheel', axis='z')
     s.set(2, 4, 3, FCS + 'gun_drive', facing='north', pitch='true')
     motor(s, 2, 4, 4, 'north')
@@ -220,18 +220,62 @@ def swivel_turret():
     s.save('swivel_turret')
 
 
-def turret():
-    s = Schematic(5, 6, 5).plate()
-    motor(s, 2, 0, 2, 'up')
-    s.set(2, 1, 2, FCS + 'gun_rotator', facing='up')
-    link(s, 2, 1, 1, 'north')
-    link(s, 1, 1, 2, 'west', gun=True)
-    s.set(2, 2, 2, FCS + 'gun_rotator', facing='east')
-    s.set(3, 2, 2, 'create:andesite_casing')
-    s.set(4, 2, 2, 'create:andesite_casing')
-    s.set(3, 3, 2, FCS + 'sight', facing='east')
-    link(s, 3, 4, 2, 'up', gun=True)
-    s.save('gun_rotator')
+def gun_bearing():
+    """Подшипник орудия выходом вверх: шестерня сбоку от мотора, вал снизу насквозь, площадка с рукой, рычаг на боку."""
+    s = Schematic(7, 5, 7).plate()
+    motor(s, 2, 0, 3, 'up')
+    s.set(2, 1, 3, 'create:cogwheel', axis='y')
+    s.set(3, 1, 3, FCS + 'gun_bearing', facing='up', assembled='false', powered='false')
+    motor(s, 3, 0, 3, 'up')
+    s.set(3, 2, 3, 'create:shaft', axis='y')
+    for x, z in ((2, 3), (4, 3), (3, 2), (3, 4)):
+        s.set(x, 2, z, 'create:andesite_casing')
+    for x in (3, 4, 5):
+        s.set(x, 3, 3, 'minecraft:stone')
+    s.set(3, 1, 2, 'minecraft:lever', face='wall', facing='north', powered='false')
+    s.save('gun_bearing')
+
+
+def docking():
+    """Станция: стыковочный контроллер (порт) с двумя портами Simulated вверх, передатчик, рычаг; над ней корабль с
+    двумя портами вниз и контроллером-штекером."""
+    s = Schematic(7, 7, 7).plate()
+    s.set(1, 1, 3, FCS + 'docking_controller', facing='east', plug='false')
+    link(s, 1, 2, 3, 'up')
+    s.set(0, 1, 3, 'minecraft:lever', face='wall', facing='west', powered='false')
+    for z in (2, 4):
+        s.set(3, 1, z, 'simulated:docking_connector', facing='up', extended='false', powered='false')
+    for x in range(2, 6):
+        for z in range(1, 6):
+            s.set(x, 5, z, 'create:andesite_casing')
+    for z in (2, 4):
+        s.set(3, 4, z, 'simulated:docking_connector', facing='down', extended='false', powered='false')
+    s.set(5, 6, 3, FCS + 'docking_controller', facing='west', plug='true')
+    link(s, 4, 6, 3, 'up')
+    s.save('docking')
+
+
+def orbit_beacon():
+    """Маяк орбиты с передатчиком; рядом - кораблик (площадка), который облетает маяк."""
+    s = Schematic(7, 4, 7).plate()
+    s.set(3, 1, 3, FCS + 'orbit_beacon', facing='north')
+    link(s, 3, 2, 3, 'up')
+    for x in (5, 6):
+        for z in (2, 3, 4):
+            s.set(x, 3, z, 'create:andesite_casing')
+    s.save('orbit_beacon')
+
+
+def designator():
+    """Монитор радара (стена 2x1), плоский радар и цель вдали - для лазерного целеуказателя."""
+    s = Schematic(7, 4, 7).plate()
+    s.set(1, 1, 1, FCS + 'radar_monitor', facing='south')
+    s.set(2, 1, 1, FCS + 'radar_monitor', facing='south')
+    link(s, 1, 2, 1, 'up')
+    s.set(5, 1, 1, 'create_radar:plane_radar', facing='west')
+    link(s, 5, 2, 1, 'up')
+    s.set(5, 1, 5, 'minecraft:hay_block')
+    s.save('designator')
 
 
 def gun_drive():
@@ -267,7 +311,7 @@ def flight_bridge():
 
 
 if __name__ == '__main__':
-    for f in (battery, computer, aim_controllers, network, radar_monitor, transponder, camera, swivel_turret, turret, gun_drive,
-              flight_bridge):
+    for f in (battery, computer, aim_controllers, network, radar_monitor, transponder, camera, swivel_turret, gun_drive,
+              flight_bridge, gun_bearing, docking, orbit_beacon, designator):
         f()
     sys.exit(0)
