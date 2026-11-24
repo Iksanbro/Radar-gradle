@@ -76,6 +76,8 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
     private double departClear = Docking.APPROACH_DIST;
     /** Без цели: точка, в которой корабль висит (где кончилась цель или стыковка). */
     @Nullable private Vec hold;
+    /** Точка, где висит корабль, пока порты заняты, а маяка орбиты нет (между тиками стыковки hold сбрасывается). */
+    @Nullable private Vec busyHold;
     private Set<UUID> dockNets = Set.of();
     private long dockNetsAt = Long.MIN_VALUE / 2;
     /** Компьютер выключен мостом на время стыковки (сохраняется - включить после расстыковки и перезапуска). */
@@ -461,6 +463,17 @@ public class FlightBridgeBlockEntity extends AutopilotBlockEntity implements Wre
         }
         DockingRegistry.Choice ch = DockingRegistry.choose(level, nets, plug.number, ship == null ? null : ship.getUniqueId(), key, tip,
                 dockTarget, now, tips.size());
+        // стыковка «когда нет цели», а свободных портов нет (заняты, держат редстоуном) - лететь по орбите без цели,
+        // пока порт не освободится (порт проверяется каждый тик)
+        if (ch != null && !ch.free() && dockTrigger == Docking.Trigger.NO_TARGET && idle != Autopilot.Idle.HOVER) {
+            endDock(level, now);
+            summary(ch.port(), tip);
+            hold = busyHold;                                                // маяка нет - висеть на одном месте
+            State s = idleSteer(level, cc);
+            busyHold = hold;
+            return s == State.IDLE_ORBIT ? State.DOCK_BUSY_ORBIT : s;
+        }
+        busyHold = null;
         if (ch == null || (!ch.free() && dockBusy == Docking.Busy.STAY)) {
             endDock(level, now);
             release();

@@ -47,9 +47,24 @@ public final class SableCompat {
         }
     }
 
+    /** Когда последний раз писали в лог разовую ошибку Sable (не чаще раза в минуту). */
+    private static long lastTransientLog = Long.MIN_VALUE;
+
+    /**
+     * Ошибка вызова Sable. Несовместимая версия (нет класса/метода) - совместимость выключается до перезапуска; разовая
+     * ошибка (тело постройки только что удалено - разобрали, сломали) - только этот вызов, совместимость остаётся.
+     */
     private static void fail(Throwable t) {
-        if (!broken) FcsMod.LOG.warn("[radar_fcs] Sable companion call failed, ships disabled: {}", t.toString());
-        broken = true;
+        if (t instanceof LinkageError) {
+            if (!broken) FcsMod.LOG.warn("[radar_fcs] Sable companion incompatible, ships disabled: {}", t.toString());
+            broken = true;
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastTransientLog > 60_000) {
+            lastTransientLog = now;
+            FcsMod.LOG.warn("[radar_fcs] Sable companion call failed (skipped): {}", t.toString());
+        }
     }
 
     /**
@@ -152,12 +167,17 @@ public final class SableCompat {
         SableCompanion api = api();
         if (api == null || ship == null) return Vec3.ZERO;
         try {
-            Vector3d v = api.getVelocity(level, ship, new Vector3d(localPoint.x, localPoint.y, localPoint.z), new Vector3d());
-            return new Vec3(v.x / 20.0, v.y / 20.0, v.z / 20.0);
+            return rawPointVelocity(api, level, ship, localPoint);
         } catch (Throwable t) {
             fail(t);
             return Vec3.ZERO;
         }
+    }
+
+    /** Скорость точки, блоков/тик; тело постройки удалено - исключение. */
+    private static Vec3 rawPointVelocity(SableCompanion api, Level level, SubLevelAccess ship, Vec3 localPoint) {
+        Vector3d v = api.getVelocity(level, ship, new Vector3d(localPoint.x, localPoint.y, localPoint.z), new Vector3d());
+        return new Vec3(v.x / 20.0, v.y / 20.0, v.z / 20.0);
     }
 
     /** Скорость центра масс корабля, блоков/тик (Sable отдаёт блоки/сек). */
@@ -171,6 +191,7 @@ public final class SableCompat {
         }
     }
 
+    /** Корабль для вычислителя; тело постройки удалено (разобрали в этом тике) - исключение. */
     public static Ship describe(Level level, SubLevelAccess s) {
         BoundingBox3dc b = s.boundingBox();
         AABB box = new AABB(b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ());
@@ -179,7 +200,9 @@ public final class SableCompat {
         // центр масс: к нему относится скорость от физики Sable (центр габарита при вращении «гуляет»).
         // Габарит Sable отстаёт от позы на тик: у быстрого корабля центр масс впереди габарита на перемещение
         // за тик, и центр габарита дал бы цель с опозданием на тик (3.5 блока на 70 м/с)
-        Vec3 vel = velocity(level, s);
+        SableCompanion api = api();
+        Vector3dc rp0 = s.logicalPose().rotationPoint();
+        Vec3 vel = api == null ? Vec3.ZERO : rawPointVelocity(api, level, s, new Vec3(rp0.x(), rp0.y(), rp0.z()));
         Vec3 center = box.getCenter();
         try {
             Vector3dc rp = s.logicalPose().rotationPoint();
@@ -211,7 +234,13 @@ public final class SableCompat {
         if (api == null || virtual(level)) return out;
         try {
             for (SubLevelAccess s : api.getAllIntersecting(level, new BoundingBox3d(area))) {
-                if (s != null) out.add(describe(level, s));
+                if (s == null) continue;
+                try {
+                    out.add(describe(level, s));
+                } catch (Throwable t) {
+                    if (t instanceof LinkageError) throw t;
+                    // тело постройки удалено (разобрали подшипник, сломали корабль в этом тике) - пропустить её
+                }
             }
         } catch (Throwable t) {
             fail(t);

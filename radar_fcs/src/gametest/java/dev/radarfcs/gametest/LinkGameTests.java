@@ -608,7 +608,8 @@ public class LinkGameTests {
 
     /**
      * Лазерный целеуказатель: Shift+ПКМ по монитору - привязка; прицеливание и ЛКМ издалека по дальней из двух целей
-     * радара - она назначена на мониторе (как ПКМ по отметке); ЛКМ в небо - назначение снято; Shift+ПКМ в воздух - снято.
+     * радара - она назначена на мониторе (как ПКМ по отметке); ЛКМ в небо - назначение снято; Shift+ПКМ в воздух - снято;
+     * нажатие колеса - цель исключена, повторно - возвращена, в небо - ничего.
      */
     @GameTest(template = ARENA, batch = "link_designator", timeoutTicks = 400)
     public static void laserDesignatorDesignates(GameTestHelper h) {
@@ -674,7 +675,18 @@ public class LinkGameTests {
                     item.use(h.getLevel(), p, InteractionHand.MAIN_HAND);
                     p.setShiftKeyDown(false);
                     if (m.master().localDesignation(now) != null) h.fail("designation not cleared");
-                    else h.succeed();
+                    phase.set(3);
+                }
+                case 3 -> {                                                     // нажатие колеса - исключить, повторно - вернуть
+                    Vec3 eye = h.absoluteVec(new Vec3(14.5, 2.5, 40.5));
+                    look(p, eye, far.getBoundingBox().getCenter());
+                    if (!aimAndExclude(h, p, item)) h.fail("wheel click did not toggle the exclusion");
+                    if (!m.master().exclusions().contains(far.getUUID())) h.fail("target not excluded by the designator");
+                    if (!aimAndExclude(h, p, item)) h.fail("second wheel click did not toggle the exclusion");
+                    if (m.master().exclusions().contains(far.getUUID())) h.fail("second wheel click did not return the target");
+                    look(p, eye, eye.add(0, 50, 5));
+                    if (aimAndExclude(h, p, item)) h.fail("wheel click in the air toggled an exclusion");
+                    h.succeed();
                 }
                 default -> { }
             }
@@ -686,6 +698,15 @@ public class LinkGameTests {
         item.use(h.getLevel(), p, InteractionHand.MAIN_HAND);
         if (!p.isUsingItem()) throw new GameTestAssertException("designator is not aiming after right-click");
         boolean ok = item.fire(h.getLevel(), p, p.getUseItem());
+        p.releaseUsingItem();
+        return ok;
+    }
+
+    /** Целеуказатель: ПКМ держать, нажатие колеса - исключить/вернуть цель под перекрестием, отпустить ПКМ. */
+    private static boolean aimAndExclude(GameTestHelper h, Player p, dev.radarfcs.item.LaserDesignatorItem item) {
+        item.use(h.getLevel(), p, InteractionHand.MAIN_HAND);
+        if (!p.isUsingItem()) throw new GameTestAssertException("designator is not aiming after right-click");
+        boolean ok = item.exclude(h.getLevel(), p, p.getUseItem());
         p.releaseUsingItem();
         return ok;
     }

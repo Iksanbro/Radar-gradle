@@ -413,9 +413,11 @@ SCENES['gun_bearing'] = (('Подшипник орудия', 'Gun Bearing'), [
      'The Gun Bearing works like the Create Aeronautics Swivel Bearing but damps inertia: the turning part does not '
      'overshoot or sway. Available only with Create Aeronautics'),
     ('Его поворачивает встроенное кольцо-шестерня: малая шестерня вплотную сбоку или большая по диагонали (обычно её '
-     'крутит привод орудия). Закрутилось у несобранного подшипника — он соберётся сам',
+     'крутит привод орудия). Закрутилось у несобранного подшипника — он соберётся сам; разобранный вручную — только '
+     'ПКМ',
      'Its built-in cog ring turns it: a small cogwheel right beside it or a large one diagonally (usually driven by a Gun '
-     'Drive). If the ring starts turning before assembly, the bearing assembles itself'),
+     'Drive). If the ring starts turning before assembly, the bearing assembles itself; once disassembled by hand, only '
+     'right-click assembles it'),
     ('ПКМ пустой рукой — собрать постройку перед подшипником (правила клея) на его пластину; повторно или ПКМ по '
      'пластине — разобрать обратно в блоки. Перед подшипником пусто — одна пластина, на ней можно строить. Сломали '
      'пластину — ломается и подшипник',
@@ -451,9 +453,11 @@ SCENES['docking'] = (('Стыковочный контроллер (Create: Flig
      'structure, up to 8 facing one way. Right-click a connector again to remove it, Shift+right-click the controller to '
      'clear all'),
     ('В радарную сеть — передатчиком. Штекер ведёт корабль к ближайшему свободному порту с тем же номером в той же сети; '
-     'порты заняты — ждать у точки подхода или не лететь (настройки моста)',
+     'порты заняты — ждать у точки подхода или не лететь (настройки моста), а при стыковке «нет цели» с орбитой — летать '
+     'по орбите, пока порт не освободится',
      'Join the radar network with a Radar Link. A plug leads the ship to the nearest free port with the same number in its '
-     'network; if all are busy it waits at the approach point or stays (bridge settings)'),
+     'network; if all are busy it waits at the approach point or stays (bridge settings), and when docking on "no target" '
+     'with an orbit set it flies the orbit until a port is free'),
     ('Мост в режиме стыковки (по команде, без цели или по редстоуну) ведёт корабль к порту, заранее разворачивает его по '
      'расстановке портов и выдвигает порты — каждый садится на свой. Пистолет подсвечивает связи контроллера',
      'A bridge in docking mode (on command, without a target or by redstone) flies the ship to the port, turns it to the '
@@ -498,8 +502,10 @@ SCENES['designator'] = (('Лазерный целеуказатель', 'Laser D
      'её отметке на экране: вычислители сети ведут её вне очереди. Луч на миг краснеет',
      'Left-click while aiming designates the target under the reticle (mob, projectile, Sable ship) on that monitor, like '
      'right-clicking its blip: the network computers engage it first. The beam flashes red'),
-    ('ЛКМ в воздух (или Shift+ПКМ в воздух) — снять назначение',
-     'Left-click the air (or Shift+right-click the air) to clear the designation'),
+    ('ЛКМ в воздух (или Shift+ПКМ в воздух) — снять назначение. Нажатие колеса мыши — исключить цель под перекрестием '
+     'из огня вычислителей сети (повторно — вернуть)',
+     'Left-click the air (or Shift+right-click the air) to clear the designation. Press the mouse wheel to exclude the '
+     'target under the reticle from the network computers\' fire (again to return it)'),
     ('Цель должна быть видна радарам сети монитора, иначе назначить её нельзя',
      'The target must be seen by the radars of the monitor network, otherwise it cannot be designated'),
 ])

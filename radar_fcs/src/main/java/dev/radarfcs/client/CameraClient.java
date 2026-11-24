@@ -240,7 +240,8 @@ public final class CameraClient {
         event.setSwingHand(false);
     }
 
-    @SubscribeEvent
+    /** Раньше всех: иначе длиннохват Create (свой обработчик руки) успевает нарисовать руку и предметы. */
+    @SubscribeEvent(priority = net.neoforged.bus.api.EventPriority.HIGHEST)
     public static void hand(RenderHandEvent event) {
         if (active()) event.setCanceled(true);
     }

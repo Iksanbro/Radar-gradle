@@ -198,7 +198,8 @@ public class DockingGameTests {
      * Мост на постройке Sable со штекером (порт Simulated смотрит на восток) и регуляторами Flight Control. На земле в
      * той же сети порты: №7 ближний (запад), №7 дальний (восток), №3 на юге. «Стыковка: нет цели», целей нет - мост
      * ведёт корабль к ближнему порту №7 и занимает его. Ближний занят другим кораблём - к дальнему. Заняты оба: «ждать» -
-     * к ближнему, без брони; «не лететь» - аренда отдана. Штекер №3 - к южному порту. «Стыковка: редстоун»: без сигнала -
+     * к ближнему, без брони; «не лететь» - аренда отдана; без цели настроена орбита - по орбите, порт освободился - к
+     * нему. Штекер №3 - к южному порту. «Стыковка: редстоун»: без сигнала -
      * нет цели и не стыкуется, сигнал - на стыковку (не пауза), сигнал снят - бронь отпущена.
      */
     @GameTest(template = ARENA, batch = "docking", timeoutTicks = 900)
@@ -308,6 +309,38 @@ public class DockingGameTests {
                     FcsMod.LOG.info("[radar_fcs test] docking: all busy, stay - {} {}", b.state(), c);
                     if (b.state() != AutopilotBlockEntity.State.DOCK_PORTS_BUSY) h.fail("expected DOCK_PORTS_BUSY, got " + b.state());
                     if (!c.isEmpty()) h.fail("lease kept with all ports busy and 'stay': " + c);
+                    // без цели настроена орбита: порты заняты - летает по орбите, а не ждёт и не стоит
+                    BlockPos sa = h.absolutePos(new BlockPos(11, 5, 31));
+                    b.idle = dev.radarfcs.core.Autopilot.Idle.ORBIT_POINT;
+                    b.orbitX = sa.getX() + 0.5;
+                    b.orbitY = sa.getY();
+                    b.orbitZ = sa.getZ() + 30.5;
+                    b.orbitRadius = 10;
+                    b.orbitHeight = 0;
+                    b.orbitSpeed = 5;
+                    phase.set(30);
+                    since.set(t);
+                }
+                case 30 -> {                                                // порты заняты, орбита настроена - по орбите
+                    DockingRegistry.reserve(level, nearPos, OTHER, now, false);
+                    DockingRegistry.reserve(level, farPos, OTHER, now, false);
+                    if (t - since.get() < 15) return;
+                    FcsMod.LOG.info("[radar_fcs test] docking: all busy, orbit set - {} {}", b.state(), c);
+                    if (b.state() != AutopilotBlockEntity.State.DOCK_BUSY_ORBIT) h.fail("expected DOCK_BUSY_ORBIT, got " + b.state());
+                    if (!(num(c, VEL + "BODY_VELOCITY_Z") > 0)) h.fail("expected flying toward the orbit center (+Z): " + c);
+                    if (DockingRegistry.reservation(level, nearPos, now).owner() == key) h.fail("busy port reserved by the orbiting ship");
+                    phase.set(31);
+                    since.set(t);
+                }
+                case 31 -> {                                                // порт освободился - к нему (с орбиты)
+                    if (t - since.get() < Docking.RESERVE_TICKS + 15) return;
+                    DockingRegistry.Reservation r = DockingRegistry.reservation(level, nearPos, now);
+                    FcsMod.LOG.info("[radar_fcs test] docking: port free again - {} {} reservation {}", b.state(), c, r);
+                    if (b.state() == AutopilotBlockEntity.State.DOCK_BUSY_ORBIT || !b.state().name().startsWith("DOCK_")) {
+                        h.fail("expected docking again once a port is free, got " + b.state());
+                    }
+                    if (r == null || r.owner() != key) h.fail("freed near port not reserved by the plug: " + r);
+                    b.idle = dev.radarfcs.core.Autopilot.Idle.HOVER;
                     CompoundTag s = plug[0].writeSettings();
                     s.putInt("Number", 3);
                     plug[0].applySettings(s);

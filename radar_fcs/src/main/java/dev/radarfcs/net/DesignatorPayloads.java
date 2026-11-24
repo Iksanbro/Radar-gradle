@@ -14,7 +14,10 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-/** Лазерный целеуказатель: ЛКМ при прицеливании (клиент -> сервер) и итог - цель назначена или нет (сервер -> клиент). */
+/**
+ * Лазерный целеуказатель: ЛКМ и нажатие колеса мыши при прицеливании (клиент -> сервер) и итог - цель назначена или нет
+ * (сервер -> клиент).
+ */
 public final class DesignatorPayloads {
     private DesignatorPayloads() {}
 
@@ -22,6 +25,17 @@ public final class DesignatorPayloads {
     public record Fire() implements CustomPacketPayload {
         public static final Type<Fire> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(FcsMod.MODID, "designator_fire"));
         public static final StreamCodec<ByteBuf, Fire> CODEC = StreamCodec.unit(new Fire());
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    /** Нажатие колеса мыши при прицеливании: исключить цель под перекрестием из огня (исключённую - вернуть). */
+    public record Exclude() implements CustomPacketPayload {
+        public static final Type<Exclude> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(FcsMod.MODID, "designator_exclude"));
+        public static final StreamCodec<ByteBuf, Exclude> CODEC = StreamCodec.unit(new Exclude());
 
         @Override
         public Type<? extends CustomPacketPayload> type() {
@@ -43,6 +57,7 @@ public final class DesignatorPayloads {
     public static void register(RegisterPayloadHandlersEvent event) {
         var r = event.registrar("1");
         r.playToServer(Fire.TYPE, Fire.CODEC, DesignatorPayloads::handleFire);
+        r.playToServer(Exclude.TYPE, Exclude.CODEC, DesignatorPayloads::handleExclude);
         r.playToClient(Result.TYPE, Result.CODEC, (p, ctx) -> ctx.enqueueWork(() -> dev.radarfcs.client.DesignatorClient.onResult(p.designated())));
     }
 
@@ -53,6 +68,14 @@ public final class DesignatorPayloads {
             if (!sp.isUsingItem() || !(stack.getItem() instanceof LaserDesignatorItem item)) return;
             boolean ok = item.fire(sl, sp, stack);
             PacketDistributor.sendToPlayer(sp, new Result(ok));
+        });
+    }
+
+    private static void handleExclude(Exclude p, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            if (!(ctx.player() instanceof ServerPlayer sp) || sp.isSpectator() || !(sp.level() instanceof ServerLevel sl)) return;
+            ItemStack stack = sp.getUseItem();
+            if (sp.isUsingItem() && stack.getItem() instanceof LaserDesignatorItem item) item.exclude(sl, sp, stack);
         });
     }
 }

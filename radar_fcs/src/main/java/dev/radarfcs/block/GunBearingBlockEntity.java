@@ -111,11 +111,14 @@ public class GunBearingBlockEntity extends KineticBlockEntity implements ExtraKi
             return parent;
         }
 
-        /** Кольцо закрутилось у несобранного подшипника - собрать; секвенсорный редуктор - поворот на заданный угол. */
+        /**
+         * Кольцо закрутилось у несобранного подшипника - собрать (кроме разобранного вручную: его собирают только ПКМ);
+         * секвенсорный редуктор - поворот на заданный угол.
+         */
         @Override
         public void onSpeedChanged(float previousSpeed) {
             super.onSpeedChanged(previousSpeed);
-            if (speed != 0 && !parent.assembled()) parent.assembleNextTick = true;
+            if (speed != 0 && !parent.assembled() && !parent.holdDisassembled) parent.assembleNextTick = true;
             parent.sequencedAngleLimit = -1;
             if (sequenceContext != null && sequenceContext.instruction() == SequencerInstructions.TURN_ANGLE) {
                 parent.sequencedAngleLimit = sequenceContext.getEffectiveValue(getTheoreticalSpeed());
@@ -136,6 +139,12 @@ public class GunBearingBlockEntity extends KineticBlockEntity implements ExtraKi
     private final Cog cog;
     /** Собрать (или разобрать) в следующем тике: ПКМ, ПКМ по пластине, закрутившееся кольцо. */
     public boolean assembleNextTick;
+    /**
+     * Разобран вручную: от кольца сам не собирается, только ПКМ. Иначе привод, который ведёт наводку, в следующем же
+     * тике собрал бы постройку обратно (разборка и сборка постройки Sable в соседних тиках сбивали её у игроков и
+     * обучение приводов орудия).
+     */
+    boolean holdDisassembled;
     /** Блок уезжает в собираемую постройку (то, на чём он стоит): пластину не трогать. */
     boolean moving;
     @Nullable private AssemblyException lastException;
@@ -269,8 +278,12 @@ public class GunBearingBlockEntity extends KineticBlockEntity implements ExtraKi
         if (!(level instanceof ServerLevel sl) || !Mods.SABLE) return;
         if (assembleNextTick) {
             assembleNextTick = false;
-            if (assembled()) disassemble(sl);
-            else assemble(sl);
+            if (assembled()) {
+                holdDisassembled = true;                                       // до разборки: она переподключает кинетику
+                disassemble(sl);
+            } else {
+                assemble(sl);
+            }
         }
         if (!assembled()) return;
         if (!SableRotor.valid(handle)) {
@@ -369,6 +382,7 @@ public class GunBearingBlockEntity extends KineticBlockEntity implements ExtraKi
     }
 
     private void assemble(ServerLevel sl) {
+        holdDisassembled = false;
         Direction f = facing();
         BlockState plate = GunBearings.PLATE.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, f);
         SableRotor.Assembled a;
@@ -607,6 +621,7 @@ public class GunBearingBlockEntity extends KineticBlockEntity implements ExtraKi
         tag.putDouble("Target", target);
         tag.putDouble("SequencedAngleLimit", sequencedAngleLimit);
         tag.putBoolean("Locked", locked);
+        if (holdDisassembled) tag.putBoolean("HoldDisassembled", true);
         AssemblyException.write(tag, registries, lastException);
     }
 
@@ -618,6 +633,7 @@ public class GunBearingBlockEntity extends KineticBlockEntity implements ExtraKi
         target = lastTarget = tag.getDouble("Target");
         sequencedAngleLimit = tag.contains("SequencedAngleLimit") ? tag.getDouble("SequencedAngleLimit") : -1;
         locked = tag.getBoolean("Locked");
+        holdDisassembled = tag.getBoolean("HoldDisassembled");
         lastException = AssemblyException.read(tag, registries);
     }
 }

@@ -36,7 +36,8 @@ import org.jetbrains.annotations.Nullable;
  * труба: приближение, сетка прицела, зелёный луч, см. {@code client/DesignatorClient}); ЛКМ при прицеливании - луч до
  * {@link #RANGE} блоков: цель под перекрестием (сущность, снаряд, корабль Sable) назначается на привязанном мониторе,
  * как ПКМ по её отметке на экране (вычислители сети ведут её вне очереди), луч на миг краснеет; ЛКМ в воздух (на луче
- * нет цели) - снять назначение. Shift+ПКМ в воздух - тоже снять. Цель должна быть видна радарам сети монитора.
+ * нет цели) - снять назначение. Shift+ПКМ в воздух - тоже снять. Нажатие колеса мыши при прицеливании - исключить цель
+ * под перекрестием из огня вычислителей сети (исключённую - вернуть). Цель должна быть видна радарам сети монитора.
  */
 public class LaserDesignatorItem extends Item {
     /** Дальность луча, блоков (по загруженным чанкам). */
@@ -126,6 +127,32 @@ public class LaserDesignatorItem extends Item {
         }
         for (UUID id : aim.ids()) {
             if (mon.designateTracked(id, p)) return true;
+        }
+        p.displayClientMessage(Component.translatable("radar_fcs.designator.not_tracked").withStyle(ChatFormatting.GOLD), true);
+        return false;
+    }
+
+    /**
+     * Нажатие колеса мыши при прицеливании (сервер): цель под перекрестием исключается из огня вычислителей сети
+     * привязанного монитора, как нажатие колеса по её отметке; исключённая - возвращается.
+     *
+     * @return исключение цели переключено
+     */
+    public boolean exclude(ServerLevel sl, Player p, ItemStack stack) {
+        RadarMonitorBlockEntity mon = monitor(sl, stack);
+        if (mon == null) {
+            unboundMessage(p, stack);
+            return false;
+        }
+        Vec3 eye = p.getEyePosition();
+        Aim aim = trace(sl, p, eye, eye.add(p.getLookAngle().scale(RANGE)));
+        sl.playSound(null, p.blockPosition(), SoundEvents.NOTE_BLOCK_HAT.value(), SoundSource.PLAYERS, 0.6f, 1.2f);
+        if (aim.ids().isEmpty()) {
+            p.displayClientMessage(Component.translatable("radar_fcs.designator.nothing").withStyle(ChatFormatting.GRAY), true);
+            return false;
+        }
+        for (UUID id : aim.ids()) {
+            if (mon.toggleExclusionTracked(id, p)) return true;
         }
         p.displayClientMessage(Component.translatable("radar_fcs.designator.not_tracked").withStyle(ChatFormatting.GOLD), true);
         return false;

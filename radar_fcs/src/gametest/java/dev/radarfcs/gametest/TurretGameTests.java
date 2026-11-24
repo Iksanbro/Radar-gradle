@@ -51,6 +51,8 @@ public class TurretGameTests {
     @BeforeBatch(batch = "turret_bearing") public static void b3(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "turret_bearing") public static void a3(ServerLevel l) { FcsGameTests.cleanup(l); }
     @AfterBatch(batch = "turret_parts") public static void a2(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "turret_bearing_split2") public static void b4(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "turret_bearing_split2") public static void a4(ServerLevel l) { FcsGameTests.cleanup(l); }
 
     static GunLinkBlockEntity gunLink(GameTestHelper h, BlockPos attachedRel, Direction face, UUID net) {
         BlockPos at = attachedRel.relative(face);
@@ -575,6 +577,216 @@ public class TurretGameTests {
                     + " deg, err " + m.aimError + ", status " + m.status);
             if (!(m.aimError < 2)) throw new GameTestAssertException("turret not on target: err " + m.aimError + ", status " + m.status);
             h.succeed();
+        });
+    }
+
+    @GameTest(template = ARENA, batch = "turret_bearing_split2", timeoutTicks = 900)
+    public static void gunTurretDisassemblesWhileAiming(GameTestHelper h) {
+        if (!dev.radarfcs.compat.Mods.SIMULATED) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        BlockPos fcsPos = new BlockPos(6, 1, 26), yaw = new BlockPos(10, 3, 30), yawCog = yaw.east(), yawDrive = yawCog.below(),
+                pitch = new BlockPos(10, 6, 30), pitchCog = pitch.east(), pitchDrive = pitchCog.south(), sight = new BlockPos(11, 7, 29);
+        FcsGameTests.motor(h, yawDrive.below(), Direction.UP, 64);
+        h.setBlock(yawDrive, FcsRegistry.GUN_DRIVE.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP)
+                .setValue(GunDriveBlock.PITCH, false));
+        h.setBlock(yawCog, FcsGameTests.block("create:cogwheel").defaultBlockState()
+                .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS, Direction.Axis.Y));
+        h.setBlock(yaw, dev.radarfcs.block.GunBearings.BLOCK.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP));
+        var casing = FcsGameTests.block("create:andesite_casing").defaultBlockState();
+        h.setBlock(yaw.above(), casing);
+        h.setBlock(yaw.above(2), casing);
+        h.setBlock(pitch, dev.radarfcs.block.GunBearings.BLOCK.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.NORTH));
+        h.setBlock(pitchCog, FcsGameTests.block("create:cogwheel").defaultBlockState()
+                .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS, Direction.Axis.Z));
+        h.setBlock(pitchDrive, FcsRegistry.GUN_DRIVE.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.NORTH)
+                .setValue(GunDriveBlock.PITCH, true));
+        FcsGameTests.motor(h, pitchDrive.south(), Direction.NORTH, 64);
+        for (int i = 0; i < 8; i++) h.setBlock(pitch.north().east(i), Blocks.STONE.defaultBlockState());
+        h.setBlock(sight, FcsRegistry.SIGHT.get().defaultBlockState().setValue(SightBlock.FACING, Direction.EAST));
+        for (BlockPos p : List.of(yawDrive, yaw, pitch, pitchDrive, sight)) FcsGameTests.CREATED.add(h.absolutePos(p));
+        UUID gun = UUID.randomUUID();
+        gunLink(h, sight, Direction.UP, gun);
+        gunLink(h, yawDrive, Direction.EAST, gun);
+        gunLink(h, pitchDrive, Direction.UP, gun);
+        FireControlBlockEntity be = fcsBare(h, fcsPos);
+        SettingsGameTests.configure(be, st -> st.dropStatic = false);
+        link(h, yawDrive, Direction.SOUTH, fcsPos);
+        // клей: площадка с подшипником наклона, его шестернёй, приводом и мотором; ствол с прицелом и линком
+        BlockPos a = h.absolutePos(yaw.above()), b = h.absolutePos(pitch.north());
+        h.getLevel().addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(h.getLevel(),
+                new net.minecraft.world.phys.AABB(a.getX(), a.getY(), a.getZ(), a.getX() + 2, a.getY() + 4, a.getZ() + 3)));
+        h.getLevel().addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(h.getLevel(),
+                new net.minecraft.world.phys.AABB(b.getX(), b.getY(), b.getZ(), b.getX() + 8, b.getY() + 3, b.getZ() + 1)));
+        h.setBlock(new BlockPos(30, 8, 40), Blocks.STONE.defaultBlockState());
+        var husk = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(30.5, 9, 40.5), 0, 0));
+        net.minecraft.world.entity.player.Player pl = h.makeMockPlayer(net.minecraft.world.level.GameType.CREATIVE);
+        pl.setShiftKeyDown(true);
+        int[] split = {-1, -1};
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            var level = h.getLevel();
+            if (t == 5) {
+                for (BlockPos r : List.of(pitch, yaw)) {
+                    if (level.getBlockEntity(h.absolutePos(r)) instanceof dev.radarfcs.block.GunBearingBlockEntity g) {
+                        g.assembleNow();
+                        SableTestSupport.trackId(level, g.subLevel());
+                    } else throw new GameTestAssertException("no gun bearing at " + r);
+                }
+                be.requestDiscover();
+                return;
+            }
+            if (t < 7) return;
+            if (!(level.getBlockEntity(h.absolutePos(yaw)) instanceof dev.radarfcs.block.GunBearingBlockEntity g)) {
+                throw new GameTestAssertException("no yaw bearing");
+            }
+            MountState ms = be.mountStates().isEmpty() ? null : be.mountStates().get(0);
+            if (split[0] < 0) {                                                 // наводка идёт - разобрать курс (ПКМ)
+                if (t < 40 || Math.abs(g.ringSpeed()) < 0.1 && Math.abs(g.angle()) < 8) {
+                    if (t > 400) throw new GameTestAssertException("turret does not turn");
+                    return;
+                }
+                FcsMod.LOG.info("[radar_fcs test] turret split: disassembling yaw at angle {} ring {}",
+                        String.format(java.util.Locale.ROOT, "%.1f", g.angle()), g.ringSpeed());
+                g.assembleNextTick = true;
+                split[0] = t;
+                return;
+            }
+            int dt = t - split[0];
+            if (split[1] < 0) {
+                if (dt < 40) {
+                    if (g.assembled()) throw new GameTestAssertException("yaw bearing re-assembled by itself " + dt + " ticks after a manual disassembly");
+                    return;
+                }
+                // разобрано: блоки курса в мире на своих местах, ствол на подшипнике наклона (он теперь в мире)
+                for (BlockPos r : List.of(yaw.above(), yaw.above(2), pitchCog, pitchDrive)) {
+                    if (level.getBlockState(h.absolutePos(r)).isAir()) throw new GameTestAssertException("block lost on disassembly at " + r);
+                }
+                if (!(level.getBlockEntity(h.absolutePos(pitch)) instanceof dev.radarfcs.block.GunBearingBlockEntity pg) || !pg.assembled()
+                        || pg.plotFront() == null) throw new GameTestAssertException("pitch bearing lost on disassembly");
+                Vec3 w = dev.radarfcs.compat.SableCompat.toWorld(level, Vec3.atCenterOf(pg.plotFront()));
+                double off = w.distanceTo(Vec3.atCenterOf(h.absolutePos(pitch.north())));
+                FcsMod.LOG.info("[radar_fcs test] turret split: disassembled, ring {} barrel off {}", g.ringSpeed(),
+                        String.format(java.util.Locale.ROOT, "%.2f", off));
+                if (off > 3) throw new GameTestAssertException("barrel not on its bearing after disassembly: " + off);
+                g.assembleNextTick = true;                                      // снова ПКМ - собрать
+                split[1] = t;
+                return;
+            }
+            int dr = t - split[1];
+            if (dr == 1 && !g.assembled()) throw new GameTestAssertException("yaw bearing did not re-assemble on right-click");
+            if (dr % 20 == 0 && ms != null) FcsMod.LOG.info("[radar_fcs test] turret split: re-assembled +{} status {} err {} angle {}", dr, ms.status,
+                    String.format(java.util.Locale.ROOT, "%.2f", ms.aimError), String.format(java.util.Locale.ROOT, "%.1f", g.angle()));
+            if (ms != null && ms.aimError < 2 && dr > 20) {
+                h.succeed();
+                return;
+            }
+            if (dr > 300) throw new GameTestAssertException("turret did not aim again after re-assembly: err " + (ms == null ? "-" : ms.aimError));
+        });
+    }
+
+    /**
+     * Разборка подшипника орудия на ходу: шестерня крутит поворотную часть (рука из камня на 3 блока, на её конце -
+     * подшипник второй поворотной части со своим камнем). На повороте ~40° подшипник разбирают (ПКМ): блоки руки
+     * возвращаются в мир на свои места, вторая поворотная часть остаётся на своём подшипнике, ничего не пропадает.
+     */
+    @GameTest(template = ARENA, batch = "turret_bearing_split", timeoutTicks = 300)
+    public static void gunBearingDisassemblesWhileTurning(GameTestHelper h) {
+        if (!dev.radarfcs.compat.Mods.SIMULATED) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        BlockPos bearing = new BlockPos(20, 2, 20), cog = bearing.east(), arm = bearing.above(), sub = arm.east(3).above();
+        h.setBlock(cog, FcsGameTests.block("create:cogwheel").defaultBlockState()
+                .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS, Direction.Axis.Y));
+        h.setBlock(bearing, dev.radarfcs.block.GunBearings.BLOCK.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP));
+        h.setBlock(arm, FcsGameTests.block("create:andesite_casing").defaultBlockState());
+        for (int i = 1; i <= 3; i++) h.setBlock(arm.east(i), Blocks.STONE.defaultBlockState());
+        h.setBlock(sub, dev.radarfcs.block.GunBearings.BLOCK.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP));
+        h.setBlock(sub.above(), Blocks.GOLD_BLOCK.defaultBlockState());
+        FcsGameTests.CREATED.add(h.absolutePos(bearing));
+        FcsGameTests.CREATED.add(h.absolutePos(sub));
+        BlockPos a = h.absolutePos(arm);
+        h.getLevel().addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(h.getLevel(),
+                new net.minecraft.world.phys.AABB(a.getX(), a.getY(), a.getZ(), a.getX() + 4, a.getY() + 2, a.getZ() + 1)));
+        net.minecraft.world.entity.player.Player pl = h.makeMockPlayer(net.minecraft.world.level.GameType.CREATIVE);
+        pl.setShiftKeyDown(true);
+        int[] split = {-1};
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            var level = h.getLevel();
+            // сначала вторая поворотная часть, потом мотор (закрутившееся кольцо собирает первый подшипник само)
+            if (t == 1 && level.getBlockEntity(h.absolutePos(sub)) instanceof dev.radarfcs.block.GunBearingBlockEntity g2) {
+                g2.assembleNow();
+                if (!g2.assembled()) throw new GameTestAssertException("second bearing did not assemble");
+                SableTestSupport.trackId(level, g2.subLevel());
+                return;
+            }
+            if (t == 2) {
+                FcsGameTests.motor(h, cog.below(), Direction.UP, 16);
+                return;
+            }
+            if (t == 5) {
+                for (BlockPos r : List.of(bearing)) {
+                    if (level.getBlockEntity(h.absolutePos(r)) instanceof dev.radarfcs.block.GunBearingBlockEntity g) {
+                        g.assembleNow();
+                        if (!g.assembled()) throw new GameTestAssertException("bearing did not assemble at " + r);
+                        SableTestSupport.trackId(level, g.subLevel());
+                    } else throw new GameTestAssertException("no gun bearing at " + r + ": " + level.getBlockState(h.absolutePos(r))
+                            + " / " + level.getBlockEntity(h.absolutePos(r)));
+                }
+                return;
+            }
+            if (t == 6) {
+                for (var e : level.getEntitiesOfClass(com.simibubi.create.content.contraptions.glue.SuperGlueEntity.class,
+                        new net.minecraft.world.phys.AABB(h.absolutePos(BlockPos.ZERO)).inflate(64))) e.discard();
+                return;
+            }
+            if (t < 7) return;
+            if (split[0] < 0) {
+                if (!(level.getBlockEntity(h.absolutePos(bearing)) instanceof dev.radarfcs.block.GunBearingBlockEntity g)) {
+                    throw new GameTestAssertException("no gun bearing");
+                }
+                if (Math.abs(g.angle()) < 40) {
+                    if (t > 200) throw new GameTestAssertException("bearing does not turn: " + g.angle());
+                    return;
+                }
+                FcsMod.LOG.info("[radar_fcs test] bearing split: disassembling at angle {}", String.format(java.util.Locale.ROOT, "%.1f", g.angle()));
+                g.assembleNextTick = true;                                     // ПКМ пустой рукой
+                split[0] = t;
+                return;
+            }
+            if (t - split[0] < 20) return;
+            StringBuilder sb = new StringBuilder();
+            boolean ok = true;
+            for (int i = 0; i <= 3; i++) {
+                net.minecraft.world.level.block.state.BlockState st = level.getBlockState(h.absolutePos(arm.east(i)));
+                sb.append(' ').append(i).append('=').append(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath());
+                if (st.isAir()) ok = false;
+            }
+            net.minecraft.world.level.block.state.BlockState subState = level.getBlockState(h.absolutePos(sub));
+            sb.append(" sub=").append(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(subState.getBlock()).getPath());
+            String subInfo = "-";
+            if (level.getBlockEntity(h.absolutePos(sub)) instanceof dev.radarfcs.block.GunBearingBlockEntity sg && sg.assembled()
+                    && sg.plotFront() != null) {
+                Vec3 w = dev.radarfcs.compat.SableCompat.toWorld(level, Vec3.atCenterOf(sg.plotFront()));
+                Vec3 want = Vec3.atCenterOf(h.absolutePos(sub.above()));
+                subInfo = String.format(java.util.Locale.ROOT, "gold at %.2f %.2f %.2f, off %.2f", w.x, w.y, w.z, w.distanceTo(want));
+                if (w.distanceTo(want) > 0.6) ok = false;
+            } else ok = false;
+            if (level.getBlockEntity(h.absolutePos(bearing)) instanceof dev.radarfcs.block.GunBearingBlockEntity g && g.assembled()) {
+                sb.append(" yaw still assembled");
+                ok = false;
+            }
+            FcsMod.LOG.info("[radar_fcs test] bearing split: {} ticks after:{} | second part {}", t - split[0], sb, subInfo);
+            if (ok) {
+                h.succeed();
+                return;
+            }
+            if (t - split[0] > 60) throw new GameTestAssertException("turning part lost on disassembly:" + sb + " | second part " + subInfo);
         });
     }
 

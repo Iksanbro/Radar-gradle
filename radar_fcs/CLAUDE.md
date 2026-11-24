@@ -20,7 +20,7 @@
 - `docs/dev/features.md` — все требования пользователя и история функций по версиям (≈560 строк);
 - `docs/dev/dependencies.md` — проверенные особенности API CBC, CBC-AT, Neo Warfare, Create Radars, Sable;
 - `docs/dev/test-status.md` — что покрыто игровыми тестами и какие комбинации модов проверены;
-- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test/1.2-Test, вошло в 1.1, итог — `features.md` п. 43-67).
+- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test/1.2-Test, вошло в 1.1, итог — `features.md` п. 43-68).
 
 Эти файлы и `README.md` большие: **не выводи их целиком** (`cat`), ищи нужное через `grep -n` и читай куски.
 
@@ -67,7 +67,8 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # �
   - `CbcBallistics` — априорная баллистика: заряды большой пушки, материал/стволы автопушек, свойства снаряда (рефлексия);
   - `ShotObserver` — ловит вылетевший снаряд (EntityJoinLevelEvent) и пишет его скорость по тикам;
   - `RadarLink` — Create Radars: `IRadar`/`RadarTrack` (общее API 0.4.9.x и 5.x);
-  - `SableCompat` — Sable companion: корабли в области, плот→мир, скорость (Sable отдаёт бл/с!);
+  - `SableCompat` — Sable companion: корабли в области, плот→мир, скорость (Sable отдаёт бл/с!); выключается только
+    при `LinkageError`, разовые ошибки (удалённое тело постройки) - пропуск;
   - `ContraptionCompat`, `FcsDisplaySource`, `Reflect`.
 - `block/AimControllerBlock(Entity)` — контроллеры наводки (`DirectionalKineticBlock`, FACING - на станок, вал только
   сзади, к станку кинетической связи нет): `degPerTick()` = |convertToAngular(rpm)| x 0.125, `find(level, mount, pitch)`;
@@ -118,7 +119,8 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # �
   расстановке), в мосту - `dockTrigger`/`dockBusy` и `FlightBridgeBlockEntity.dockSteer` через ту же аренду (`lease`);
   пристыкован - компьютер FC выключен (`setWorking(false)`, `DockPoweredDown`). Сигнал редстоуна на порте - `held`
   (`PortInfo.held`, `DockingRegistry.freeFor/heldDocked`): сцеплен - порты не втягиваются, мост `State.DOCK_HELD` не
-  расстыковывает; свободен - не выдвигается, к нему не стыкуются. Экран `client/DockingControllerScreen`,
+  расстыковывает; свободен - не выдвигается, к нему не стыкуются. Стыковка «нет цели» с орбитой, свободных портов нет -
+  орбита (`State.DOCK_BUSY_ORBIT`). Экран `client/DockingControllerScreen`,
   `net/DockingPayloads`.
 - Мост без цели (других объектов не ведёт): `Autopilot.Idle` - висеть / орбита вокруг координаты / вокруг маяка орбиты
   (`block/OrbitBeaconBlock(Entity)` с кодом, только маяки радарной сети моста - `LinkKind.BEACON`),
@@ -131,7 +133,8 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # �
   орудия убран в 1.2-Test; постройки самих орудий - свои для вычислителя: `FcsControl.gunShips` ->
   `FireControlBlockEntity.turretShips`, тест `gunNeverTargetsItsOwnTurretParts`). Подшипник орудия (только с Aeronautics,
   регистрация `block/GunBearings`) - повтор поворотного подшипника Aeronautics через API Simulated (`compileOnly`):
-  `block/GunBearingBlock(Entity)` (кольцо `ExtraKinetics` с `ExtraBlockPos`, блокировка `LockMode`, ПКМ - собрать/разобрать)
+  `block/GunBearingBlock(Entity)` (кольцо `ExtraKinetics` с `ExtraBlockPos`, блокировка `LockMode`, ПКМ - собрать/разобрать;
+  разобранный вручную от кольца не собирается - `holdDisassembled`)
   + пластина `block/GunBearingPlateBlock(Entity)` в плоте + `compat/sable/SableRotor` (сборка/разборка
   `SimAssemblyHelper`, шарнир `RotaryConstraint`, мотор `servo` - критическое демпфирование, жёсткость по моменту
   инерции всего поворачиваемого, упреждение); тесты у начала координат - `DevAutostop.NearOrigin`; тесты
@@ -139,7 +142,7 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # �
   игрока при запуске `client/AeroBearingLook` в пакет `<игра>/radar_fcs/aeronautics_bearing_pack`; ассеты Aeronautics
   в наш jar не копировать - All Rights Reserved). Лазерный целеуказатель - `item/LaserDesignatorItem`
   (привязка к монитору; ПКМ держать - прицел и зелёный луч `client/DesignatorClient`; ЛКМ - `net/DesignatorPayloads` ->
-  `fire`: назначить через `RadarMonitorBlockEntity.designateTracked` или снять). Камера: курсор в воздухе - наводка по
+  `fire`: назначить через `RadarMonitorBlockEntity.designateTracked` или снять; нажатие колеса - `exclude`). Камера: курсор в воздухе - наводка по
   направлению взгляда (`FcsControl.aimsAtAir`).
 - `block/`, `registry/`, `client/FcsClient` (цвет транспондера).
 - `src/gametest/` — игровые тесты и dev-автоматизация (в jar не попадают).
@@ -157,4 +160,6 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # �
 - Стыковка: физика подлёта в игре игровым тестом не проверена (корабль Sable в тесте сам не летит; сцепка порта
   корабля с портом на земле и отключение двигателей - проверены); пушка на пристыкованном корабле - не проверена;
   порты выгруженных чанков после перезапуска сервера неизвестны, пока их чанк не загрузится.
+- Тест `gunDriveYawLimit` в `-PfcsMinimal` изредка (≈1 из 6 полных прогонов) падает: станок CBC пропадает на ~26-м
+  тике, до огня (причина не найдена; тест сразу пишет окружение станка). Отдельно и в `-PfcsNoCbcAt` проходит.
 - Lua-версия (`lua/`) — исходный прототип для CC:Tweaked, в моде не используется.

@@ -31,7 +31,8 @@ import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
  * Прицеливание лазерным целеуказателем (ПКМ держать, вид от первого лица): приближение (колесо мыши - от 2x до 10x),
  * сетка прицела по центру экрана, рука и обычное перекрестие скрыты, чувствительность мыши - по приближению; внизу -
  * цель под перекрестием и дальность. Луч - зелёный, у всех игроков с целеуказателем в прицеливании; ЛКМ - назначить цель
- * под перекрестием (в воздух - снять, сервер {@code LaserDesignatorItem.fire}), при назначении луч на миг красный.
+ * под перекрестием (в воздух - снять, сервер {@code LaserDesignatorItem.fire}), при назначении луч на миг красный;
+ * нажатие колеса мыши - исключить цель под перекрестием из огня или вернуть ({@code LaserDesignatorItem.exclude}).
  */
 @EventBusSubscriber(modid = FcsMod.MODID, value = Dist.CLIENT)
 public final class DesignatorClient {
@@ -53,14 +54,19 @@ public final class DesignatorClient {
                 && mc.options.getCameraType().isFirstPerson();
     }
 
-    /** ЛКМ при прицеливании - назначить цель (до обработки клавиш игрой: она при использовании предмета ЛКМ глотает). */
+    /**
+     * ЛКМ при прицеливании - назначить цель, нажатие колеса (клавиша «выбрать блок») - исключить (до обработки клавиш
+     * игрой: при использовании предмета она эти нажатия глотает).
+     */
     @SubscribeEvent
     public static void clicks(net.neoforged.neoforge.client.event.ClientTickEvent.Pre event) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || !mc.player.isUsingItem() || !mc.player.getUseItem().is(FcsRegistry.LASER_DESIGNATOR.get())) return;
-        boolean fire = false;
+        boolean fire = false, exclude = false;
         while (mc.options.keyAttack.consumeClick()) fire = true;
+        while (mc.options.keyPickItem.consumeClick()) exclude = true;
         if (fire) net.neoforged.neoforge.network.PacketDistributor.sendToServer(new dev.radarfcs.net.DesignatorPayloads.Fire());
+        if (exclude) net.neoforged.neoforge.network.PacketDistributor.sendToServer(new dev.radarfcs.net.DesignatorPayloads.Exclude());
     }
 
     /** Ответ сервера на ЛКМ: цель назначена - луч на миг красный. */
@@ -122,7 +128,8 @@ public final class DesignatorClient {
         event.setCanceled(true);
     }
 
-    @SubscribeEvent
+    /** Раньше всех: иначе длиннохват Create (свой обработчик руки) успевает нарисовать руку и предметы. */
+    @SubscribeEvent(priority = net.neoforged.bus.api.EventPriority.HIGHEST)
     public static void hand(RenderHandEvent event) {
         if (aiming()) event.setCanceled(true);
     }

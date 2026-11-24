@@ -24,7 +24,7 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 - **Radar Links** work like Create's Stock Links: everything on one network is connected — at any distance.
 - Multiblock **Radar Monitor**: a live **map** with radar beams synced to the radar's rotation, target icons, names, friendly/hostile colors, player pins, range scale and a full GUI (designate a target, exclude a target, filters, zoom up to 1,000,000 blocks).
 - Pick a target on your monitor (or on a Create: Radars monitor) — the guns engage it out of turn.
-- **Laser Target Designator**: bind it to a monitor, aim like a spyglass (zoom, laser beam, target name and range) and designate a mob, projectile or ship block from afar.
+- **Laser Target Designator**: bind it to a monitor, aim like a spyglass (zoom, laser beam, target name and range) and designate a mob, projectile or ship block from afar; a mouse wheel click excludes the target from fire.
 - **Memory Blocks** extend list capacity and network size.
 
 ### 🛡️ IFF Transponders (friend or foe)

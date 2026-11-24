@@ -696,6 +696,19 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         m.pushToClients(sl);
     }
 
+    /**
+     * Исключить или вернуть цель, если экран её видит (лазерный целеуказатель): как нажатие колеса по её отметке.
+     *
+     * @return false - экран эту цель не видит и она не исключена (монитор без питания - тоже false)
+     */
+    public boolean toggleExclusionTracked(UUID id, @Nullable Player p) {
+        RadarMonitorBlockEntity m = masterBe();
+        if (m == null || !(level instanceof ServerLevel) || !m.powered) return false;
+        if (!m.excluded.contains(id) && m.targets.stream().noneMatch(x -> x.id().equals(id))) return false;
+        toggleExclusion(id, p);
+        return true;
+    }
+
     /** Сторона карты с экрана монитора (блоков). */
     public void setSide(int side) {
         RadarMonitorBlockEntity m = masterBe();

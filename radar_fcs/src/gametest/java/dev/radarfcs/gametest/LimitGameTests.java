@@ -173,8 +173,24 @@ public class LimitGameTests {
         AtomicInteger hits = countHits(h, target);
         double[] maxRight = {0};
         AtomicInteger phase = new AtomicInteger(), since = new AtomicInteger();
+        boolean[] mountSeen = {false};
         h.onEachTick(() -> {
             int t = (int) h.getTick();
+            // станок CBC изредка пропадает в начале теста (не от вычислителя: огня ещё нет) - сразу понятная ошибка с
+            // окружением станка, а не таймаут
+            BlockPos am = h.absolutePos(mount);
+            if (!h.getLevel().getBlockState(am).isAir()) mountSeen[0] = true;
+            else if (mountSeen[0]) {
+                StringBuilder mb = new StringBuilder();
+                for (Direction d : Direction.values()) mb.append(' ').append(d).append('=').append(h.getLevel().getBlockState(am.relative(d)).getBlock().getDescriptionId());
+                StringBuilder ents = new StringBuilder();
+                for (var e : h.getLevel().getEntities((net.minecraft.world.entity.Entity) null, new net.minecraft.world.phys.AABB(am).inflate(4), e -> true)) {
+                    ents.append(' ').append(e.getType().getDescriptionId());
+                    if (e instanceof net.minecraft.world.entity.item.ItemEntity ie) ents.append('(').append(ie.getItem()).append(')');
+                }
+                h.fail("CBC mount removed at t " + t + " (not by the computer) | around:" + mb + " | entities:" + ents);
+                return;
+            }
             List<MountState> ms = be.mountStates();
             MountState m = ms.isEmpty() ? null : ms.get(0);
             if (m == null || m.mount == null || !m.mount.isAssembled()) return;

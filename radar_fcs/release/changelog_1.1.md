@@ -14,7 +14,7 @@ Merges the earlier 1.1 build and the 1.1-Test / 1.2-Test pre-releases. Remove Gu
 - Minor optimizations: fewer block updates from the bridge, cached ship lookup.
 - **New: Docking Controller** (only with **Create: Flight Control**; recipe needs a Create Aeronautics Docking Connector). One block with two roles: **port** — next to the connectors ships dock to (ground, station, another ship); **plug** — on the ship next to its own connectors. Linked to up to **8 Docking Connectors** (same facing, one number) with the Flight Control Tool Gun; links are highlighted like Flight Control links, also on moving ships.
 - The Autopilot Bridge takes the ship to the **nearest free port with the plug's number**, turning in advance so that **every connector meets its own port** (for up/down-facing ports also by heading). **Clearance distance** on the controller: the ship lines up for the straight approach that far in front of the port and does not come closer — it flies around the port — until it is on the port axis. Controllers extend the connectors; the connectors lock on their own.
-- **When to dock** (bridge, "No target" tab): off, when there is no target, or on a **redstone signal** (then redstone sends the ship to dock instead of pausing). Busy ports: wait at the port or stay.
+- **When to dock** (bridge, "No target" tab): off, when there is no target, or on a **redstone signal** (then redstone sends the ship to dock instead of pausing). Busy ports: wait at the port or stay; when docking on "no target" with an orbit set, fly the orbit until a port is free.
 - **While docked** the ship's Flight Control Computer is switched off (engines without thrust) and the guns on the ship are inactive ("Ship docked"); after undocking everything is restored and the ship backs away from the port for 3 s. A redstone pause no longer undocks a docked ship.
 - **The bridge no longer chases the nearest radar contact.** With no target it **hovers** in place or flies an **orbit** around a point or a new **Orbit Beacon** (in the bridge's radar network; a code picks the beacon). Orbit radius, height above the center, direction, **orbit speed** and **where the nose points** (along the path, backward, to the center, outward, keep heading).
 - Bridge screen split into **"Target"** and **"No target"** tabs.
@@ -32,6 +32,10 @@ Merges the earlier 1.1 build and the 1.1-Test / 1.2-Test pre-releases. Remove Gu
 - Optimizations: the bridge does not run its target sensor when there is no target; docking status and network lookups are throttled.
 
 ### Since 1.2-Test
+- Laser Target Designator and camera view: the held item and the Create Extendo Grip are no longer drawn.
+- Laser Target Designator: press the mouse wheel while aiming to exclude the target under the crosshair from fire (again to return it).
+- **Fix:** a Gun Bearing disassembled by hand while the turret was aiming no longer re-assembles itself the next tick from the turning ring (only right-click assembles it again). The turning part is no longer lost or thrown off, and a one-off Sable error about the removed body no longer switches off ship support until restart.
+- Docking on "no target" with an orbit set: when all ports are busy or held by redstone, the ship flies the orbit until a port is free.
 - Gun Bearing recipe: an Aeronautics Swivel Bearing and 4 springs (instead of a Mechanical Bearing).
 - Laser Target Designator: the range to a ship block is shown correctly (it showed millions of blocks).
 - **New: redstone on a port Docking Controller locks it:** while a ship is docked there, undocking is not allowed (the connectors stay extended, the bridge shows "port held by redstone"); while the port is free, docking to it is not allowed (the bridge picks another free port or waits). Engineer's Goggles show the state.
@@ -52,7 +56,7 @@ Merges the earlier 1.1 build and the 1.1-Test / 1.2-Test pre-releases. Remove Gu
 - Мелкие оптимизации: меньше обновлений блока у моста, кэш поиска корабля.
 - **Новое: стыковочный контроллер** (только с **Create: Flight Control**; в рецепте — стыковочный порт Create Aeronautics). Один блок с двумя ролями: **порт** — у портов, куда садятся (земля, станция, другой корабль); **штекер** — на корабле у его портов. Связь с **до 8 стыковочными портами** (одно направление, один номер) — инструментальным пистолетом Flight Control; связи подсвечиваются, как у Flight Control, в том числе на движущихся кораблях.
 - Мост автопилота ведёт корабль к **ближайшему свободному порту с номером штекера** и заранее разворачивается так, чтобы **каждый порт встал на свой** (к портам вверх/вниз — и по курсу). **Дистанция обхода** в контроллере: на ней перед портом корабль выходит на прямую и, пока не вышел на ось порта, ближе не подходит — облетает порт. Порты выдвигают контроллеры, сцепляются порты сами.
-- **Когда стыковаться** (мост, вкладка «Без цели»): выкл, когда нет цели, по **сигналу редстоуна** (тогда редстоун — на стыковку, а не пауза). Порты заняты — ждать у порта или не лететь.
+- **Когда стыковаться** (мост, вкладка «Без цели»): выкл, когда нет цели, по **сигналу редстоуна** (тогда редстоун — на стыковку, а не пауза). Порты заняты — ждать у порта или не лететь; при стыковке «нет цели» с настроенной орбитой — летать по орбите, пока порт не освободится.
 - **Пока корабль пристыкован**, компьютер Flight Control выключен (двигатели без тяги), пушки на корабле неактивны («Корабль пристыкован»); после расстыковки всё возвращается, корабль 3 с отходит от порта. Пауза редстоуном больше не расстыковывает.
 - **Мост больше не ведёт «ближайшую чужую цель радаров».** Без цели корабль **висит** на месте или летит по **орбите** вокруг координаты или нового **маяка орбиты** (в радарной сети моста; маяк выбирается кодом). Радиус, высота над центром, направление, **скорость по орбите** и **куда смотрит нос** (по ходу, против хода, к центру, наружу, не поворачивать).
 - Экран моста разделён на вкладки **«Цель»** и **«Без цели»**.
@@ -70,6 +74,10 @@ Merges the earlier 1.1 build and the 1.1-Test / 1.2-Test pre-releases. Remove Gu
 - Оптимизации: без цели мост не запускает сенсор; проверки сцепки и поиск сетей при стыковке — реже.
 
 ### По сравнению с 1.2-Test
+- Лазерный целеуказатель и вид с камеры: предмет в руках и длиннохват Create больше не видны.
+- Лазерный целеуказатель: нажатие колеса мыши при прицеливании — исключить цель под перекрестием из огня (повторно — вернуть).
+- **Исправлено:** подшипник орудия, разобранный вручную во время наводки, больше не собирается сам в следующем тике от вращающегося кольца (собрать снова — ПКМ). Поворотная часть больше не теряется и не слетает, а разовая ошибка Sable об удалённом теле постройки больше не выключает поддержку кораблей до перезапуска.
+- Стыковка «нет цели» с настроенной орбитой: если все порты заняты или держатся редстоуном, корабль летает по орбите, пока порт не освободится.
 - Рецепт подшипника орудия: поворотный подшипник Aeronautics и 4 пружины (вместо механического подшипника).
 - Лазерный целеуказатель: дальность до блока корабля показывается правильно (показывались миллионы блоков).
 - **Новое: сигнал редстоуна на стыковочном контроллере в роли порта блокирует его:** корабль пристыкован — расстыковка запрещена (порты остаются выдвинутыми, мост пишет «порт держат редстоуном»); порт свободен — стыковка к нему запрещена (мост выбирает другой свободный порт или ждёт). Состояние видно в очках инженера.

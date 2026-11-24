@@ -65,6 +65,8 @@ public abstract class AutopilotBlockEntity extends BlockEntity implements IHaveG
         DOCK_LAYOUT,
         /** Пристыкован, расстыковка запрещена: порт держат сигналом редстоуна. */
         DOCK_HELD,
+        /** Стыковка «когда нет цели»: свободных портов нет - летает по орбите без цели, пока порт не освободится. */
+        DOCK_BUSY_ORBIT,
         /** Цели нет: висит на месте / летит по орбите / орбита вокруг маяка, а маяка в сети нет (висит). */
         IDLE_HOVER, IDLE_ORBIT, IDLE_NO_BEACON;
 
