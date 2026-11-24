@@ -99,6 +99,43 @@ public final class DevAutostop {
      * {@code -PfcsTests=имя[,имя...]}: сервер игровых тестов запускает только тесты, в имени которых
      * (класс.метод, строчными) есть одна из подстрок, - быстрая проверка одного теста без всего набора.
      */
+    /**
+     * Тесты - у начала координат (в пределах ±4096), а не где угодно в ±1.5·10⁷, как выбирает игра (startTests берёт
+     * место у level.random): физика Sable (Rapier) считает во float, и так далеко столкновения и связи постройки
+     * получают точность около блока - тесты физичного подшипника орудия вели бы себя как случайные. Игрок обычно гораздо
+     * ближе к спавну. Генератор мира подменяется обёрткой только на этот выбор места.
+     */
+    @SubscribeEvent
+    public static void onStarted(net.neoforged.neoforge.event.server.ServerStartedEvent event) {
+        if (!(event.getServer() instanceof net.minecraft.gametest.framework.GameTestServer server)) return;
+        var level = server.overworld();
+        try {
+            var f = net.minecraft.world.level.Level.class.getDeclaredField("random");
+            f.setAccessible(true);
+            var real = (net.minecraft.util.RandomSource) f.get(level);
+            f.set(level, new NearOrigin(real));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            FcsMod.LOG.warn("[radar_fcs test] could not move tests near the origin: {}", e.toString());
+        }
+    }
+
+    /** Генератор мира, который на выбор места тестов (±14999992) отвечает числом из ±4096, иначе - как настоящий. */
+    private record NearOrigin(net.minecraft.util.RandomSource real) implements net.minecraft.util.RandomSource {
+        @Override public int nextIntBetweenInclusive(int min, int max) {
+            return min == -14999992 && max == 14999992 ? real.nextInt(8192) - 4096 : real.nextIntBetweenInclusive(min, max);
+        }
+        @Override public net.minecraft.util.RandomSource fork() { return real.fork(); }
+        @Override public net.minecraft.world.level.levelgen.PositionalRandomFactory forkPositional() { return real.forkPositional(); }
+        @Override public void setSeed(long seed) { real.setSeed(seed); }
+        @Override public int nextInt() { return real.nextInt(); }
+        @Override public int nextInt(int bound) { return real.nextInt(bound); }
+        @Override public long nextLong() { return real.nextLong(); }
+        @Override public boolean nextBoolean() { return real.nextBoolean(); }
+        @Override public float nextFloat() { return real.nextFloat(); }
+        @Override public double nextDouble() { return real.nextDouble(); }
+        @Override public double nextGaussian() { return real.nextGaussian(); }
+    }
+
     @SubscribeEvent
     @SuppressWarnings("unchecked")
     public static void onAboutToStart(net.neoforged.neoforge.event.server.ServerAboutToStartEvent event) {

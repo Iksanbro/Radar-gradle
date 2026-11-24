@@ -92,8 +92,16 @@ public final class Turret {
         }
         Vec3 pitchAxis = a.cross(up);
         boolean fresh = prevAim != null && prevTick == now - 1;
+        // поворотная часть подшипника орудия заметно не там, куда её ведёт вал (только что собрана, упёрлась): прицел
+        // движется не от команды - привод не учится, иначе выучил бы нелепый отклик
+        boolean settling = dev.radarfcs.compat.Mods.SABLE && dev.radarfcs.compat.Mods.SIMULATED
+                && dev.radarfcs.block.GunBearingBlockEntity.settling(level);
         // обучение: поворот за прошлый тик вокруг оси каждого привода
         for (GunDriveBlockEntity dr : list) {
+            if (settling) {
+                dr.skipLearn();
+                continue;
+            }
             if (!fresh) {
                 dr.learn(0);
                 continue;

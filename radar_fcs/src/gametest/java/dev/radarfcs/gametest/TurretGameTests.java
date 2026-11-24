@@ -365,7 +365,7 @@ public class TurretGameTests {
      * Вал насквозь подшипника орудия: мотор под подшипником, над ним вал (поворотная часть). После сборки вал в плоте
      * поворотной части крутится от мотора через подшипник, а сама поворотная часть стоит (шестерни рядом нет).
      */
-    @GameTest(template = ARENA, batch = "turret_bearing", timeoutTicks = 200)
+    @GameTest(template = ARENA, batch = "turret_bearing_shaft", timeoutTicks = 200)
     public static void gunBearingShaftPassesThrough(GameTestHelper h) {
         if (!dev.radarfcs.compat.Mods.SIMULATED) {
             h.succeed();
@@ -414,7 +414,7 @@ public class TurretGameTests {
      * руки с обеих сторон - камень. Рука упирается и стоит (шестерня проскальзывает), в камень не входит; камень убрали -
      * поворот продолжается.
      */
-    @GameTest(template = ARENA, batch = "turret_bearing", timeoutTicks = 300)
+    @GameTest(template = ARENA, batch = "turret_bearing_stop", timeoutTicks = 300)
     public static void gunBearingStopsAtBlocks(GameTestHelper h) {
         if (!dev.radarfcs.compat.Mods.SIMULATED) {
             h.succeed();

@@ -34,6 +34,8 @@ public class GunDriveBlockEntity extends SplitShaftBlockEntity implements IHaveG
     /** Выученный отклик орудия: градусов/тик поворота на 1 об/мин выхода; знак - направление. */
     private double gainMag = DEFAULT_GAIN;
     private int gainSign = 1, against, stall;
+    /** Сколько тиков подряд орудие должно идти против команды, чтобы привод решил, что знак отклика обратный. */
+    private static final int AGAINST_TICKS = 6;
     /** Тиков упора (выход есть, движения нет), после которых привод пробует обратное направление. */
     private static final int STALL_TICKS = 12;
     private float lastOutput;
@@ -149,6 +151,13 @@ public class GunDriveBlockEntity extends SplitShaftBlockEntity implements IHaveG
      * Наблюдение: за прошлый тик орудие повернулось вокруг оси этого привода на observedDeg. Выученный отклик
      * сравнивается с выходом прошлого тика; знак меняется после двух подряд движений «наоборот».
      */
+    /** Этот тик не учиться (орудие двигала не команда - например, постройка подшипника ещё не дошла до угла). */
+    public void skipLearn() {
+        lastOutput = output;
+        stall = 0;
+        against = 0;
+    }
+
     public void learn(double observedDeg) {
         double drive = lastOutput * inputRpm();
         lastOutput = output;
@@ -167,7 +176,9 @@ public class GunDriveBlockEntity extends SplitShaftBlockEntity implements IHaveG
         stall = 0;
         double sample = observedDeg / drive;
         if (Math.signum(sample) != gainSign) {
-            if (Math.abs(observedDeg) > 0.05 && ++against >= 2) {
+            // знак меняется, только если орудие несколько тиков подряд заметно идёт против команды: у физичной постройки
+            // (подшипник орудия) поворот запаздывает на пару тиков, и сразу после смены команды она ещё доезжает
+            if (Math.abs(observedDeg) > 0.1 && ++against >= AGAINST_TICKS) {
                 gainSign = -gainSign;
                 gainMag = Math.abs(sample);
                 against = 0;

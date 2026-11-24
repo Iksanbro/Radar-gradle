@@ -28,11 +28,10 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Подшипник орудия: собранная постройка - под-уровень Sable на шарнире. Угол сервопривода target идёт за валом, как у
- * подшипника Create (convertToAngular(об/мин) градусов за тик); сам шарнир держит угол жёстко и без раскачки:
- * момент инерции - вокруг оси вместе со всем, что стоит на поворотной части (в том числе на вложенных подшипниках),
- * критическое демпфирование, касания основания и поворотной части выключены на каждом шаге физики, цель сервопривода
- * плавно меняется между тиками (см. {@link SableRotor#servo}).
+ * Подшипник орудия: собранная постройка - под-уровень Sable, физическое тело. Угол от шестерни target идёт за валом, как
+ * у подшипника Create (convertToAngular(об/мин) градусов за тик); угол сервопривода prof догоняет его с ограниченным
+ * ускорением (плавный разгон и торможение); тело ведётся к нему пружиной с демпфером на каждом шаге физики
+ * ({@link SableRotor#drive}) - упирается в блоки (тогда угол от шестерни дальше не накручивается), толкает сущности.
  */
 public class GunBearingBlockEntity extends KineticBlockEntity {
     /** Собранные подшипники загруженного мира - для сервопривода на каждом шаге физики. */
@@ -40,8 +39,17 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
 
     @Nullable private UUID subLevel;
     @Nullable private BlockPos plotFront;
-    /** Угол сервопривода сейчас и тиком раньше (градусы от положения при сборке). */
-    private double target, lastTarget;
+    /** Угол от шестерни (градусы от положения при сборке): куда поворотную часть ведёт вал. */
+    private double target;
+    /**
+     * Угол сервопривода сейчас и тиком раньше и его скорость (градусов за тик): идёт за target с ограниченным ускорением -
+     * плавный разгон и торможение, без рывков, раскачивающих постройку.
+     */
+    private double prof, lastProf, profVel;
+    /** Ускорение сервопривода, градусов за тик² (до 19°/тик - за 5 тиков). */
+    private static final double ACCEL = 4;
+    /** Насколько угол от шестерни может уйти вперёд фактического, градусов: дальше - часть упёрлась, шестерня проскальзывает. */
+    private static final double MAX_LEAD = 4;
     private long stepTick = Long.MIN_VALUE;
     @Nullable private Object handle;
     @Nullable private Component lastError;
@@ -170,7 +178,7 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
             }
             subLevel = a.subLevel();
             plotFront = a.plotFront();
-            target = lastTarget = 0;
+            target = prof = lastProf = profVel = 0;
             lastError = null;
             reattach(sl);
             // вал насквозь: переподключить кинетику - теперь соседом стал первый блок поворотной части в плоте
@@ -227,33 +235,46 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
     private void integrate(long now) {
         if (now == stepTick) return;
         stepTick = now;
-        lastTarget = target;
+        lastProf = prof;
         double step = Math.max(-90, Math.min(90, degPerTick()));
         if (step != 0) {
-            // физичная сборка: поворотная часть (и стоящие на ней) не входит в блоки мира - упёрлась, дальше не идёт,
-            // шестерня «проскальзывает»
-            if (level instanceof ServerLevel sl && subLevel != null) {
-                List<UUID> parts = new java.util.ArrayList<>();
-                parts.add(subLevel);
-                for (int i = 0; i < parts.size() && parts.size() < 32; i++) parts.addAll(childSubs(sl, parts.get(i)));
-                step *= SableRotor.freeFraction(sl, worldPosition, facing(), parts, Math.toRadians(step));
+            target = Aim.wrap180(target + step);
+            setChanged();
+        }
+        // физичная сборка: поворотная часть упёрлась (в блок, в постройку) - угол от шестерни не накручивается дальше
+        // MAX_LEAD от фактического (шестерня «проскальзывает»), помеху убрали - часть не рванёт на накопленный угол
+        double actual = angle();
+        if (!Double.isNaN(actual)) {
+            double lead = Aim.wrap180(target - actual);
+            if (Math.abs(lead) > MAX_LEAD) target = Aim.wrap180(actual + Math.copySign(MAX_LEAD, lead));
+            double pl = Aim.wrap180(prof - actual);
+            if (Math.abs(pl) > MAX_LEAD) {
+                prof = Aim.wrap180(actual + Math.copySign(MAX_LEAD, pl));
+                profVel = 0;
             }
-            if (step != 0) {
-                target = Aim.wrap180(target + step);
-                setChanged();
-            }
+        }
+        // профиль: скорость - как у вала плюс догон остатка, но не быстрее, чем можно затормозить с ускорением ACCEL
+        double err = Aim.wrap180(target - prof);
+        double want = step + Math.copySign(Math.sqrt(2 * ACCEL * Math.abs(err)), err);
+        profVel += Math.max(-ACCEL, Math.min(ACCEL, want - profVel));
+        if (Math.abs(err - profVel) < 0.05 && Math.abs(profVel - step) <= ACCEL) {
+            prof = target;                                                  // дошли - встать точно
+            profVel = step;
+        } else {
+            prof = Aim.wrap180(prof + profVel);
         }
     }
 
-    /** Шаг физики: цель сервопривода - между углом прошлого и этого тика. */
-    private void physicsStep() {
+    /** Шаг физики: цель сервопривода - между углом профиля прошлого и этого тика. */
+    private void physicsStep(double dt) {
         if (!(level instanceof ServerLevel sl) || subLevel == null || handle == null || plotFront == null) return;
         // угол за тик - здесь, на первом шаге физики тика: после команд вычислителя и приводов в этом же тике
         // (в тике блока поворот запаздывал бы на тик, и привод учился бы не на той команде)
         integrate(sl.getGameTime());
-        double pt = SableRotor.partialPhysicsTick(sl);
-        double goal = Aim.wrap180(lastTarget + Aim.wrap180(target - lastTarget) * Math.max(0, Math.min(1, pt)));
-        SableRotor.drive(sl, handle, worldPosition, facing(), subLevel, plotFront, Math.toRadians(goal));
+        double pt = Math.max(0, Math.min(1, SableRotor.partialPhysicsTick(sl)));
+        double goal = Aim.wrap180(lastProf + Aim.wrap180(prof - lastProf) * pt);
+        SableRotor.drive(sl, handle, worldPosition, facing(), subLevel, plotFront, Math.toRadians(goal),
+                Math.toRadians(profVel) * 20, dt);
     }
 
     /** Сколько подшипников под этим (0 - стоит на земле или корабле). */
@@ -284,12 +305,25 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
         return out;
     }
 
+    /** Отставание поворотной части от угла вала, при котором приводы не учатся, градусов (обычное на ходу - 0.3-4°). */
+    private static final double SETTLE = 5;
+
+    /** Отстаёт ли поворотная часть какого-то подшипника этого мира от угла вала больше SETTLE (только что собрана, упёрлась). */
+    public static boolean settling(net.minecraft.world.level.Level level) {
+        for (GunBearingBlockEntity be : List.copyOf(ACTIVE)) {
+            if (be.level != level || be.isRemoved() || be.subLevel == null) continue;
+            double a = be.angle();
+            if (!Double.isNaN(a) && Math.abs(Aim.wrap180(be.prof - a)) > SETTLE) return true;
+        }
+        return false;
+    }
+
     /** Собранные подшипники (для тестов). */
     public static List<GunBearingBlockEntity> active() {
         return List.copyOf(ACTIVE);
     }
 
-    public static void physicsStepAll(ServerLevel stepping) {
+    public static void physicsStepAll(ServerLevel stepping, double dt) {
         // сначала внешние подшипники (на земле или корабле), потом стоящие на их поворотных частях: поза вложенной
         // части считается от уже поставленной позы основания
         List<GunBearingBlockEntity> order = new java.util.ArrayList<>();
@@ -303,7 +337,7 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
                 continue;
             }
             try {
-                be.physicsStep();
+                be.physicsStep(dt);
             } catch (RuntimeException e) {
                 FcsMod.LOG.warn("[radar_fcs] gun bearing servo failed at {}: {}", be.getBlockPos(), e.toString());
                 ACTIVE.remove(be);
@@ -347,6 +381,7 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
         super.read(tag, registries, clientPacket);
         subLevel = tag.hasUUID("SubLevel") ? tag.getUUID("SubLevel") : null;
         plotFront = NbtUtils.readBlockPos(tag, "PlotFront").orElse(null);
-        target = lastTarget = tag.getDouble("Target");
+        target = prof = lastProf = tag.getDouble("Target");
+        profVel = 0;
     }
 }
