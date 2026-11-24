@@ -206,9 +206,7 @@ public final class FcsRegistry {
         BlockStressValues.IMPACTS.register(YAW_CONTROLLER.get(), () -> FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
         BlockStressValues.IMPACTS.register(PITCH_CONTROLLER.get(), () -> FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
         BlockStressValues.IMPACTS.register(GUN_DRIVE.get(), () -> FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
-        if (dev.radarfcs.compat.Mods.SIMULATED) {
-            BlockStressValues.IMPACTS.register(dev.radarfcs.block.GunBearings.BLOCK.get(), () -> 2 * FcsConfig.safe(FcsConfig.CONTROLLER_STRESS));
-        }
+        // подшипник орудия, как поворотный подшипник Aeronautics, нагрузки на сеть не даёт
     }
 
     private FcsRegistry() {}

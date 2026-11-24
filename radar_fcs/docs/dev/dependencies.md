@@ -112,14 +112,17 @@
   Проверка - `InfraGameTests.forcedChunkSurvivesRpl` (без сторожа 0 попаданий, со сторожем 64 из 64). В игре это
   касается только чанков, взятых `/forceload` в те несколько тиков, пока над ними летит снаряд (тикеты NeoForge
   `TicketController` RPL не трогает).
-- **Sable: связи (`RotaryConstraint`, `Generic`, `Fixed`, `Free`) берут точки крепления в координатах плота (~2·10⁷)
-  и считают их во float**: точка на под-уровне съезжает к центру масс с шагом до 2 блоков (у Aeronautics то же). Ось
-  подшипника орудия держится своей силой (`SableRotor.drive`), а связь - без закреплённых осей, только чтобы выключить
-  касания. По той же причине игровые тесты с физикой Sable надо ставить у начала координат (`DevAutostop.NearOrigin`).
-  Мотор `setMotor` - явный: с жёсткостью/демпфированием выше ~40/80 на шаг 0.025 с тело раскачивается. После
-  `SubLevelAssemblyHelper.assembleBlocks` коллайдеры ушедших блоков могли оставаться - `SableCommonEvents.handleBlockChange`.
-  Событие `ForgeSablePrePhysicsTickEvent` приходит для каждого измерения (`getPhysicsSystem().getLevel()`), шагов
-  физики 2 за тик (`getTimeStep()` 0.025 с), `getPartialPhysicsTick()` в нём - доля тика на конец шага.
+- **Sable: физика (Rapier) во float** - на координатах мира ~10⁷ (ванильный `GameTestServer` ставит тесты в ±1.5·10⁷)
+  точки крепления связей и столкновения получают точность около блока; у начала координат всё точно. Игровые тесты с
+  физикой Sable - у начала координат (`DevAutostop.NearOrigin`). Шарнир `RotaryConstraint` с точками как у подшипника
+  Aeronautics (центр блока перед подшипником, он же в плоте) работает точно; мотор `setMotor(axis, цель, k, c, false, 0)`
+  с k, c пропорционально моменту инерции (как у Aeronautics) устойчив. Событие `ForgeSablePrePhysicsTickEvent`
+  приходит для каждого измерения (`getPhysicsSystem().getLevel()`), шагов физики 2 за тик (`getTimeStep()` 0.025 с),
+  `getPartialPhysicsTick()` в нём - доля тика на конец шага.
+- **Simulated `ExtraKinetics`**: вторая кинетика блока должна иметь позицию `ExtraBlockPos` (иначе миксины
+  `RotationPropagatorMixin` её не видят как шестерню); уровень, состояние, сохранение, синхронизацию ведёт их
+  `KineticBlockEntityMixin`, тик - сам блок. `SimAssemblyHelper.assembleFromSingleBlock(level, подшипник, перед ним,
+  false, false)` / `disassembleSubLevel(level, под-уровень, пластина, подшипник, Rotation.NONE, true)`.
 - **Sable переписывает `BlockGetter.clip`** (`mixin.clip_overwrite.BlockGetterMixin`, `@Overwrite` - действует на
   любой `BlockGetter`). Для `Level`: начало и конец луча переводятся в мир **по отдельности** (каждый - только если
   лежит в плоте), ванильный обход по миру, затем клип по каждой постройке на пути в координатах её плота; точка

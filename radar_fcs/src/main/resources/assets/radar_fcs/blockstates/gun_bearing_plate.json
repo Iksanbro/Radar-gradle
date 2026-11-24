@@ -1,0 +1,30 @@
+{
+  "variants": {
+    "facing=up": {
+      "model": "radar_fcs:block/gun_bearing_plate"
+    },
+    "facing=down": {
+      "model": "radar_fcs:block/gun_bearing_plate",
+      "x": 180
+    },
+    "facing=north": {
+      "model": "radar_fcs:block/gun_bearing_plate",
+      "x": 90
+    },
+    "facing=south": {
+      "model": "radar_fcs:block/gun_bearing_plate",
+      "x": 90,
+      "y": 180
+    },
+    "facing=east": {
+      "model": "radar_fcs:block/gun_bearing_plate",
+      "x": 90,
+      "y": 90
+    },
+    "facing=west": {
+      "model": "radar_fcs:block/gun_bearing_plate",
+      "x": 90,
+      "y": 270
+    }
+  }
+}

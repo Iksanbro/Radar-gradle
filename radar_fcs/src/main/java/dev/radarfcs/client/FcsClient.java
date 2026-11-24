@@ -43,7 +43,10 @@ public final class FcsClient {
         event.registerBlockEntityRenderer(FcsRegistry.RADAR_MONITOR_BE.get(), RadarMonitorRenderer::new);
         event.registerBlockEntityRenderer(FcsRegistry.AIM_CONTROLLER_BE.get(), AimControllerRenderer::new);
         event.registerBlockEntityRenderer(FcsRegistry.GUN_DRIVE_BE.get(), GunDriveRenderer::new);
-        if (dev.radarfcs.compat.Mods.SIMULATED) event.registerBlockEntityRenderer(dev.radarfcs.block.GunBearings.BE.get(), GunBearingRenderer::new);
+        if (dev.radarfcs.compat.Mods.SIMULATED) {
+            event.registerBlockEntityRenderer(dev.radarfcs.block.GunBearings.BE.get(), GunBearingRenderer::new);
+            event.registerBlockEntityRenderer(dev.radarfcs.block.GunBearings.PLATE_BE.get(), GunBearingRenderer.Plate::new);
+        }
         event.registerBlockEntityRenderer(FcsRegistry.CAMERA_BE.get(), CameraRenderer::new);
     }
 

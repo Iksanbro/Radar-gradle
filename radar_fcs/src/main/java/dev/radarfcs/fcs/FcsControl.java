@@ -224,7 +224,19 @@ public final class FcsControl {
         Track fbTarget = null;
         TargetPath fbMotion = null;
         double fbAge = 0;
-        for (int i = 0; i < Math.min(3, cands.size()); i++) {
+        // камера смотрит в воздух (луч ни во что не упёрся): точка взгляда - просто конец луча, баллистика к ней
+        // смысла не имеет (и за дальностью пушки её нет) - ствол (прицел орудия) ставится прямо по направлению курсора
+        if (manual != null && aimsAtAir(manual)) {
+            Vec dir = manual.point().sub(pivot).normalize();
+            Vec mz = muzzle.at(dir);
+            double dist = manual.point().distance(mz);
+            double speed = Math.max(0.5, model.muzzleSpeed());
+            sol = new BallisticSolver.Solution(dir.yawDeg(), dir.pitchDeg(), dist / speed, manual.point(), mz,
+                    manual.point().sub(mz).horizontalLength(), dir);
+            target = cands.get(0);
+            motion = new TargetMotion(manual.point(), Vec.ZERO, Vec.ZERO, false, 0);
+        }
+        for (int i = 0; sol == null && i < Math.min(3, cands.size()); i++) {
             Track t = cands.get(i);
             double horizon = FcsConfig.USE_ACCELERATION.get() && !t.grounded ? FcsConfig.ACCEL_HORIZON.get() : 0;
             // снаряд-цель: его путь по тикам (физика CBC или замеры); прочие цели - движение по оценке
@@ -472,6 +484,12 @@ public final class FcsControl {
     }
 
     /** Направление dir (мир) в пределах поворота контроллеров наводки станка (курс - от стороны станка, наклон - от горизонта). */
+    /** Взгляд камеры ни во что не упёрся (ни блок, ни постройка, ни сущность): курсор в воздухе. */
+    static boolean aimsAtAir(ManualAim manual) {
+        ManualAim.Hit h = manual.hit();
+        return (h == null || (h.block() == null && h.ship() == null && h.entity() < 0)) && manual.velocity().length() < 1e-4;
+    }
+
     /**
      * Цель - корабль, на котором стоит пушка (или её поворотная часть), или кто-то на нём: по своему кораблю пушка не
      * стреляет, даже если он без транспондера (по нему могут стрелять пушки на других кораблях).

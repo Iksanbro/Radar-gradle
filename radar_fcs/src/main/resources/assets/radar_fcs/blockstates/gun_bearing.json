@@ -1,35 +1,108 @@
 {
   "variants": {
-    "facing=up": {
+    "assembled=false,facing=up,powered=false": {
       "model": "radar_fcs:block/gun_bearing"
     },
-    "facing=down": {
-      "model": "radar_fcs:block/gun_bearing",
-      "x": 180,
-      "uvlock": true
+    "assembled=false,facing=up,powered=true": {
+      "model": "radar_fcs:block/gun_bearing"
     },
-    "facing=north": {
+    "assembled=true,facing=up,powered=false": {
+      "model": "radar_fcs:block/gun_bearing_assembled"
+    },
+    "assembled=true,facing=up,powered=true": {
+      "model": "radar_fcs:block/gun_bearing_assembled"
+    },
+    "assembled=false,facing=down,powered=false": {
+      "model": "radar_fcs:block/gun_bearing",
+      "x": 180
+    },
+    "assembled=false,facing=down,powered=true": {
+      "model": "radar_fcs:block/gun_bearing",
+      "x": 180
+    },
+    "assembled=true,facing=down,powered=false": {
+      "model": "radar_fcs:block/gun_bearing_assembled",
+      "x": 180
+    },
+    "assembled=true,facing=down,powered=true": {
+      "model": "radar_fcs:block/gun_bearing_assembled",
+      "x": 180
+    },
+    "assembled=false,facing=north,powered=false": {
+      "model": "radar_fcs:block/gun_bearing",
+      "x": 90
+    },
+    "assembled=false,facing=north,powered=true": {
+      "model": "radar_fcs:block/gun_bearing",
+      "x": 90
+    },
+    "assembled=true,facing=north,powered=false": {
+      "model": "radar_fcs:block/gun_bearing_assembled",
+      "x": 90
+    },
+    "assembled=true,facing=north,powered=true": {
+      "model": "radar_fcs:block/gun_bearing_assembled",
+      "x": 90
+    },
+    "assembled=false,facing=south,powered=false": {
       "model": "radar_fcs:block/gun_bearing",
       "x": 90,
-      "uvlock": true
+      "y": 180
     },
-    "facing=south": {
+    "assembled=false,facing=south,powered=true": {
       "model": "radar_fcs:block/gun_bearing",
       "x": 90,
-      "y": 180,
-      "uvlock": true
+      "y": 180
     },
-    "facing=east": {
+    "assembled=true,facing=south,powered=false": {
+      "model": "radar_fcs:block/gun_bearing_assembled",
+      "x": 90,
+      "y": 180
+    },
+    "assembled=true,facing=south,powered=true": {
+      "model": "radar_fcs:block/gun_bearing_assembled",
+      "x": 90,
+      "y": 180
+    },
+    "assembled=false,facing=east,powered=false": {
       "model": "radar_fcs:block/gun_bearing",
       "x": 90,
-      "y": 90,
-      "uvlock": true
+      "y": 90
     },
-    "facing=west": {
+    "assembled=false,facing=east,powered=true": {
       "model": "radar_fcs:block/gun_bearing",
       "x": 90,
-      "y": 270,
-      "uvlock": true
+      "y": 90
+    },
+    "assembled=true,facing=east,powered=false": {
+      "model": "radar_fcs:block/gun_bearing_assembled",
+      "x": 90,
+      "y": 90
+    },
+    "assembled=true,facing=east,powered=true": {
+      "model": "radar_fcs:block/gun_bearing_assembled",
+      "x": 90,
+      "y": 90
+    },
+    "assembled=false,facing=west,powered=false": {
+      "model": "radar_fcs:block/gun_bearing",
+      "x": 90,
+      "y": 270
+    },
+    "assembled=false,facing=west,powered=true": {
+      "model": "radar_fcs:block/gun_bearing",
+      "x": 90,
+      "y": 270
+    },
+    "assembled=true,facing=west,powered=false": {
+      "model": "radar_fcs:block/gun_bearing_assembled",
+      "x": 90,
+      "y": 270
+    },
+    "assembled=true,facing=west,powered=true": {
+      "model": "radar_fcs:block/gun_bearing_assembled",
+      "x": 90,
+      "y": 270
     }
   }
 }

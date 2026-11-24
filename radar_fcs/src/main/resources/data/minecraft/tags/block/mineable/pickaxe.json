@@ -28,6 +28,10 @@
     {
       "id": "radar_fcs:gun_bearing",
       "required": false
+    },
+    {
+      "id": "radar_fcs:gun_bearing_plate",
+      "required": false
     }
   ]
 }

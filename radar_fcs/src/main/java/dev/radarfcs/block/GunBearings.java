@@ -20,6 +20,9 @@ public final class GunBearings {
     public static DeferredBlock<GunBearingBlock> BLOCK;
     public static DeferredItem<BlockItem> ITEM;
     public static DeferredHolder<BlockEntityType<?>, BlockEntityType<GunBearingBlockEntity>> BE;
+    /** Пластина подшипника - на поворотной части (без предмета). */
+    public static DeferredBlock<GunBearingPlateBlock> PLATE;
+    public static DeferredHolder<BlockEntityType<?>, BlockEntityType<GunBearingPlateBlockEntity>> PLATE_BE;
 
     private GunBearings() {}
 
@@ -29,5 +32,9 @@ public final class GunBearings {
         ITEM = FcsRegistry.ITEMS.register("gun_bearing", () -> new BlockItem(BLOCK.get(), new Item.Properties()));
         BE = FcsRegistry.BLOCK_ENTITIES.register("gun_bearing",
                 () -> BlockEntityType.Builder.of((pos, state) -> new GunBearingBlockEntity(BE.get(), pos, state), BLOCK.get()).build(null));
+        PLATE = FcsRegistry.BLOCKS.register("gun_bearing_plate", () -> new GunBearingPlateBlock(BlockBehaviour.Properties.of()
+                .mapColor(MapColor.STONE).strength(3.0f).sound(SoundType.METAL).noOcclusion().noLootTable()));
+        PLATE_BE = FcsRegistry.BLOCK_ENTITIES.register("gun_bearing_plate",
+                () -> BlockEntityType.Builder.of((pos, state) -> new GunBearingPlateBlockEntity(PLATE_BE.get(), pos, state), PLATE.get()).build(null));
     }
 }

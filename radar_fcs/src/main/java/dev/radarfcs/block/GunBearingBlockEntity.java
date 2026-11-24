@@ -1,13 +1,22 @@
 package dev.radarfcs.block;
 
 import com.simibubi.create.content.contraptions.AssemblyException;
+import com.simibubi.create.content.contraptions.IDisplayAssemblyExceptions;
 import com.simibubi.create.content.kinetics.base.DirectionalKineticBlock;
+import com.simibubi.create.content.kinetics.base.IRotate;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
+import com.simibubi.create.content.kinetics.transmission.sequencer.SequencerInstructions;
+import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
+import com.simibubi.create.foundation.blockEntity.behaviour.CenteredSideValueBoxTransform;
+import com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.INamedIconOptions;
+import com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollOptionBehaviour;
+import com.simibubi.create.foundation.gui.AllIcons;
 import dev.radarfcs.FcsMod;
 import dev.radarfcs.compat.Mods;
 import dev.radarfcs.compat.SableCompat;
 import dev.radarfcs.compat.sable.SableRotor;
 import dev.radarfcs.core.Aim;
+import dev.simulated_team.simulated.util.extra_kinetics.ExtraKinetics;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -18,45 +27,162 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.entity.player.Player;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Подшипник орудия: собранная постройка - под-уровень Sable, физическое тело. Угол от шестерни target идёт за валом, как
- * у подшипника Create (convertToAngular(об/мин) градусов за тик); угол сервопривода prof догоняет его с ограниченным
- * ускорением (плавный разгон и торможение); тело ведётся к нему пружиной с демпфером на каждом шаге физики
- * ({@link SableRotor#drive}) - упирается в блоки (тогда угол от шестерни дальше не накручивается), толкает сущности.
+ * Подшипник орудия - поворотный подшипник Create Aeronautics, но сервопривод гасит инерцию. Как у Aeronautics:
+ * встроенное кольцо-шестерня (вторая кинетика блока через ExtraKinetics Simulated: зацепляется с шестернями рядом, без
+ * нагрузки), угол накручивается от скорости кольца (convertToAngular, не быстрее предела подшипника Aeronautics),
+ * секвенсорный редуктор поворачивает на заданный угол; кольцо закрутилось у несобранного - сборка; ПКМ - собрать или
+ * разобрать; режимы блокировки (всегда / без сигнала / с сигналом / никогда) - без блокировки поворотная часть
+ * свободна (только трение); при включении блокировки угол берётся текущий. Поворотная часть - на шарнире Sable, мотор
+ * шарнира тянет её к углу (плавно между тиками). Отличие: демпфирование критическое (у Aeronautics - вдвое меньше,
+ * часть раскачивается), жёсткость - от момента инерции всего, что поворачивается (вместе с подшипниками на части), и
+ * цель с упреждением по скорости - часть не отстаёт на ходу и не перелетает угол; упёрлась - угол не накручивается.
  */
-public class GunBearingBlockEntity extends KineticBlockEntity {
+public class GunBearingBlockEntity extends KineticBlockEntity implements ExtraKinetics, IDisplayAssemblyExceptions {
     /** Собранные подшипники загруженного мира - для сервопривода на каждом шаге физики. */
     private static final Set<GunBearingBlockEntity> ACTIVE = Collections.newSetFromMap(new WeakHashMap<>());
+    /** Собственная частота сервопривода (рад/с; у Aeronautics жёсткость 1600 = 40²) и демпфирование: 1 - критическое. */
+    static final double OMEGA = 40, ZETA = 1;
+    /** Трение свободного (не заблокированного) подшипника - как у Aeronautics. */
+    static final double FRICTION = 0.3;
+    /** Насколько угол может уйти вперёд фактического, градусов: дальше - часть упёрлась, кольцо проскальзывает. */
+    private static final double MAX_LEAD = 10;
 
+    /** Режим блокировки (панель сбоку): заблокирован - сервопривод держит угол, нет - часть крутится свободно. */
+    public enum LockMode implements INamedIconOptions {
+        LOCKED_ALWAYS(AllIcons.I_CONFIG_LOCKED, "locked_always"),
+        LOCKED_DEFAULT(AllIcons.I_CONFIG_LOCKED, "locked_default"),
+        UNLOCKED_DEFAULT(AllIcons.I_CONFIG_UNLOCKED, "unlocked_default"),
+        UNLOCKED_ALWAYS(AllIcons.I_CONFIG_UNLOCKED, "unlocked_always");
+
+        private final AllIcons icon;
+        private final String key;
+
+        LockMode(AllIcons icon, String key) {
+            this.icon = icon;
+            this.key = "radar_fcs.bearing.lock." + key;
+        }
+
+        /** Заблокирован ли подшипник при сигнале редстоуна signal. */
+        public boolean shouldLock(int signal) {
+            return switch (this) {
+                case LOCKED_ALWAYS -> true;
+                case UNLOCKED_ALWAYS -> false;
+                case LOCKED_DEFAULT -> signal == 0;
+                case UNLOCKED_DEFAULT -> signal > 0;
+            };
+        }
+
+        @Override
+        public AllIcons getIcon() {
+            return icon;
+        }
+
+        @Override
+        public String getTranslationKey() {
+            return key;
+        }
+    }
+
+    /** Встроенное кольцо-шестерня: вторая кинетика блока (Simulated ведёт её сеть, уровень и сохранение). */
+    public static class Cog extends KineticBlockEntity implements ExtraKinetics.ExtraKineticsBlockEntity {
+        private final GunBearingBlockEntity parent;
+
+        public Cog(BlockEntityType<?> type, BlockPos pos, BlockState state, GunBearingBlockEntity parent) {
+            // позиция - ExtraBlockPos: по ней Simulated отличает вторую кинетику блока (зацепление шестерён)
+            super(type, new dev.simulated_team.simulated.util.extra_kinetics.ExtraBlockPos(pos), state);
+            this.parent = parent;
+        }
+
+        @Override
+        public KineticBlockEntity getParentBlockEntity() {
+            return parent;
+        }
+
+        /** Кольцо закрутилось у несобранного подшипника - собрать; секвенсорный редуктор - поворот на заданный угол. */
+        @Override
+        public void onSpeedChanged(float previousSpeed) {
+            super.onSpeedChanged(previousSpeed);
+            if (speed != 0 && !parent.assembled()) parent.assembleNextTick = true;
+            parent.sequencedAngleLimit = -1;
+            if (sequenceContext != null && sequenceContext.instruction() == SequencerInstructions.TURN_ANGLE) {
+                parent.sequencedAngleLimit = sequenceContext.getEffectiveValue(getTheoreticalSpeed());
+            }
+        }
+
+        @Override
+        protected boolean canPropagateDiagonally(IRotate block, BlockState state) {
+            return true;
+        }
+
+        @Override
+        public float calculateStressApplied() {
+            return 0;
+        }
+    }
+
+    private final Cog cog;
+    /** Собрать (или разобрать) в следующем тике: ПКМ, ПКМ по пластине, закрутившееся кольцо. */
+    public boolean assembleNextTick;
+    /** Блок уезжает в собираемую постройку (то, на чём он стоит): пластину не трогать. */
+    boolean moving;
+    @Nullable private AssemblyException lastException;
     @Nullable private UUID subLevel;
-    @Nullable private BlockPos plotFront;
-    /** Угол от шестерни (градусы от положения при сборке): куда поворотную часть ведёт вал. */
-    private double target;
-    /**
-     * Угол сервопривода сейчас и тиком раньше и его скорость (градусов за тик): идёт за target с ограниченным ускорением -
-     * плавный разгон и торможение, без рывков, раскачивающих постройку.
-     */
-    private double prof, lastProf, profVel;
-    /** Ускорение сервопривода, градусов за тик² (до 19°/тик - за 5 тиков). */
-    private static final double ACCEL = 4;
-    /** Насколько угол от шестерни может уйти вперёд фактического, градусов: дальше - часть упёрлась, шестерня проскальзывает. */
-    private static final double MAX_LEAD = 4;
+    @Nullable private BlockPos platePos;
+    /** Угол сервопривода сейчас и тиком раньше (градусы от положения при сборке). */
+    private double target, lastTarget;
+    /** Сколько ещё можно повернуть по команде секвенсорного редуктора, градусов (-1 - без предела). */
+    double sequencedAngleLimit = -1;
+    private boolean locked;
     private long stepTick = Long.MIN_VALUE;
     @Nullable private Object handle;
-    @Nullable private Component lastError;
+    private ScrollOptionBehaviour<LockMode> lockMode;
 
     public GunBearingBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
+        cog = new Cog(type, pos, state, this);
     }
+
+    @Override
+    public void addBehaviours(List<BlockEntityBehaviour> behaviours) {
+        super.addBehaviours(behaviours);
+        lockMode = new ScrollOptionBehaviour<>(LockMode.class, Component.translatable("radar_fcs.bearing.lock_mode"), this,
+                new CenteredSideValueBoxTransform((state, dir) -> dir.getAxis() != state.getValue(DirectionalKineticBlock.FACING).getAxis()));
+        lockMode.value = LockMode.LOCKED_DEFAULT.ordinal();
+        behaviours.add(lockMode);
+    }
+
+    // ---- ExtraKinetics (кольцо-шестерня) ----
+
+    @Override
+    public KineticBlockEntity getExtraKinetics() {
+        return cog;
+    }
+
+    /** Кольцо - отдельная кинетика: с валом насквозь не связано (как у Aeronautics). */
+    @Override
+    public boolean shouldConnectExtraKinetics() {
+        return false;
+    }
+
+    @Override
+    public String getExtraKineticsSaveName() {
+        return "Cogwheel";
+    }
+
+    // ---- состояние ----
 
     public Direction facing() {
         return getBlockState().getValue(DirectionalKineticBlock.FACING);
@@ -71,83 +197,28 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
         return subLevel;
     }
 
-    /**
-     * Скорость кольца-шестерни: от шестерни Create рядом - малой вплотную сбоку (в зацеплении крутится навстречу) или
-     * большой по диагонали (кольцо вдвое быстрее, навстречу); ось шестерни - как у подшипника. 0 - шестерни нет.
-     */
-    public float ringSpeed() {
-        if (level == null) return 0;
-        Direction.Axis axis = facing().getAxis();
-        for (Direction d : Direction.values()) {
-            if (d.getAxis() == axis) continue;
-            BlockPos p = worldPosition.relative(d);
-            if (level.isLoaded(p) && level.getBlockEntity(p) instanceof KineticBlockEntity k && cogOnAxis(k, axis, false)) return -k.getSpeed();
-        }
-        for (Direction a : Direction.values()) {
-            for (Direction b : Direction.values()) {
-                if (a.getAxis() == axis || b.getAxis() == axis || a.getAxis() == b.getAxis() || a.ordinal() > b.ordinal()) continue;
-                BlockPos p = worldPosition.relative(a).relative(b);
-                if (level.isLoaded(p) && level.getBlockEntity(p) instanceof KineticBlockEntity k && cogOnAxis(k, axis, true)) return -2 * k.getSpeed();
-            }
-        }
-        return 0;
-    }
-
-    /** Ближняя шестерня, с которой кольцо в зацеплении (для отрисовки), или null. */
+    /** Пластина подшипника (в плоте поворотной части); null - не собран. */
     @Nullable
-    public KineticBlockEntity meshedCog() {
-        if (level == null) return null;
-        Direction.Axis axis = facing().getAxis();
-        for (Direction d : Direction.values()) {
-            if (d.getAxis() == axis) continue;
-            BlockPos p = worldPosition.relative(d);
-            if (level.isLoaded(p) && level.getBlockEntity(p) instanceof KineticBlockEntity k && cogOnAxis(k, axis, false)) return k;
-        }
-        return null;
+    public BlockPos platePos() {
+        return platePos;
     }
 
-    private static boolean cogOnAxis(KineticBlockEntity k, Direction.Axis axis, boolean large) {
-        BlockState st = k.getBlockState();
-        if (!(st.getBlock() instanceof com.simibubi.create.content.kinetics.base.IRotate r)) return false;
-        boolean cog = large ? com.simibubi.create.content.kinetics.simpleRelays.ICogWheel.isLargeCog(st)
-                : com.simibubi.create.content.kinetics.simpleRelays.ICogWheel.isSmallCog(st);
-        return cog && r.getRotationAxis(st) == axis;
-    }
-
-    /** Поворот за тик, градусов вокруг FACING: от кольца-шестерни, как у подшипника Create (0 - шестерня стоит). */
-    public double degPerTick() {
-        double d = convertToAngular(ringSpeed());
-        return facing().getAxisDirection() == Direction.AxisDirection.POSITIVE ? d : -d;
-    }
-
-    /** Первый блок поворотной части (в плоте), куда идёт вал насквозь; null - не собран. */
+    /** Первый блок поворотной части (перед пластиной), куда идёт вал насквозь; null - не собран. */
     @Nullable
     public BlockPos plotFront() {
-        return plotFront;
+        return platePos == null ? null : platePos.relative(facing());
     }
 
-    // вал насквозь: подшипник передаёт вращение своего вала первому блоку поворотной части (он в плоте Sable, не сосед)
-    @Override
-    public List<BlockPos> addPropagationLocations(com.simibubi.create.content.kinetics.base.IRotate block, BlockState state, List<BlockPos> neighbours) {
-        if (plotFront != null && subLevel != null) neighbours.add(plotFront);
-        return super.addPropagationLocations(block, state, neighbours);
+    /** Скорость кольца-шестерни, об/мин. */
+    public float ringSpeed() {
+        return cog.getSpeed();
     }
 
-    @Override
-    public float propagateRotationTo(KineticBlockEntity target, BlockState stateFrom, BlockState stateTo, BlockPos diff,
-                                     boolean connectedViaAxes, boolean connectedViaCogs) {
-        if (plotFront != null && subLevel != null && target.getBlockPos().equals(plotFront) && level != null
-                && stateTo.getBlock() instanceof com.simibubi.create.content.kinetics.base.IRotate r
-                && r.hasShaftTowards(level, plotFront, stateTo, facing().getOpposite())) return 1;
-        return super.propagateRotationTo(target, stateFrom, stateTo, diff, connectedViaAxes, connectedViaCogs);
+    public boolean locked() {
+        return locked;
     }
 
-    @Override
-    public boolean isCustomConnection(KineticBlockEntity other, BlockState state, BlockState otherState) {
-        return plotFront != null && subLevel != null && other.getBlockPos().equals(plotFront) || super.isCustomConnection(other, state, otherState);
-    }
-
-    /** Угол сервопривода сейчас (градусы от положения при сборке). */
+    /** Угол сервопривода (градусы от положения при сборке). */
     public double target() {
         return target;
     }
@@ -158,124 +229,273 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
         return SableRotor.angleDeg(sl, worldPosition, facing(), subLevel);
     }
 
-    public void toggleAssembly(Player p) {
-        if (!(level instanceof ServerLevel sl)) return;
-        if (!Mods.SABLE) {
-            p.displayClientMessage(Component.translatable("radar_fcs.bearing.no_sable").withStyle(ChatFormatting.RED), true);
-            return;
-        }
-        if (assembled()) {
-            p.displayClientMessage(Component.translatable("radar_fcs.bearing.assembled_info",
-                    String.format(Locale.ROOT, "%.1f", angle())).withStyle(ChatFormatting.AQUA), true);
-            return;
-        }
+    /** Предел скорости кольца - как у поворотного подшипника Aeronautics (их конфиг сервера), об/мин. */
+    private static float maxSpeed() {
         try {
-            SableRotor.Assembled a = SableRotor.assemble(sl, worldPosition, facing());
-            if (a == null) {
-                lastError = Component.translatable("radar_fcs.bearing.nothing");
-                p.displayClientMessage(lastError.copy().withStyle(ChatFormatting.GOLD), true);
-                return;
-            }
-            subLevel = a.subLevel();
-            plotFront = a.plotFront();
-            target = prof = lastProf = profVel = 0;
-            lastError = null;
-            reattach(sl);
-            // вал насквозь: переподключить кинетику - теперь соседом стал первый блок поворотной части в плоте
-            detachKinetics();
-            attachKinetics();
-            // подшипники, уехавшие в собранную часть (наклон на площадке курса), - сразу на новое основание: иначе их
-            // поворотная часть пару тиков ничем не держится, падает на площадку и её отбрасывает
-            for (BlockPos mp : a.moved()) {
-                if (sl.isLoaded(mp) && sl.getBlockEntity(mp) instanceof GunBearingBlockEntity r && r != this && r.subLevel != null
-                        && !SableRotor.valid(r.handle) && SableRotor.exists(sl, r.subLevel)) r.reattach(sl);
-            }
-            setChanged();
-            sendData();
-            p.displayClientMessage(Component.translatable("radar_fcs.bearing.assembled").withStyle(ChatFormatting.GREEN), true);
-        } catch (AssemblyException e) {
-            lastError = e.component;
-            p.displayClientMessage(e.component.copy().withStyle(ChatFormatting.RED), true);
+            return dev.simulated_team.simulated.service.SimConfigService.INSTANCE.server().blocks.maxSwivelBearingSpeed.getF();
+        } catch (RuntimeException e) {
+            return 256;
         }
     }
 
-    private void reattach(ServerLevel sl) {
-        if (subLevel == null || plotFront == null) return;
-        SableRotor.remove(handle);
-        handle = SableRotor.attach(sl, worldPosition, facing(), subLevel, plotFront);
-        if (handle != null) ACTIVE.add(this);
+    private boolean tooFast() {
+        return Math.abs(cog.getSpeed()) > maxSpeed();
     }
+
+    /** Поворот за тик, градусов вокруг FACING: от кольца (не быстрее предела), с пределом секвенсорного редуктора. */
+    public double degPerTick() {
+        float max = maxSpeed();
+        double d = convertToAngular(Math.max(-max, Math.min(max, cog.getSpeed())));
+        if (facing().getAxisDirection() == Direction.AxisDirection.NEGATIVE) d = -d;
+        if (sequencedAngleLimit >= 0) d = Math.max(-sequencedAngleLimit, Math.min(sequencedAngleLimit, d));
+        return d;
+    }
+
+    // ---- тик ----
 
     @Override
     public void tick() {
         super.tick();
-        if (!(level instanceof ServerLevel sl) || subLevel == null || !Mods.SABLE) return;
-        if (!SableRotor.valid(handle)) {
-            // после загрузки мира шарнир не сохранён: подключить снова, как только под-уровень загружен
-            if (SableRotor.exists(sl, subLevel)) reattach(sl);
+        cog.tick();
+        if (level == null) return;
+        if (level.isClientSide) {
+            if (tooFast()) grinding();
             return;
         }
-        // физика Sable спит, пока постройки стоят, - шага физики нет, и поворот не считался бы: шестерня крутится -
-        // разбудить поворотную часть; если шаг физики в прошлом тике всё же не прошёл - посчитать поворот здесь
-        double turn = degPerTick();
-        if (turn != 0) SableRotor.wake(sl, subLevel);
-        if (sl.getGameTime() - stepTick > 1) integrate(sl.getGameTime());
-        // вал насквозь: блок поворотной части сам подшипник не видит (он не сосед) - если он без вращения, а вал
-        // крутится, переподключить кинетику (поставили новый блок, загрузился плот)
-        if (sl.getGameTime() % 20 == 7 && plotFront != null && getSpeed() != 0 && sl.isLoaded(plotFront)
-                && sl.getBlockEntity(plotFront) instanceof KineticBlockEntity k && k.getSpeed() == 0
-                && k.getBlockState().getBlock() instanceof com.simibubi.create.content.kinetics.base.IRotate r
-                && r.hasShaftTowards(sl, plotFront, k.getBlockState(), facing().getOpposite())) {
+        if (!(level instanceof ServerLevel sl) || !Mods.SABLE) return;
+        if (assembleNextTick) {
+            assembleNextTick = false;
+            if (assembled()) disassemble(sl);
+            else assemble(sl);
+        }
+        if (!assembled()) return;
+        if (!SableRotor.valid(handle)) {
+            // после загрузки мира шарнир не сохранён: подключить снова, как только под-уровень загружен; пластины нет -
+            // подшипник разобран
+            if (platePos != null && sl.isLoaded(platePos) && !(sl.getBlockState(platePos).getBlock() instanceof GunBearingPlateBlock)
+                    && SableRotor.exists(sl, subLevel)) {
+                forgetAssembly(sl);
+                return;
+            }
+            if (SableRotor.exists(sl, subLevel)) reattach(sl);
+            if (!SableRotor.valid(handle)) return;
+        }
+        // блокировка: режим и сигнал редстоуна; включилась - угол берётся текущий (часть не рванёт к старому)
+        boolean lock = lockMode.get().shouldLock(sl.getBestNeighborSignal(worldPosition));
+        if (lock != locked) {
+            locked = lock;
+            if (getBlockState().getValue(GunBearingBlock.POWERED) != lock) {
+                sl.setBlock(worldPosition, getBlockState().setValue(GunBearingBlock.POWERED, lock), 3);
+            }
+            if (lock) {
+                double a = angle();
+                if (!Double.isNaN(a)) target = lastTarget = a;
+            }
+            setChanged();
+        }
+        // физика Sable спит, пока постройки стоят: кольцо крутится - разбудить; шаг физики в этом тике не прошёл -
+        // посчитать поворот здесь
+        if (cog.getSpeed() != 0) {
+            SableRotor.wake(sl, subLevel);
+        }
+        if (sl.getGameTime() - stepTick > 1) integrate(sl, sl.getGameTime());
+        // вал насквозь: пластина в плоте подшипнику не сосед - если её постройка без вращения, а вал крутится,
+        // переподключить кинетику (поставили новый блок, загрузился плот)
+        if (sl.getGameTime() % 20 == 7 && platePos != null && getSpeed() != 0 && sl.isLoaded(platePos)
+                && sl.getBlockEntity(platePos) instanceof KineticBlockEntity k && k.getSpeed() == 0) {
             detachKinetics();
             attachKinetics();
         }
     }
 
-    /** Поворот за тик now (один раз за тик). */
-    private void integrate(long now) {
+    /** Поворот за тик now (один раз за тик): угол накручивается от кольца; упёрлась часть - не дальше MAX_LEAD. */
+    private void integrate(ServerLevel sl, long now) {
         if (now == stepTick) return;
         stepTick = now;
-        lastProf = prof;
-        double step = Math.max(-90, Math.min(90, degPerTick()));
+        lastTarget = target;
+        if (!locked || SableRotor.paused(sl)) return;
+        double step = degPerTick();
         if (step != 0) {
             target = Aim.wrap180(target + step);
-            setChanged();
-        }
-        // физичная сборка: поворотная часть упёрлась (в блок, в постройку) - угол от шестерни не накручивается дальше
-        // MAX_LEAD от фактического (шестерня «проскальзывает»), помеху убрали - часть не рванёт на накопленный угол
-        double actual = angle();
-        if (!Double.isNaN(actual)) {
-            double lead = Aim.wrap180(target - actual);
-            if (Math.abs(lead) > MAX_LEAD) target = Aim.wrap180(actual + Math.copySign(MAX_LEAD, lead));
-            double pl = Aim.wrap180(prof - actual);
-            if (Math.abs(pl) > MAX_LEAD) {
-                prof = Aim.wrap180(actual + Math.copySign(MAX_LEAD, pl));
-                profVel = 0;
+            if (sequencedAngleLimit >= 0) sequencedAngleLimit = Math.max(0, sequencedAngleLimit - Math.abs(step));
+            double actual = angle();
+            if (!Double.isNaN(actual)) {
+                double lead = Aim.wrap180(target - actual);
+                if (Math.abs(lead) > MAX_LEAD) target = Aim.wrap180(actual + Math.copySign(MAX_LEAD, lead));
             }
-        }
-        // профиль: скорость - как у вала плюс догон остатка, но не быстрее, чем можно затормозить с ускорением ACCEL
-        double err = Aim.wrap180(target - prof);
-        double want = step + Math.copySign(Math.sqrt(2 * ACCEL * Math.abs(err)), err);
-        profVel += Math.max(-ACCEL, Math.min(ACCEL, want - profVel));
-        if (Math.abs(err - profVel) < 0.05 && Math.abs(profVel - step) <= ACCEL) {
-            prof = target;                                                  // дошли - встать точно
-            profVel = step;
-        } else {
-            prof = Aim.wrap180(prof + profVel);
+            setChanged();
         }
     }
 
-    /** Шаг физики: цель сервопривода - между углом профиля прошлого и этого тика. */
-    private void physicsStep(double dt) {
-        if (!(level instanceof ServerLevel sl) || subLevel == null || handle == null || plotFront == null) return;
-        // угол за тик - здесь, на первом шаге физики тика: после команд вычислителя и приводов в этом же тике
-        // (в тике блока поворот запаздывал бы на тик, и привод учился бы не на той команде)
-        integrate(sl.getGameTime());
+    /** Шаг физики: сервопривод к углу между прошлым и этим тиком, с упреждением по скорости; не заблокирован - трение. */
+    private void physicsStep() {
+        if (!(level instanceof ServerLevel sl) || subLevel == null || !SableRotor.valid(handle)) return;
+        integrate(sl, sl.getGameTime());
+        if (!locked) {
+            SableRotor.free(handle, FRICTION);
+            return;
+        }
         double pt = Math.max(0, Math.min(1, SableRotor.partialPhysicsTick(sl)));
-        double goal = Aim.wrap180(lastProf + Aim.wrap180(prof - lastProf) * pt);
-        SableRotor.drive(sl, handle, worldPosition, facing(), subLevel, plotFront, Math.toRadians(goal),
-                Math.toRadians(profVel) * 20, dt);
+        double delta = Aim.wrap180(target - lastTarget);
+        double goal = lastTarget + delta * pt;
+        List<UUID> parts = new java.util.ArrayList<>();
+        parts.add(subLevel);
+        for (int i = 0; i < parts.size() && parts.size() < 32; i++) parts.addAll(childSubs(sl, parts.get(i)));
+        double inertia = Math.max(10, SableRotor.inertia(sl, worldPosition, facing(), parts));
+        double k = OMEGA * OMEGA * inertia, c = 2 * ZETA * OMEGA * inertia;
+        // упреждение: на ходу демпфер тянет назад на c/k·скорость - цель на столько же вперёд
+        double rate = Math.toRadians(delta) * 20;
+        double goalRad = Math.toRadians(goal) + rate * c / k;
+        // цель - рядом с текущим углом (без скачка через ±180°)
+        double now = angle();
+        if (!Double.isNaN(now)) goalRad = Math.toRadians(now) + Math.IEEEremainder(goalRad - Math.toRadians(now), 2 * Math.PI);
+        SableRotor.servo(handle, goalRad, k, c);
+        for (UUID id : parts) SableRotor.wake(sl, id);
     }
+
+    // ---- сборка ----
+
+    /** Собрать сейчас, если ещё не собран (игровые тесты; в игре - ПКМ или закрутившееся кольцо, в следующем тике). */
+    public void assembleNow() {
+        if (level instanceof ServerLevel sl && !assembled()) assemble(sl);
+    }
+
+    private void assemble(ServerLevel sl) {
+        Direction f = facing();
+        BlockState plate = GunBearings.PLATE.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, f);
+        SableRotor.Assembled a;
+        try {
+            a = SableRotor.assemble(sl, worldPosition, f, plate);
+        } catch (AssemblyException e) {
+            lastException = e;
+            sendData();
+            return;
+        }
+        lastException = null;
+        subLevel = a.subLevel();
+        platePos = a.platePos();
+        target = lastTarget = 0;
+        locked = false;
+        sequencedAngleLimit = -1;
+        if (sl.getBlockEntity(platePos) instanceof GunBearingPlateBlockEntity p) p.setParent(worldPosition);
+        sl.setBlock(worldPosition, getBlockState().setValue(GunBearingBlock.ASSEMBLED, true), 3);
+        reattach(sl);
+        // вал насквозь: соседом стала пластина в плоте
+        detachKinetics();
+        attachKinetics();
+        setChanged();
+        sendData();
+    }
+
+    private void disassemble(ServerLevel sl) {
+        if (subLevel == null) return;
+        if (SableRotor.containedIn(sl, worldPosition, subLevel)) {
+            lastException = new AssemblyException(Component.translatable("radar_fcs.bearing.same_sublevel"));
+            sendData();
+            return;
+        }
+        UUID id = subLevel;
+        BlockPos plate = platePos;
+        SableRotor.remove(handle);
+        handle = null;
+        ACTIVE.remove(this);
+        if (plate != null && sl.isLoaded(plate)) {
+            if (sl.getBlockEntity(plate) instanceof GunBearingPlateBlockEntity p) p.detaching = true;
+            if (sl.getBlockState(plate).getBlock() instanceof GunBearingPlateBlock) sl.removeBlock(plate, false);
+        }
+        if (plate != null && !SableRotor.disassemble(sl, id, plate, worldPosition)) {
+            sl.playSound(null, worldPosition, SoundEvents.ANVIL_LAND, SoundSource.BLOCKS, 0.3f, 1.5f);
+        }
+        forgetAssembly(sl);
+    }
+
+    /** Подшипник больше не собран (разобрали, пластину потеряли). */
+    private void forgetAssembly(ServerLevel sl) {
+        SableRotor.remove(handle);
+        handle = null;
+        ACTIVE.remove(this);
+        subLevel = null;
+        platePos = null;
+        target = lastTarget = 0;
+        locked = false;
+        BlockState st = getBlockState();
+        if (st.getValue(GunBearingBlock.ASSEMBLED) || st.getValue(GunBearingBlock.POWERED)) {
+            sl.setBlock(worldPosition, st.setValue(GunBearingBlock.ASSEMBLED, false).setValue(GunBearingBlock.POWERED, false), 3);
+        }
+        detachKinetics();
+        attachKinetics();
+        setChanged();
+        sendData();
+    }
+
+    private void reattach(ServerLevel sl) {
+        if (subLevel == null || platePos == null) return;
+        SableRotor.remove(handle);
+        handle = SableRotor.attach(sl, worldPosition, facing(), subLevel, platePos);
+        if (handle != null) ACTIVE.add(this);
+    }
+
+    /** Подшипник переехал (собрали то, на чём он стоит): пластина узнаёт новое место, шарнир - сразу на новое основание. */
+    void afterMove(ServerLevel sl) {
+        moving = false;
+        if (platePos != null && sl.isLoaded(platePos) && sl.getBlockEntity(platePos) instanceof GunBearingPlateBlockEntity p) {
+            p.setParent(worldPosition);
+        }
+        if (subLevel != null && SableRotor.exists(sl, subLevel)) reattach(sl);
+    }
+
+    /** Пластина переехала. */
+    void plateMoved(BlockPos newPlate) {
+        platePos = newPlate.immutable();
+        if (level instanceof ServerLevel sl) reattach(sl);
+        setChanged();
+    }
+
+    /** Блок сломан (не переезд): шарнир и пластина снимаются - поворотная часть остаётся свободной постройкой. */
+    @Override
+    public void remove() {
+        if (level instanceof ServerLevel sl && !moving && platePos != null && sl.isLoaded(platePos)) {
+            if (sl.getBlockEntity(platePos) instanceof GunBearingPlateBlockEntity p) p.detaching = true;
+            if (sl.getBlockState(platePos).getBlock() instanceof GunBearingPlateBlock) sl.removeBlock(platePos, false);
+        }
+        super.remove();
+    }
+
+    /** Блок снят, перенесён в под-уровень или чанк выгружен: шарнир снимается (новый BE подключит его снова). */
+    @Override
+    public void invalidate() {
+        super.invalidate();
+        if (Mods.SABLE && level != null && !level.isClientSide) SableRotor.remove(handle);
+        handle = null;
+        ACTIVE.remove(this);
+    }
+
+    // ---- вал насквозь: подшипник - пластина (в плоте, не сосед) ----
+
+    @Override
+    public List<BlockPos> addPropagationLocations(IRotate block, BlockState state, List<BlockPos> neighbours) {
+        if (platePos != null && subLevel != null) neighbours.add(platePos);
+        return super.addPropagationLocations(block, state, neighbours);
+    }
+
+    @Override
+    public float propagateRotationTo(KineticBlockEntity target, BlockState stateFrom, BlockState stateTo, BlockPos diff,
+                                     boolean connectedViaAxes, boolean connectedViaCogs) {
+        if (platePos != null && subLevel != null && target.getBlockPos().equals(platePos)) return 1;
+        return super.propagateRotationTo(target, stateFrom, stateTo, diff, connectedViaAxes, connectedViaCogs);
+    }
+
+    @Override
+    public boolean isCustomConnection(KineticBlockEntity other, BlockState state, BlockState otherState) {
+        return platePos != null && subLevel != null && other.getBlockPos().equals(platePos) || super.isCustomConnection(other, state, otherState);
+    }
+
+    @Override
+    public float calculateStressApplied() {
+        return 0;
+    }
+
+    // ---- шаги физики ----
 
     /** Сколько подшипников под этим (0 - стоит на земле или корабле). */
     private int depth(List<GunBearingBlockEntity> all) {
@@ -305,27 +525,13 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
         return out;
     }
 
-    /** Отставание поворотной части от угла вала, при котором приводы не учатся, градусов (обычное на ходу - 0.3-4°). */
-    private static final double SETTLE = 5;
-
-    /** Отстаёт ли поворотная часть какого-то подшипника этого мира от угла вала больше SETTLE (только что собрана, упёрлась). */
-    public static boolean settling(net.minecraft.world.level.Level level) {
-        for (GunBearingBlockEntity be : List.copyOf(ACTIVE)) {
-            if (be.level != level || be.isRemoved() || be.subLevel == null) continue;
-            double a = be.angle();
-            if (!Double.isNaN(a) && Math.abs(Aim.wrap180(be.prof - a)) > SETTLE) return true;
-        }
-        return false;
-    }
-
     /** Собранные подшипники (для тестов). */
     public static List<GunBearingBlockEntity> active() {
         return List.copyOf(ACTIVE);
     }
 
     public static void physicsStepAll(ServerLevel stepping, double dt) {
-        // сначала внешние подшипники (на земле или корабле), потом стоящие на их поворотных частях: поза вложенной
-        // части считается от уже поставленной позы основания
+        // сначала внешние подшипники (на земле или корабле), потом стоящие на их поворотных частях
         List<GunBearingBlockEntity> order = new java.util.ArrayList<>();
         for (GunBearingBlockEntity be : ACTIVE) if (be.level == stepping || be.isRemoved()) order.add(be);
         java.util.Map<GunBearingBlockEntity, Integer> depth = new java.util.HashMap<>();
@@ -337,7 +543,7 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
                 continue;
             }
             try {
-                be.physicsStep(dt);
+                be.physicsStep();
             } catch (RuntimeException e) {
                 FcsMod.LOG.warn("[radar_fcs] gun bearing servo failed at {}: {}", be.getBlockPos(), e.toString());
                 ACTIVE.remove(be);
@@ -345,13 +551,24 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
         }
     }
 
-    /** Блок снят, перенесён в под-уровень или чанк выгружен: шарнир снимается (новый BE подключит его снова). */
+    // ---- клиент, подсказки ----
+
+    /** Кольцо крутят быстрее предела: скрежет и искры (как у Aeronautics). */
+    private void grinding() {
+        Level l = level;
+        if (l == null || l.random.nextInt(4) != 0) return;
+        var c = worldPosition.getCenter();
+        for (int i = 0; i < 2; i++) {
+            l.addParticle(ParticleTypes.CRIT, c.x + (l.random.nextDouble() - 0.5), c.y + (l.random.nextDouble() - 0.5),
+                    c.z + (l.random.nextDouble() - 0.5), 0, 0.05, 0);
+        }
+        if (l.random.nextInt(5) == 0) l.playLocalSound(worldPosition, SoundEvents.GRINDSTONE_USE, SoundSource.BLOCKS, 0.25f, 1.6f, false);
+    }
+
     @Override
-    public void invalidate() {
-        super.invalidate();
-        if (Mods.SABLE && level != null && !level.isClientSide) SableRotor.remove(handle);
-        handle = null;
-        ACTIVE.remove(this);
+    @Nullable
+    public AssemblyException getLastAssemblyException() {
+        return lastException;
     }
 
     @Override
@@ -359,11 +576,17 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
         tooltip.add(Component.literal("    ").append(Component.translatable("block.radar_fcs.gun_bearing").withStyle(ChatFormatting.GRAY)));
         if (!assembled()) {
             tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.bearing.not_assembled").withStyle(ChatFormatting.GOLD)));
-            if (lastError != null) tooltip.add(Component.literal("    ").append(lastError.copy().withStyle(ChatFormatting.RED)));
         } else {
             tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.bearing.angle",
                     String.format(Locale.ROOT, "%.1f", target)).withStyle(ChatFormatting.AQUA)));
+            tooltip.add(Component.literal("    ").append(Component.translatable(locked ? "radar_fcs.bearing.locked"
+                    : "radar_fcs.bearing.unlocked").withStyle(ChatFormatting.GRAY)));
         }
+        if (tooFast()) {
+            tooltip.add(Component.literal("    ").append(Component.translatable("radar_fcs.bearing.too_fast",
+                    String.format(Locale.ROOT, "%.0f", maxSpeed())).withStyle(ChatFormatting.RED)));
+        }
+        addExceptionToTooltip(tooltip);
         super.addToGoggleTooltip(tooltip, isPlayerSneaking);
         return true;
     }
@@ -372,16 +595,21 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
     protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
         super.write(tag, registries, clientPacket);
         if (subLevel != null) tag.putUUID("SubLevel", subLevel);
-        if (plotFront != null) tag.put("PlotFront", NbtUtils.writeBlockPos(plotFront));
+        if (platePos != null) tag.put("Plate", NbtUtils.writeBlockPos(platePos));
         tag.putDouble("Target", target);
+        tag.putDouble("SequencedAngleLimit", sequencedAngleLimit);
+        tag.putBoolean("Locked", locked);
+        AssemblyException.write(tag, registries, lastException);
     }
 
     @Override
     protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
         super.read(tag, registries, clientPacket);
         subLevel = tag.hasUUID("SubLevel") ? tag.getUUID("SubLevel") : null;
-        plotFront = NbtUtils.readBlockPos(tag, "PlotFront").orElse(null);
-        target = prof = lastProf = tag.getDouble("Target");
-        profVel = 0;
+        platePos = NbtUtils.readBlockPos(tag, "Plate").orElse(null);
+        target = lastTarget = tag.getDouble("Target");
+        sequencedAngleLimit = tag.contains("SequencedAngleLimit") ? tag.getDouble("SequencedAngleLimit") : -1;
+        locked = tag.getBoolean("Locked");
+        lastException = AssemblyException.read(tag, registries);
     }
 }

@@ -67,6 +67,8 @@ dependencies {
     modCompile "maven.modrinth:sable:${sable_version}"
     embeddedSources "maven.modrinth:sable:${sable_version}"
     embeddedSources "maven.modrinth:create:${create_version}"
+    // Simulated (в составе Create Aeronautics): API поворотного подшипника для подшипника орудия - только компиляция
+    embeddedSources "maven.modrinth:create-aeronautics:${aeronautics_version}"
 
     // API Sable для игровых тестов (сборка корабля); в основной код не попадает
     gametestSable "maven.modrinth:sable:${sable_version}"
@@ -96,13 +98,18 @@ dependencies {
 // достаём встроенные библиотеки при конфигурации (один раз): companion - в локальный репозиторий для jarJar
 def companionJar = new File(embeddedDir, "sable-companion-common-1.21.1-${companionVersion}.jar")
 def flywheelJar = new File(embeddedDir, 'flywheel-neoforge-1.21.1.jar')
-if (!companionJar.exists() || !flywheelJar.exists()) {
+def simulatedJar = new File(embeddedDir, 'simulated-neoforge-1.21.1.jar')
+if (!companionJar.exists() || !flywheelJar.exists() || !simulatedJar.exists()) {
     configurations.embeddedSources.resolvedConfiguration.resolvedArtifacts.each { art ->
         copy {
             from(zipTree(art.file)) {
                 include "META-INF/jarjar/sable-companion-common-1.21.1-${companionVersion}.jar"
                 include 'META-INF/jarjar/flywheel-neoforge-1.21.1-*.jar'
-                eachFile { path = name.startsWith('flywheel') ? 'flywheel-neoforge-1.21.1.jar' : name }
+                include 'META-INF/jarjar/dev.simulated_team.simulated.simulated-neoforge-1.21.1-*.jar'
+                eachFile {
+                    path = name.startsWith('flywheel') ? 'flywheel-neoforge-1.21.1.jar'
+                            : name.startsWith('dev.simulated_team.simulated') ? 'simulated-neoforge-1.21.1.jar' : name
+                }
             }
             includeEmptyDirs = false
             into embeddedDir
@@ -116,6 +123,9 @@ dependencies {
     jarJar "dev.ryanhcode.sable-companion:sable-companion-common-1.21.1:${companionVersion}"
     // Flywheel (визуал подшипника радара) - только компиляция, в рантайме его даёт Create
     compileOnly files(flywheelJar)
+    // Simulated - API подшипника Aeronautics (ExtraKinetics, сборка/разборка); код с ним грузится только при Aeronautics
+    compileOnly files(simulatedJar)
+    gametestCompileOnly files(simulatedJar)
 }
 
 def prepareRunMods = tasks.register('prepareRunMods', Sync) {

@@ -390,7 +390,7 @@ public class TurretGameTests {
                 throw new GameTestAssertException("no gun bearing");
             }
             if (t == 5) {
-                g.toggleAssembly(pl);
+                g.assembleNow();
                 SableTestSupport.trackId(h.getLevel(), g.subLevel());
                 if (!g.assembled() || g.plotFront() == null) throw new GameTestAssertException("bearing did not assemble");
                 return;
@@ -442,7 +442,7 @@ public class TurretGameTests {
                 throw new GameTestAssertException("no gun bearing");
             }
             if (t == 5) {
-                g.toggleAssembly(pl);
+                g.assembleNow();
                 SableTestSupport.trackId(h.getLevel(), g.subLevel());
                 if (!g.assembled()) throw new GameTestAssertException("bearing did not assemble");
                 return;
@@ -532,7 +532,7 @@ public class TurretGameTests {
                 // сначала наклон (ствол - его поворотная часть), затем курс (площадка с подшипником и приводом наклона)
                 for (BlockPos r : List.of(pitch, yaw)) {
                     if (h.getLevel().getBlockEntity(h.absolutePos(r)) instanceof dev.radarfcs.block.GunBearingBlockEntity g) {
-                        g.toggleAssembly(pl);
+                        g.assembleNow();
                         SableTestSupport.trackId(h.getLevel(), g.subLevel());          // убрать после пакета
                     } else throw new GameTestAssertException("no gun bearing at " + r);
                 }

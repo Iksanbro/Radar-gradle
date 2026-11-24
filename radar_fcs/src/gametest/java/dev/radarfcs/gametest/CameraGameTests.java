@@ -122,6 +122,51 @@ public class CameraGameTests {
         });
     }
     /**
+     * Курсор камеры в воздухе (луч ни во что не упёрся): пушка не стоит с «нет решения», а наводится по направлению
+     * курсора - ствол смотрит туда же, куда камера (до 2°).
+     */
+    @GameTest(template = ARENA, batch = "camera", timeoutTicks = 200)
+    public static void cameraAimsAlongCursorInAir(GameTestHelper h) {
+        floor(h);
+        BlockPos mount = new BlockPos(10, 1, 32), fcsPos = new BlockPos(6, 1, 28), camPos = new BlockPos(8, 3, 30);
+        autocannon(h, mount, Direction.EAST, 4, 64);
+        FireControlBlockEntity be = fcs(h, fcsPos);
+        h.setBlock(camPos, FcsRegistry.CAMERA.get().defaultBlockState().setValue(CameraBlock.FACING, Direction.EAST));
+        FcsGameTests.CREATED.add(h.absolutePos(camPos));
+        link(h, camPos, Direction.UP, fcsPos);
+        UUID who = UUID.randomUUID();
+        float yaw = -70f, pitch = -35f;                                   // вправо от востока и вверх - в небо
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            if (t < 20 || !(h.getLevel().getBlockEntity(h.absolutePos(camPos)) instanceof CameraBlockEntity cam)) return;
+            if (t == 20) {
+                // тест огорожен барьерами (потолок, стены): на пути взгляда их убрать - там небо
+                Vec3 eye = cam.eye(), end = eye.add(Vec3.directionFromRotation(pitch, yaw).scale(CameraBlockEntity.RANGE));
+                for (int i = 0; i < 8; i++) {
+                    var hit = h.getLevel().clip(new net.minecraft.world.level.ClipContext(eye, end, net.minecraft.world.level.ClipContext.Block.COLLIDER,
+                            net.minecraft.world.level.ClipContext.Fluid.NONE, net.minecraft.world.phys.shapes.CollisionContext.empty()));
+                    if (hit.getType() == net.minecraft.world.phys.HitResult.Type.MISS
+                            || !h.getLevel().getBlockState(hit.getBlockPos()).is(net.minecraft.world.level.block.Blocks.BARRIER)) break;
+                    h.getLevel().setBlock(hit.getBlockPos(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                }
+            }
+            cam.controlForTest(who, yaw, pitch, false);
+            if (t < 110) return;
+            MountState ms = be.mountStates().isEmpty() ? null : be.mountStates().get(0);
+            if (ms == null || ms.mount == null) throw new GameTestAssertException("no mount state");
+            Vec3 barrel = ms.mount.localBarrelDirection(1.0F);
+            Vec3 look = Vec3.directionFromRotation(pitch, yaw);
+            double err = barrel == null ? 180 : Math.toDegrees(Math.acos(Math.max(-1, Math.min(1, barrel.normalize().dot(look)))));
+            FcsMod.LOG.info("[radar_fcs test] camera in air: status {} aimError {} barrel {} look {} err {}", ms.status, ms.aimError, barrel, look,
+                    String.format(java.util.Locale.ROOT, "%.2f", err));
+            if (ms.status != Status.CAMERA && ms.status != Status.AIMING && ms.status != Status.FIRE)
+                throw new GameTestAssertException("gun does not follow the cursor in the air: " + ms.status);
+            if (err > 2) throw new GameTestAssertException("barrel is not along the cursor: " + String.format(java.util.Locale.ROOT, "%.2f", err) + " deg");
+            h.succeed();
+        });
+    }
+
+    /**
      * Голова камеры: после управления камера сохраняет последний взгляд (курс, наклон) - и после выхода игрока,
      * и в сохранении блока; глаз камеры - центр шара-головы.
      */

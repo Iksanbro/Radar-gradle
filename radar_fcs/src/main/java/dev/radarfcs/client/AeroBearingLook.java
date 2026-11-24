@@ -52,6 +52,9 @@ public final class AeroBearingLook {
             Files.writeString(models.resolve("block/gun_bearing.json"), "{\"parent\": \"simulated:block/swivel_bearing/block\", " + t + "}");
             Files.writeString(models.resolve("item/gun_bearing.json"), "{\"parent\": \"simulated:block/swivel_bearing/item\", " + t + "}");
             Files.writeString(models.resolve("block/gun_bearing_cog.json"), "{\"parent\": \"simulated:block/swivel_bearing/ironcog\", " + t + "}");
+            // собранный: их нижняя часть; пластина на поворотной части - их пластина
+            Files.writeString(models.resolve("block/gun_bearing_assembled.json"), "{\"parent\": \"simulated:block/swivel_bearing/block_assembled\", " + t + "}");
+            Files.writeString(models.resolve("block/gun_bearing_plate.json"), "{\"parent\": \"simulated:block/swivel_bearing/bearing_plate\", " + t + "}");
             Files.writeString(dir.resolve("pack.mcmeta"), "{\"pack\": {\"pack_format\": 34, \"description\": "
                     + "\"Radar FCS: gun bearing in the Create Aeronautics look (generated locally from the installed mod)\"}}");
             return dir;
