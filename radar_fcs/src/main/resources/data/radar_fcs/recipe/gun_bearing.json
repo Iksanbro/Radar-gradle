@@ -1,4 +1,10 @@
 {
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "simulated"
+    }
+  ],
   "type": "minecraft:crafting_shaped",
   "category": "redstone",
   "pattern": [
@@ -7,10 +13,21 @@
     " G "
   ],
   "key": {
-    "B": {"item": "create:mechanical_bearing"},
-    "S": {"item": "create:iron_sheet"},
-    "M": {"item": "create:precision_mechanism"},
-    "G": {"item": "create:gearbox"}
+    "B": {
+      "item": "create:mechanical_bearing"
+    },
+    "S": {
+      "item": "create:iron_sheet"
+    },
+    "M": {
+      "item": "create:precision_mechanism"
+    },
+    "G": {
+      "item": "create:gearbox"
+    }
   },
-  "result": {"id": "radar_fcs:gun_bearing", "count": 1}
+  "result": {
+    "id": "radar_fcs:gun_bearing",
+    "count": 1
+  }
 }

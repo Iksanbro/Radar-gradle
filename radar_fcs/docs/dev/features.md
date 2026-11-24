@@ -920,3 +920,10 @@
    (`PathResourcesSupplier`). Кольцо - `radar_fcs:block/gun_bearing_cog` (`PartialModel`), нет модели - шестерня
    Create. Проверено запуском клиента: пакет `radar_fcs_aero_bearing` последним в списке ресурсов, ошибок моделей
    нет. Без Aeronautics - свой вид (п. 60).
+
+62. (1.2-Test; «сделай этот подшипник доступным только с Aeronautics, без него и так 0 смысла»). Подшипник
+   регистрируется только при `Mods.SIMULATED` (мод Simulated из состава Aeronautics), как мост Flight Control:
+   `block/GunBearings.register()` из `FcsRegistry.register` (блок, предмет, тип BE), вкладка творчества, нагрузка
+   Create, рендер, шаг физики `SableRotor.init` - тоже по условию. Рецепт и лут - `neoforge:conditions` mod_loaded
+   simulated, тег кирки - `required: false`. Без Aeronautics (`-PfcsMinimal`) ошибок про подшипник в логе нет, тесты
+   подшипника пропускаются.

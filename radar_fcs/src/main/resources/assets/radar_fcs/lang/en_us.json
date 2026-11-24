@@ -646,7 +646,7 @@
   "radar_fcs.designator.tooltip_unbound": "Not bound to a monitor",
   "radar_fcs.designator.tooltip_bound": "Monitor [%s %s %s]",
   "block.radar_fcs.gun_bearing": "Gun Bearing",
-  "radar_fcs.tooltip.gun_bearing": "Requires Sable (Create Aeronautics). Like a swivel bearing: power with a shaft at the back (usually from a Gun Drive), the turning part follows the shaft like a Create bearing. Shift+right-click with an empty hand to assemble the structure in front (glue rules like a bearing) into a hinged turning part, again to show the angle. Holds its angle stiffly without swaying even with a heavy barrel, also when it stands on the turning part of another bearing (pitch on a yaw platform). Usual layout: a yaw bearing (output up), on its platform a pitch bearing (output sideways), on it the barrel and the sight; assemble the pitch bearing first.",
+  "radar_fcs.tooltip.gun_bearing": "Only with Create Aeronautics. Like a swivel bearing: power with a shaft at the back (usually from a Gun Drive), the turning part follows the shaft like a Create bearing. Shift+right-click with an empty hand to assemble the structure in front (glue rules like a bearing) into a hinged turning part, again to show the angle. Holds its angle stiffly without swaying even with a heavy barrel, also when it stands on the turning part of another bearing (pitch on a yaw platform). Usual layout: a yaw bearing (output up), on its platform a pitch bearing (output sideways), on it the barrel and the sight; assemble the pitch bearing first.",
   "radar_fcs.bearing.no_sable": "The Gun Bearing requires Sable (Create Aeronautics)",
   "radar_fcs.bearing.nothing": "Nothing to assemble: no blocks in front of the bearing",
   "radar_fcs.bearing.assembled": "Assembled: hinged turning part",

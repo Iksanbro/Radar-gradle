@@ -2,7 +2,6 @@ package dev.radarfcs.block;
 
 import com.simibubi.create.content.kinetics.base.DirectionalKineticBlock;
 import com.simibubi.create.foundation.block.IBE;
-import dev.radarfcs.registry.FcsRegistry;
 import java.util.List;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
@@ -64,7 +63,7 @@ public class GunBearingBlock extends DirectionalKineticBlock implements IBE<GunB
 
     @Override
     public BlockEntityType<? extends GunBearingBlockEntity> getBlockEntityType() {
-        return FcsRegistry.GUN_BEARING_BE.get();
+        return GunBearings.BE.get();
     }
 
     @Override

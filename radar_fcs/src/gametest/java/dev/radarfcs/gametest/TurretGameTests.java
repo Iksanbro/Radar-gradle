@@ -367,14 +367,14 @@ public class TurretGameTests {
      */
     @GameTest(template = ARENA, batch = "turret_bearing", timeoutTicks = 200)
     public static void gunBearingShaftPassesThrough(GameTestHelper h) {
-        if (!net.neoforged.fml.ModList.get().isLoaded("sable")) {
+        if (!dev.radarfcs.compat.Mods.SIMULATED) {
             h.succeed();
             return;
         }
         floor(h);
         BlockPos bearing = new BlockPos(20, 2, 20);
         FcsGameTests.motor(h, bearing.below(), Direction.UP, 64);
-        h.setBlock(bearing, FcsRegistry.GUN_BEARING.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP));
+        h.setBlock(bearing, dev.radarfcs.block.GunBearings.BLOCK.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP));
         h.setBlock(bearing.above(), FcsGameTests.block("create:shaft").defaultBlockState()
                 .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS, Direction.Axis.Y));
         h.setBlock(bearing.above(2), FcsGameTests.block("create:andesite_casing").defaultBlockState());
@@ -418,7 +418,7 @@ public class TurretGameTests {
      */
     @GameTest(template = ARENA, batch = "turret_bearing", timeoutTicks = 760)
     public static void gunBearingsAimWithoutWobble(GameTestHelper h) {
-        if (!net.neoforged.fml.ModList.get().isLoaded("sable")) {
+        if (!dev.radarfcs.compat.Mods.SIMULATED) {
             h.succeed();
             return;
         }
@@ -430,11 +430,11 @@ public class TurretGameTests {
                 .setValue(GunDriveBlock.PITCH, false));
         h.setBlock(yawCog, FcsGameTests.block("create:cogwheel").defaultBlockState()
                 .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS, Direction.Axis.Y));
-        h.setBlock(yaw, FcsRegistry.GUN_BEARING.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP));
+        h.setBlock(yaw, dev.radarfcs.block.GunBearings.BLOCK.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP));
         var casing = FcsGameTests.block("create:andesite_casing").defaultBlockState();
         h.setBlock(yaw.above(), casing);
         h.setBlock(yaw.above(2), casing);
-        h.setBlock(pitch, FcsRegistry.GUN_BEARING.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.NORTH));
+        h.setBlock(pitch, dev.radarfcs.block.GunBearings.BLOCK.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.NORTH));
         h.setBlock(pitchCog, FcsGameTests.block("create:cogwheel").defaultBlockState()
                 .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS, Direction.Axis.Z));
         h.setBlock(pitchDrive, FcsRegistry.GUN_DRIVE.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.NORTH)

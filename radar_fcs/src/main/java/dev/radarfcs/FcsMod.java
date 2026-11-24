@@ -55,7 +55,7 @@ public final class FcsMod {
             });
         });
         // подшипники орудия: сервопривод шарнира на каждом шаге физики Sable
-        if (dev.radarfcs.compat.Mods.SABLE) dev.radarfcs.compat.sable.SableRotor.init(dev.radarfcs.block.GunBearingBlockEntity::physicsStepAll);
+        if (dev.radarfcs.compat.Mods.SABLE && dev.radarfcs.compat.Mods.SIMULATED) dev.radarfcs.compat.sable.SableRotor.init(dev.radarfcs.block.GunBearingBlockEntity::physicsStepAll);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onEntityJoin);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onLevelTick);
         // после ShotObserver: снаряд своей пушки уже помечен вычислителем, здесь - только точка запуска чужих
