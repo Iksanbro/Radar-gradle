@@ -906,3 +906,17 @@
      использовании предмета игра их глотает) -> `net/DesignatorPayloads.Fire` -> `LaserDesignatorItem.fire`: цель на
      луче - назначить, нет цели - снять; ответ `Result` - луч на 0.75 с красный. Отпускание ПКМ больше не назначает.
      Тест `laserDesignatorDesignates`: прицел + ЛКМ по дальней цели - назначена; ЛКМ в небо - снята; снова; Shift+ПКМ.
+
+61. (1.2-Test; «да скопируй ты текстуру из Aeronautics для этого подшипника»; затем «раз не можешь скопировать,
+   просто возьми текстуру Aeronautics, перекрась подшипник в чёрный (сохраняя тени и градиенты), а сторону, которая
+   физически, - с краёв жёлто-чёрным обозначающим узором»). Ассеты Create Simulated/Aeronautics - «All Rights
+   Reserved» (LICENSE.md в их jar; MIT - только код): ни их PNG, ни перекрашенную копию в наш jar класть нельзя.
+   Сделано у игрока при запуске: `client/AeroBearingLook.build` (из `AddPackFindersEvent`, только при `Mods.SIMULATED`)
+   читает `assets/simulated/textures/block/swivel_bearing.png` и модель `swivel_bearing/block.json` из файла мода
+   Simulated, перекрашивает (чёрный: 12 + 105 x яркость оригинала; жёлтые диагональные полосы на верхних гранях
+   элементов рамки плиты - `to.y = 16`, грань up, по их uv; яркость оригинала сохраняется) и пишет пакет в
+   `<игра>/radar_fcs/aeronautics_bearing_pack` (модели `gun_bearing`, `item/gun_bearing`, `gun_bearing_cog` - их модели
+   с нашей текстурой `radar_fcs:block/gun_bearing_aero`), пакет подключается обязательным, поверх остальных
+   (`PathResourcesSupplier`). Кольцо - `radar_fcs:block/gun_bearing_cog` (`PartialModel`), нет модели - шестерня
+   Create. Проверено запуском клиента: пакет `radar_fcs_aero_bearing` последним в списке ресурсов, ошибок моделей
+   нет. Без Aeronautics - свой вид (п. 60).

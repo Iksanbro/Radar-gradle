@@ -10,6 +10,8 @@ public final class Mods {
 
     /** Sable (физические под-уровни): постройки кораблей и поворотных частей. */
     public static final boolean SABLE = ModList.get().isLoaded("sable");
+    /** Create Simulated (в составе Create Aeronautics): вид подшипника орудия - их модель и текстура (не копируются). */
+    public static final boolean SIMULATED = ModList.get().isLoaded("simulated");
 
     /** CBC: Firepower Components: компактные станки (обычный и для автопушек). */
     public static final boolean FIREPOWER = ModList.get().isLoaded("cbc_firepower_components");

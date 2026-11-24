@@ -17,6 +17,16 @@ import net.minecraft.core.Direction;
  * и верхней плитой - крутится в зацеплении с шестерней рядом (её скорость, навстречу, со сдвигом зубьев по позиции).
  */
 public class GunBearingRenderer extends SafeBlockEntityRenderer<GunBearingBlockEntity> {
+    /** Железная шестерня поворотного подшипника Aeronautics (их модель с нашей текстурой, при Aeronautics) или null. */
+    @org.jetbrains.annotations.Nullable private static dev.engine_room.flywheel.lib.model.baked.PartialModel ironCog;
+
+    /** Модели частей - заранее, при создании мода (до загрузки моделей). */
+    public static void init() {
+        // их железная шестерня с нашей перекрашенной текстурой (модель - в пакете AeroBearingLook)
+        if (dev.radarfcs.compat.Mods.SIMULATED) ironCog = dev.engine_room.flywheel.lib.model.baked.PartialModel.of(
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(dev.radarfcs.FcsMod.MODID, "block/gun_bearing_cog"));
+    }
+
     public GunBearingRenderer(BlockEntityRendererProvider.Context ctx) {}
 
     @Override
@@ -33,8 +43,14 @@ public class GunBearingRenderer extends SafeBlockEntityRenderer<GunBearingBlockE
         float time = AnimationTickHolder.getRenderTime(be.getLevel());
         float offset = KineticBlockEntityRenderer.getRotationOffsetForPosition(be, be.getBlockPos(), axis);
         float ring = ((time * be.ringSpeed() * 3f / 10 + offset) % 360) / 180 * (float) Math.PI;
-        KineticBlockEntityRenderer.kineticRotationTransform(
-                CachedBuffers.partialFacingVertical(AllPartialModels.SHAFTLESS_COGWHEEL, be.getBlockState(), f), be, axis, ring, light)
-                .renderInto(ms, solid);
+        var cogModel = ironCog;
+        // пакет с видом Aeronautics не собрался - модели шестерни нет: рисовать шестерню Create
+        if (cogModel != null && cogModel.get() == net.minecraft.client.Minecraft.getInstance().getModelManager().getMissingModel()) cogModel = null;
+        var cog = cogModel != null
+                // кольцо Aeronautics - между основанием и верхней плитой их модели (на 2 пикселя выше центра)
+                ? CachedBuffers.partialFacingVertical(cogModel, be.getBlockState(), f)
+                        .translate(f.getStepX() * 2 / 16f, f.getStepY() * 2 / 16f, f.getStepZ() * 2 / 16f)
+                : CachedBuffers.partialFacingVertical(AllPartialModels.SHAFTLESS_COGWHEEL, be.getBlockState(), f);
+        KineticBlockEntityRenderer.kineticRotationTransform(cog, be, axis, ring, light).renderInto(ms, solid);
     }
 }

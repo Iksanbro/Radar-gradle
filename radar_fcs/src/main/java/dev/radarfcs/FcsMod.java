@@ -36,6 +36,24 @@ public final class FcsMod {
         modBus.addListener(dev.radarfcs.net.DesignatorPayloads::register);
         // обучающие сцены Ponder (как в Create) - только на клиенте
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) dev.radarfcs.client.ponder.FcsPonderPlugin.init();
+        if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) dev.radarfcs.client.GunBearingRenderer.init();
+        // подшипник орудия в виде поворотного подшипника Aeronautics (чёрный, жёлто-чёрная разметка): пакет ресурсов
+        // собирается при запуске клиента из ассетов установленного Aeronautics (в наш jar они не копируются)
+        modBus.addListener(net.neoforged.neoforge.event.AddPackFindersEvent.class, e -> {
+            if (e.getPackType() != net.minecraft.server.packs.PackType.CLIENT_RESOURCES || !dev.radarfcs.compat.Mods.SIMULATED) return;
+            java.nio.file.Path dir = dev.radarfcs.client.AeroBearingLook.build();
+            if (dir == null) return;
+            e.addRepositorySource(consumer -> {
+                var pack = net.minecraft.server.packs.repository.Pack.readMetaAndCreate(
+                        new net.minecraft.server.packs.PackLocationInfo("radar_fcs_aero_bearing",
+                                net.minecraft.network.chat.Component.literal("Radar FCS: gun bearing (Aeronautics look)"),
+                                net.minecraft.server.packs.repository.PackSource.BUILT_IN, java.util.Optional.empty()),
+                        new net.minecraft.server.packs.PathPackResources.PathResourcesSupplier(dir),
+                        net.minecraft.server.packs.PackType.CLIENT_RESOURCES,
+                        new net.minecraft.server.packs.PackSelectionConfig(true, net.minecraft.server.packs.repository.Pack.Position.TOP, false));
+                if (pack != null) consumer.accept(pack);
+            });
+        });
         // подшипники орудия: сервопривод шарнира на каждом шаге физики Sable
         if (dev.radarfcs.compat.Mods.SABLE) dev.radarfcs.compat.sable.SableRotor.init(dev.radarfcs.block.GunBearingBlockEntity::physicsStepAll);
         NeoForge.EVENT_BUS.addListener(ShotObserver::onEntityJoin);
