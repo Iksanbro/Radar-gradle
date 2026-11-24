@@ -410,6 +410,71 @@ public class TurretGameTests {
     }
 
     /**
+     * Физичная сборка подшипника орудия: шестерня крутит поворотную часть (площадка и рука из камня на 3 блока), на пути
+     * руки с обеих сторон - камень. Рука упирается и стоит (шестерня проскальзывает), в камень не входит; камень убрали -
+     * поворот продолжается.
+     */
+    @GameTest(template = ARENA, batch = "turret_bearing", timeoutTicks = 300)
+    public static void gunBearingStopsAtBlocks(GameTestHelper h) {
+        if (!dev.radarfcs.compat.Mods.SIMULATED) {
+            h.succeed();
+            return;
+        }
+        floor(h);
+        BlockPos bearing = new BlockPos(20, 2, 20), cog = bearing.east();
+        FcsGameTests.motor(h, cog.below(), Direction.UP, 16);
+        h.setBlock(cog, FcsGameTests.block("create:cogwheel").defaultBlockState()
+                .setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS, Direction.Axis.Y));
+        h.setBlock(bearing, dev.radarfcs.block.GunBearings.BLOCK.get().defaultBlockState().setValue(DirectionalKineticBlock.FACING, Direction.UP));
+        h.setBlock(bearing.above(), FcsGameTests.block("create:andesite_casing").defaultBlockState());
+        for (int i = 1; i <= 3; i++) h.setBlock(bearing.above().east(i), Blocks.STONE.defaultBlockState());
+        List<BlockPos> stops = List.of(bearing.above().east(2).south(2), bearing.above().east(2).north(2));
+        FcsGameTests.CREATED.add(h.absolutePos(bearing));
+        BlockPos a = h.absolutePos(bearing.above());
+        h.getLevel().addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(h.getLevel(),
+                new net.minecraft.world.phys.AABB(a.getX(), a.getY(), a.getZ(), a.getX() + 4, a.getY() + 1, a.getZ() + 1)));
+        net.minecraft.world.entity.player.Player pl = h.makeMockPlayer(net.minecraft.world.level.GameType.CREATIVE);
+        pl.setShiftKeyDown(true);
+        double[] held = {Double.NaN};
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            if (!(h.getLevel().getBlockEntity(h.absolutePos(bearing)) instanceof dev.radarfcs.block.GunBearingBlockEntity g)) {
+                throw new GameTestAssertException("no gun bearing");
+            }
+            if (t == 5) {
+                g.toggleAssembly(pl);
+                SableTestSupport.trackId(h.getLevel(), g.subLevel());
+                if (!g.assembled()) throw new GameTestAssertException("bearing did not assemble");
+                return;
+            }
+            if (t == 7) {
+                for (var e : h.getLevel().getEntitiesOfClass(com.simibubi.create.content.contraptions.glue.SuperGlueEntity.class,
+                        new net.minecraft.world.phys.AABB(h.absolutePos(BlockPos.ZERO)).inflate(64))) e.discard();
+                // камни ставятся после сборки (иначе приклеились бы к руке)
+                for (BlockPos p : stops) h.setBlock(p, Blocks.STONE.defaultBlockState());
+                return;
+            }
+            if (t == 100) held[0] = g.angle();
+            if (t == 140) {
+                double ang = g.angle();
+                FcsMod.LOG.info("[radar_fcs test] bearing stop: ring {} rpm, angle {} -> {}", g.ringSpeed(),
+                        String.format(java.util.Locale.ROOT, "%.2f", held[0]), String.format(java.util.Locale.ROOT, "%.2f", ang));
+                if (Math.abs(g.ringSpeed()) < 1) throw new GameTestAssertException("cogwheel does not turn the bearing");
+                if (Math.abs(ang) < 10 || Math.abs(ang) > 70) throw new GameTestAssertException("arm did not stop at the stone: " + ang);
+                if (Math.abs(ang - held[0]) > 0.5) throw new GameTestAssertException("blocked arm still turns: " + held[0] + " -> " + ang);
+                for (BlockPos p : stops) h.setBlock(p, Blocks.AIR.defaultBlockState());
+                return;
+            }
+            if (t == 200) {
+                double ang = g.angle();
+                FcsMod.LOG.info("[radar_fcs test] bearing stop: stones removed, angle {}", String.format(java.util.Locale.ROOT, "%.2f", ang));
+                if (Math.abs(dev.radarfcs.core.Aim.wrap180(ang - held[0])) < 20) throw new GameTestAssertException("arm did not turn on after the stones were removed: " + ang);
+                h.succeed();
+            }
+        });
+    }
+
+    /**
      * Подшипники орудия с приводами (как подшипники Aeronautics в постройке пользователя): мотор -> привод курса ->
      * шестерня рядом с подшипником курса (выход вверх); на его площадке мотор -> привод наклона -> шестерня рядом с
      * подшипником наклона (выход на север);

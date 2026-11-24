@@ -20,7 +20,7 @@
 - `docs/dev/features.md` — все требования пользователя и история функций по версиям (≈560 строк);
 - `docs/dev/dependencies.md` — проверенные особенности API CBC, CBC-AT, Neo Warfare, Create Radars, Sable;
 - `docs/dev/test-status.md` — что покрыто игровыми тестами и какие комбинации модов проверены;
-- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test/1.2-Test, итог — `features.md` п. 43-62).
+- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test/1.2-Test, итог — `features.md` п. 43-63).
 
 Эти файлы и `README.md` большие: **не выводи их целиком** (`cat`), ищи нужное через `grep -n` и читай куски.
 
@@ -129,8 +129,9 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # �
   орудия убран в 1.2-Test; постройки самих орудий - свои для вычислителя: `FcsControl.gunShips` ->
   `FireControlBlockEntity.turretShips`, тест `gunNeverTargetsItsOwnTurretParts`). Подшипник орудия (только с Aeronautics,
   регистрация `block/GunBearings`) - `block/GunBearingBlock(Entity)` + `compat/sable/SableRotor.drive` (поворот - от шестерни рядом, вал насквозь в плот;
-  поза поворотной части ставится до и после каждого шага физики, без пружины и мотора шарнира; тесты
-  `gunBearingsAimWithoutWobble`, `gunBearingShaftPassesThrough`; вид при Aeronautics - их модель/текстура, перекрашенные у
+  поза поворотной части ставится до и после каждого шага физики, без пружины и мотора шарнира; сквозь блоки мира не
+  проходит - `SableRotor.freeFraction` режет шаг угла, шестерня проскальзывает; тесты
+  `gunBearingsAimWithoutWobble`, `gunBearingShaftPassesThrough`, `gunBearingStopsAtBlocks`; вид при Aeronautics - их модель/текстура, перекрашенные у
   игрока при запуске `client/AeroBearingLook` в пакет `<игра>/radar_fcs/aeronautics_bearing_pack`; ассеты Aeronautics
   в наш jar не копировать - All Rights Reserved). Лазерный целеуказатель - `item/LaserDesignatorItem`
   (привязка к монитору; ПКМ держать - прицел и зелёный луч `client/DesignatorClient`; ЛКМ - `net/DesignatorPayloads` ->

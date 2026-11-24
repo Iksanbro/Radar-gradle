@@ -228,10 +228,20 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
         if (now == stepTick) return;
         stepTick = now;
         lastTarget = target;
-        double step = degPerTick();
+        double step = Math.max(-90, Math.min(90, degPerTick()));
         if (step != 0) {
-            target = Aim.wrap180(target + Math.max(-90, Math.min(90, step)));
-            setChanged();
+            // физичная сборка: поворотная часть (и стоящие на ней) не входит в блоки мира - упёрлась, дальше не идёт,
+            // шестерня «проскальзывает»
+            if (level instanceof ServerLevel sl && subLevel != null) {
+                List<UUID> parts = new java.util.ArrayList<>();
+                parts.add(subLevel);
+                for (int i = 0; i < parts.size() && parts.size() < 32; i++) parts.addAll(childSubs(sl, parts.get(i)));
+                step *= SableRotor.freeFraction(sl, worldPosition, facing(), parts, Math.toRadians(step));
+            }
+            if (step != 0) {
+                target = Aim.wrap180(target + step);
+                setChanged();
+            }
         }
     }
 
@@ -279,10 +289,11 @@ public class GunBearingBlockEntity extends KineticBlockEntity {
         return List.copyOf(ACTIVE);
     }
 
-    public static void physicsStepAll() {
+    public static void physicsStepAll(ServerLevel stepping) {
         // сначала внешние подшипники (на земле или корабле), потом стоящие на их поворотных частях: поза вложенной
         // части считается от уже поставленной позы основания
-        List<GunBearingBlockEntity> order = new java.util.ArrayList<>(ACTIVE);
+        List<GunBearingBlockEntity> order = new java.util.ArrayList<>();
+        for (GunBearingBlockEntity be : ACTIVE) if (be.level == stepping || be.isRemoved()) order.add(be);
         java.util.Map<GunBearingBlockEntity, Integer> depth = new java.util.HashMap<>();
         for (GunBearingBlockEntity be : order) depth.put(be, be.depth(order));
         order.sort(java.util.Comparator.comparingInt(depth::get));

@@ -14,6 +14,7 @@ import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
@@ -176,12 +177,82 @@ public final class SableRotor {
     }
 
     /** Подписка на шаги физики Sable: каждый шаг - ведение поворотных частей всех собранных подшипников орудия. */
-    public static void init(Runnable onPhysicsStep) {
+    /**
+     * Какую долю поворота на deltaRad (вокруг оси подшипника от текущего угла) поворотная часть пройдёт, не войдя в блоки
+     * мира: 1 - свободно, 0 - упирается сразу. Проверяются блоки самой части и частей подшипников, стоящих на ней
+     * (subs), - по точкам каждого блока (центр и углы, отступ 0.3 от граней - касания соседей не мешают), с шагом поворота
+     * не больше 3° (за шаг край части сдвигается не больше чем на полблока на 10 блоках вылета). Блоки, в которые часть
+     * уже входит до поворота, не держат (иначе застрявшую часть нельзя было бы вывести).
+     */
+    public static double freeFraction(ServerLevel level, BlockPos rotatorPos, Direction facing, java.util.Collection<UUID> subs,
+                                      double deltaRad) {
+        if (deltaRad == 0) return 1;
+        SubLevel containing = Sable.HELPER.getContaining(level, rotatorPos);
+        BlockPos front = rotatorPos.relative(facing);
+        Vector3d n = new Vector3d(facing.getStepX(), facing.getStepY(), facing.getStepZ());
+        Vector3d p1 = new Vector3d(front.getX() + 0.5, front.getY() + 0.5, front.getZ() + 0.5).sub(new Vector3d(n).mul(0.5));
+        Vector3d hinge = containing != null ? containing.logicalPose().transformPosition(p1, new Vector3d()) : p1;
+        Vector3d axis = containing != null ? containing.logicalPose().transformNormal(new Vector3d(n), new Vector3d()) : n;
+        // точки блоков частей в мире сейчас
+        List<Vector3d> pts = new java.util.ArrayList<>();
+        for (UUID id : subs) {
+            ServerSubLevel sub = subLevel(level, id);
+            if (sub == null) continue;
+            var bb = sub.getPlot().getBoundingBox();
+            long volume = (long) (bb.maxX() - bb.minX() + 1) * (bb.maxY() - bb.minY() + 1) * (bb.maxZ() - bb.minZ() + 1);
+            if (volume > 200_000) continue;                                       // огромная постройка - не проверяем
+            BlockPos.MutableBlockPos mp = new BlockPos.MutableBlockPos();
+            for (int x = bb.minX(); x <= bb.maxX(); x++) for (int y = bb.minY(); y <= bb.maxY(); y++)
+                for (int z = bb.minZ(); z <= bb.maxZ(); z++) {
+                    mp.set(x, y, z);
+                    var st = level.getBlockState(mp);
+                    if (st.isAir() || st.getCollisionShape(level, mp).isEmpty()) continue;
+                    for (int c = 0; c < 9; c++) {
+                        double ox = c == 0 ? 0.5 : ((c & 1) != 0 ? 0.8 : 0.2), oy = c == 0 ? 0.5 : ((c & 2) != 0 ? 0.8 : 0.2),
+                                oz = c == 0 ? 0.5 : ((c & 4) != 0 ? 0.8 : 0.2);
+                        pts.add(sub.logicalPose().transformPosition(new Vector3d(x + ox, y + oy, z + oz), new Vector3d()));
+                    }
+                    if (pts.size() > 40_000) break;
+                }
+        }
+        if (pts.isEmpty()) return 1;
+        // уже занятые точки (часть стоит в блоках) не считаются
+        boolean[] stuck = new boolean[pts.size()];
+        for (int i = 0; i < pts.size(); i++) stuck[i] = solidAt(level, pts.get(i));
+        int steps = Math.max(1, (int) Math.ceil(Math.abs(Math.toDegrees(deltaRad)) / 3));
+        for (int k = 1; k <= steps; k++) {
+            double f = (double) k / steps;
+            Quaterniond r = new Quaterniond().rotationAxis(deltaRad * f, axis.x, axis.y, axis.z);
+            for (int i = 0; i < pts.size(); i++) {
+                if (stuck[i]) continue;
+                Vector3d w = r.transform(new Vector3d(pts.get(i)).sub(hinge)).add(hinge);
+                if (solidAt(level, w)) return (double) (k - 1) / steps;
+            }
+        }
+        return 1;
+    }
+
+    /** Точка мира внутри формы столкновения блока мира (только загруженные чанки). */
+    private static boolean solidAt(ServerLevel level, Vector3d w) {
+        BlockPos bp = BlockPos.containing(w.x, w.y, w.z);
+        if (!level.isLoaded(bp)) return false;
+        var st = level.getBlockState(bp);
+        if (st.isAir()) return false;
+        var shape = st.getCollisionShape(level, bp);
+        if (shape.isEmpty()) return false;
+        double lx = w.x - bp.getX(), ly = w.y - bp.getY(), lz = w.z - bp.getZ();
+        for (var box : shape.toAabbs()) if (box.contains(lx, ly, lz)) return true;
+        return false;
+    }
+
+    /** Подписка на шаги физики Sable (до и после шага) - ведение поворотных частей подшипников измерения этой физики. */
+    public static void init(java.util.function.Consumer<ServerLevel> onPhysicsStep) {
+        // событие приходит от физики каждого измерения - ведём только подшипники этого
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
-                (dev.ryanhcode.sable.neoforge.event.ForgeSablePrePhysicsTickEvent e) -> onPhysicsStep.run());
+                (dev.ryanhcode.sable.neoforge.event.ForgeSablePrePhysicsTickEvent e) -> onPhysicsStep.accept(e.getPhysicsSystem().getLevel()));
         // и после шага: за шаг физики поворотная часть уходит от поставленной позы (шарнир, вес) - вернуть её, иначе
         // вычислитель видел бы то точную, то сдвинутую позу (скачки прицела портили обучение привода)
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
-                (dev.ryanhcode.sable.neoforge.event.ForgeSablePostPhysicsTickEvent e) -> onPhysicsStep.run());
+                (dev.ryanhcode.sable.neoforge.event.ForgeSablePostPhysicsTickEvent e) -> onPhysicsStep.accept(e.getPhysicsSystem().getLevel()));
     }
 }
