@@ -157,3 +157,11 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.compilerArgs << '-Xlint:-options'
 }
+
+// Copies the mod jar into release/ (committed, so every pushed version has a direct download link).
+tasks.register('releaseJar', Copy) {
+    description = 'Builds the mod and copies the jar into release/.'
+    dependsOn tasks.named('build')
+    from tasks.named('jar')
+    into layout.projectDirectory.dir('release')
+}

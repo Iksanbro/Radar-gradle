@@ -7,6 +7,11 @@ Schematic and Quill, the Schematic Table, the creative schematic tool and the **
 Device settings, links between devices and Drive-By-Wire wires are kept. Stored items, fluids, ammunition, fuel and
 energy are never copied, so a schematic cannot be used to duplicate anything.
 
+## Download
+
+[aeroschematics-1.0.0.jar](https://github.com/Iksanbro/Radar-gradle/raw/claude/create-aeronautics-schematic-save-jdo501/aeroschematics/release/aeroschematics-1.0.0.jar)
+— put it into the `mods` folder (NeoForge 1.21.1). Every released version is kept in [`release/`](release/).
+
 ## How to use
 
 Nothing new to learn — it is Create's schematic workflow:
