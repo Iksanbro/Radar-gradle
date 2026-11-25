@@ -58,7 +58,7 @@ public final class CreativePlacer {
             for (BlockPos local : entry.order) {
                 BlockState state = entry.stateAt(local);
                 if (!state.isAir()) {
-                    session.placeNow(entry, local, null);
+                    session.placeNow(entry, local);
                 }
             }
         }

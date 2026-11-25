@@ -67,6 +67,8 @@ public final class SubLevelPrintStage {
     private int entityIndex;
     private int wireIndex;
     private int missingTicks;
+    /** Which schematic (owner/file@anchor) the saved progress belongs to. */
+    private String schematicKey = "";
     private final Map<UUID, UUID> builtIds = new LinkedHashMap<>();
 
     private SubLevelBlueprint blueprint = SubLevelBlueprint.empty();
@@ -119,13 +121,24 @@ public final class SubLevelPrintStage {
             return;
         }
         // Progress loaded from NBT only applies to the same schematic.
+        String key = schematicKey(schematic, cannon);
+        boolean sameSchematic = key.equals(this.schematicKey);
         for (UUID schematicId : List.copyOf(this.builtIds.keySet())) {
             if (this.blueprint.find(schematicId) == null) {
-                this.clearProgress();
+                sameSchematic = false;
                 break;
             }
         }
+        if (!sameSchematic) {
+            this.releaseUnfinished(cannon);
+            this.clearProgress();
+        }
+        this.schematicKey = key;
         cannon.updateChecklist();
+    }
+
+    private static String schematicKey(ItemStack schematic, SchematicannonBlockEntity cannon) {
+        return schematic.get(AllDataComponents.SCHEMATIC_OWNER) + "/" + schematic.get(AllDataComponents.SCHEMATIC_FILE) + "@" + cannon.printer.getAnchor();
     }
 
     /** Create finished the ordinary blocks; take over if there are physics structures to print. */
@@ -143,8 +156,17 @@ public final class SubLevelPrintStage {
 
     /** The schematicannon was reset (stopped, schematic removed, or finished). */
     public void reset(SchematicannonBlockEntity cannon) {
+        this.releaseUnfinished(cannon);
+        this.clearProgress();
+        this.blueprint = SubLevelBlueprint.empty();
+        this.session = null;
+        this.wires = null;
+        this.requirementCache.clear();
+    }
+
+    /** Unfinished structures are released: nobody could unlock them in survival otherwise. */
+    private void releaseUnfinished(SchematicannonBlockEntity cannon) {
         if (!this.builtIds.isEmpty() && cannon.getLevel() instanceof ServerLevel level) {
-            // Unfinished structures are released: nobody can unlock them in survival otherwise.
             SubLevelContainer container = SubLevelContainer.getContainer(level);
             for (UUID id : this.builtIds.values()) {
                 SubLevel subLevel = container == null ? null : container.getSubLevel(id);
@@ -153,11 +175,6 @@ public final class SubLevelPrintStage {
                 }
             }
         }
-        this.clearProgress();
-        this.blueprint = SubLevelBlueprint.empty();
-        this.session = null;
-        this.wires = null;
-        this.requirementCache.clear();
     }
 
     private void clearProgress() {
@@ -316,7 +333,7 @@ public final class SubLevelPrintStage {
             return;
         }
         ServerSubLevel subLevel = session.allocate(entry);
-        session.placeNow(entry, seed, icon(requirement));
+        session.placeNow(entry, seed);
         session.settlePose(entry);
         PhysicsLock.ensureLocked(level, subLevel);
         this.builtIds.put(entry.schematicUuid, subLevel.getUniqueId());
@@ -455,8 +472,14 @@ public final class SubLevelPrintStage {
         boolean unlock = AeroConfig.UNLOCK_AFTER_PRINTING.get();
         for (SubLevelBlueprint.Entry entry : this.blueprint.entries()) {
             ServerSubLevel subLevel = session.built(entry);
-            if (subLevel != null && unlock) {
-                PhysicsLock.unlock(level, subLevel);
+            if (subLevel == null) {
+                continue;
+            }
+            // Release, put it exactly where the preview showed it, then lock again if configured so.
+            PhysicsLock.unlock(level, subLevel);
+            session.alignPose(entry);
+            if (!unlock) {
+                PhysicsLock.ensureLocked(level, subLevel);
             }
         }
         // Forget the structures before Create resets the printer: they are finished and must not be unlocked/reset.
@@ -626,6 +649,7 @@ public final class SubLevelPrintStage {
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
         tag.putString("Phase", this.phase.name());
+        tag.putString("Schematic", this.schematicKey);
         tag.putInt("Entry", this.entryIndex);
         tag.putInt("Cursor", this.cursor);
         tag.putInt("Entity", this.entityIndex);
@@ -648,6 +672,7 @@ public final class SubLevelPrintStage {
         } catch (IllegalArgumentException e) {
             this.phase = Phase.IDLE;
         }
+        this.schematicKey = tag.getString("Schematic");
         this.entryIndex = tag.getInt("Entry");
         this.cursor = tag.getInt("Cursor");
         this.entityIndex = tag.getInt("Entity");

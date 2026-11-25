@@ -45,6 +45,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.joml.Quaterniond;
 import org.joml.Vector3d;
 
 /**
@@ -70,6 +71,7 @@ public final class PlacementSession {
     private final Map<UUID, ServerSubLevel> built = new HashMap<>();
     private final SubLevelSchematicSerializationContext context = new SubLevelSchematicSerializationContext(SubLevelSchematicSerializationContext.Type.PLACE, null);
     private final Map<UUID, SubLevelCaptureMeta> validMeta = new HashMap<>();
+    private final Map<UUID, Quaterniond> targetOrientations = new HashMap<>();
     private LinkRemapper.Table table;
 
     public PlacementSession(ServerLevel level, BlockPos anchor, SubLevelBlueprint blueprint) {
@@ -245,6 +247,28 @@ public final class PlacementSession {
         pipeline.teleport(subLevel, subLevel.logicalPose().position(), subLevel.logicalPose().orientation());
         pipeline.resetVelocity(subLevel);
         subLevel.updateLastPose();
+        this.targetOrientations.put(entry.schematicUuid, new Quaterniond(subLevel.logicalPose().orientation()));
+    }
+
+    /**
+     * Puts a structure back exactly where the schematic preview showed it. Used when a survival print is complete:
+     * while blocks are added the center of mass moves, and the lock holding the structure keeps the old one in place,
+     * so the structure may have drifted a little. Must be called while the structure is not locked.
+     */
+    public void alignPose(SubLevelBlueprint.Entry entry) {
+        ServerSubLevel subLevel = this.built(entry);
+        if (subLevel == null) {
+            return;
+        }
+        PhysicsPipeline pipeline = SubLevelContainer.getContainer(this.level).physicsSystem().getPipeline();
+        Quaterniond orientation = this.targetOrientations.getOrDefault(entry.schematicUuid, entry.orientation);
+        subLevel.logicalPose().orientation().set(orientation);
+        BlockPos plotCorner = this.target(entry, BlockPos.ZERO);
+        Vector3d current = subLevel.logicalPose().transformPosition(new Vector3d(plotCorner.getX(), plotCorner.getY(), plotCorner.getZ()));
+        subLevel.logicalPose().position().add(this.worldCorner(entry).sub(current));
+        pipeline.teleport(subLevel, subLevel.logicalPose().position(), subLevel.logicalPose().orientation());
+        pipeline.resetVelocity(subLevel);
+        subLevel.updateLastPose();
     }
 
     private void rebuildTable() {
@@ -318,8 +342,12 @@ public final class PlacementSession {
         return ItemRequirement.of(state, blockEntity);
     }
 
-    /** Places one block right away (creative placement, or the seed block of a survival print). */
-    public void placeNow(SubLevelBlueprint.Entry entry, BlockPos local, @Nullable ItemStack stack) {
+    /**
+     * Places one block right away (creative placement, or the seed block of a survival print). Like Create's own
+     * creative placement no item is handed to {@code setPlacedBy}, so blocks cannot overwrite the stored settings with
+     * the defaults of a fresh item.
+     */
+    public void placeNow(SubLevelBlueprint.Entry entry, BlockPos local) {
         BlockState state = entry.stateAt(local);
         BlockPos target = this.target(entry, local);
         if (!this.isInsidePlot(entry, target)) {
@@ -327,7 +355,7 @@ public final class PlacementSession {
             return;
         }
         CompoundTag data = this.prepareBlockData(entry, local, state);
-        BlockHelper.placeSchematicBlock(this.level, state, target, stack, data);
+        BlockHelper.placeSchematicBlock(this.level, state, target, null, data);
     }
 
     // ------------------------------------------------------------------------------------------------------------------
