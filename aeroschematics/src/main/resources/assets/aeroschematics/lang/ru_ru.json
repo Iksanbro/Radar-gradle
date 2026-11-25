@@ -1,0 +1,6 @@
+{
+  "create.schematicannon.status.aeroschematicsPrinting": "Печать физических структур",
+  "create.schematicannon.status.aeroschematicsWaiting": "Ожидание приземления блоков",
+  "create.schematicannon.status.aeroschematicsWiring": "Восстановление проводов",
+  "create.schematicannon.status.aeroschematicsMirror": "Физические структуры нельзя отражать"
+}

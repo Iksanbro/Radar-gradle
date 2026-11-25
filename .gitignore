@@ -40,3 +40,9 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### aeroschematics mod ###
+aeroschematics/run/
+aeroschematics/.gradle/
+aeroschematics/build/
+aeroschematics/logs/

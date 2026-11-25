@@ -1,0 +1,20 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.aeroschematics.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "LaunchedBlockMixin",
+    "SchematicPlacePacketMixin",
+    "SchematicPrinterMixin",
+    "SchematicannonAccessor",
+    "SchematicannonBlockEntityMixin",
+    "StructureTemplateMixin"
+  ],
+  "client": [
+    "client.SchematicannonRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

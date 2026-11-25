@@ -1,0 +1,159 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.148'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+repositories {
+    mavenCentral()
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Modrinth"
+                url = "https://api.modrinth.com/maven"
+            }
+        }
+        filter {
+            includeGroup "maven.modrinth"
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Third-party mods.
+//
+// Create, Sable and the Aeronautics bundle ship their real code (and libraries such as Flywheel, Ponder, Simulated,
+// Offroad, the Sable companion...) as Jar-in-Jar. The compiler cannot look inside nested jars, so we resolve the
+// published mod jars from Modrinth, unpack their nested jars next to them and compile against the whole set.
+// The very same jars are copied into the mods folder of the game test server, exactly like a player's instance.
+// ---------------------------------------------------------------------------------------------------------------------
+configurations {
+    // Mods we compile against (compileOnly) and which are present at runtime in the game test instance.
+    modCompile { transitive = false }
+    // Mods that are only needed at runtime by the integration test instance.
+    modRuntime { transitive = false }
+}
+
+dependencies {
+    modCompile "maven.modrinth:create:${create_version}"
+    modCompile "maven.modrinth:create-aeronautics:${aeronautics_version}"
+    modCompile "maven.modrinth:sable:${sable_version}"
+    modCompile "maven.modrinth:create-flight-control:${flight_control_version}"
+    modCompile "maven.modrinth:create-big-cannons:${cbc_version}"
+    modCompile "maven.modrinth:cbc-firepower-components:${firepower_version}"
+    modCompile "maven.modrinth:drive-by-wire-sable:${drivebywire_version}"
+
+    modRuntime "maven.modrinth:geckolib:${geckolib_version}"
+    modRuntime "maven.modrinth:architectury-api:${architectury_version}"
+    modRuntime "maven.modrinth:rpl:${rpl_version}"
+}
+
+def unpackModJars = tasks.register('unpackModJars', Sync) {
+    description = 'Unpacks third-party mod jars (and their Jar-in-Jar libraries) for compilation.'
+    from(configurations.modCompile)
+    from({
+        configurations.modCompile.collect { file ->
+            zipTree(file).matching { include 'META-INF/jarjar/*.jar' }
+        }
+    }) {
+        eachFile { it.path = it.name }
+    }
+    includeEmptyDirs = false
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    into layout.buildDirectory.dir('modJars')
+}
+
+def modCompileJars = files(layout.buildDirectory.dir('modJars').map { dir -> fileTree(dir) { include '*.jar' } })
+modCompileJars.builtBy(unpackModJars)
+
+dependencies {
+    compileOnly modCompileJars
+    testCompileOnly modCompileJars
+
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+neoForge {
+    version = project.neoforge_version
+    // Plain JUnit tests of the NBT logic need the Minecraft classes, but not a running game.
+    addModdingDependenciesTo(sourceSets.test)
+
+    mods {
+        "${mod_id}" {
+            sourceSet sourceSets.main
+        }
+    }
+
+    runs {
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.INFO
+        }
+        client {
+            client()
+            gameDirectory = project.file('run/client')
+        }
+        server {
+            server()
+            gameDirectory = project.file('run/server')
+            programArgument '--nogui'
+        }
+        gameTestServer {
+            type = "gameTestServer"
+            gameDirectory = project.file('run/gametest')
+            systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+        }
+    }
+}
+
+// Install the third-party mods into every run's mods folder.
+['client', 'server', 'gametest'].each { runName ->
+    def task = tasks.register("installMods${runName.capitalize()}", Sync) {
+        description = "Copies the third-party mods into run/${runName}/mods."
+        from(configurations.modCompile)
+        from(configurations.modRuntime)
+        into project.file("run/${runName}/mods")
+    }
+}
+tasks.matching { it.name == 'runClient' }.configureEach { dependsOn 'installModsClient' }
+tasks.matching { it.name == 'runServer' }.configureEach { dependsOn 'installModsServer' }
+tasks.matching { it.name == 'runGameTestServer' }.configureEach { dependsOn 'installModsGametest' }
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
+}
+
+def generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+    def replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neoforge_version_range : neoforge_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description,
+    ]
+    inputs.properties replaceProperties
+    expand replaceProperties
+    from 'src/main/templates'
+    into layout.buildDirectory.dir('generated/sources/modMetadata')
+}
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-Xlint:-options'
+}

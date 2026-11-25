@@ -1,0 +1,6 @@
+{
+  "create.schematicannon.status.aeroschematicsPrinting": "Printing Physics Structures",
+  "create.schematicannon.status.aeroschematicsWaiting": "Waiting for Blocks to Land",
+  "create.schematicannon.status.aeroschematicsWiring": "Restoring Wires",
+  "create.schematicannon.status.aeroschematicsMirror": "Physics Structures cannot be Mirrored"
+}
