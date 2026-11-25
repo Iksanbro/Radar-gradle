@@ -20,7 +20,7 @@
 - `docs/dev/features.md` — все требования пользователя и история функций по версиям (≈560 строк);
 - `docs/dev/dependencies.md` — проверенные особенности API CBC, CBC-AT, Neo Warfare, Create Radars, Sable;
 - `docs/dev/test-status.md` — что покрыто игровыми тестами и какие комбинации модов проверены;
-- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test/1.2-Test, вошло в 1.1, итог — `features.md` п. 43-68).
+- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test/1.2-Test, вошло в 1.1, итог — `features.md` п. 43-70).
 
 Эти файлы и `README.md` большие: **не выводи их целиком** (`cat`), ищи нужное через `grep -n` и читай куски.
 
@@ -146,7 +146,8 @@ CBC-AT 0.1.4c на CBC 5.11.7 без cbcatfix роняет сервер (выс�
   игрока при запуске `client/AeroBearingLook` в пакет `<игра>/radar_fcs/aeronautics_bearing_pack`; ассеты Aeronautics
   в наш jar не копировать - All Rights Reserved). Лазерный целеуказатель - `item/LaserDesignatorItem`
   (привязка к монитору; ПКМ держать - прицел и зелёный луч `client/DesignatorClient`; ЛКМ - `net/DesignatorPayloads` ->
-  `fire`: назначить через `RadarMonitorBlockEntity.designateTracked` или снять; нажатие колеса - `exclude`). Камера: курсор в воздухе - наводка по
+  `fire`: назначить через `RadarMonitorBlockEntity.designateTracked` или снять; нажатие колеса - `exclude`; цели луча -
+  `targetable`: без клея, рамок, предметов). Камера: курсор в воздухе - наводка по
   направлению взгляда (`FcsControl.aimsAtAir`).
 - `block/`, `registry/`, `client/FcsClient` (цвет транспондера).
 - `src/gametest/` — игровые тесты и dev-автоматизация (в jar не попадают).

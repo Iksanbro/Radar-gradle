@@ -106,8 +106,8 @@ public final class DesignatorClient {
         // попадание в постройку Sable - точка в координатах её плота: перевести в мир
         Vec3 stop = block.getType() == HitResult.Type.MISS ? end : dev.radarfcs.compat.SableCompat.toWorld(p.level(), block.getLocation());
         EntityHitResult eh = ProjectileUtil.getEntityHitResult(p, eye, stop, new AABB(eye, stop).inflate(1.0),
-                e -> !e.isSpectator() && e != p, eye.distanceToSqr(stop));
-        return eh != null ? eh.getLocation() : stop;
+                e -> e != p && dev.radarfcs.item.LaserDesignatorItem.targetable(e), eye.distanceToSqr(stop));
+        return eh != null ? dev.radarfcs.compat.SableCompat.toWorld(p.level(), eh.getLocation()) : stop;
     }
 
     @SubscribeEvent
@@ -163,17 +163,22 @@ public final class DesignatorClient {
         HitResult block = mc.player.pick(RANGE, pt, false);
         // попадание в постройку Sable - точка в координатах её плота (дальность была бы в миллионах блоков): в мир
         Vec3 stop = block.getType() == HitResult.Type.MISS ? end : dev.radarfcs.compat.SableCompat.toWorld(mc.level, block.getLocation());
+        // только сущности-цели (клей, рамки, предметы луч пропускает); точка сущности в плоте постройки - в мир
         EntityHitResult eh = ProjectileUtil.getEntityHitResult(mc.player, eye, stop, new AABB(eye, stop).inflate(1.0),
-                e -> !e.isSpectator() && e != mc.player, eye.distanceToSqr(stop));
+                e -> e != mc.player && dev.radarfcs.item.LaserDesignatorItem.targetable(e), eye.distanceToSqr(stop));
         String dist;
         Component what;
         if (eh != null) {
             Entity e = eh.getEntity();
-            dist = String.format(Locale.ROOT, "%.0f", e.position().distanceTo(eye));
+            dist = String.format(Locale.ROOT, "%.0f", dev.radarfcs.compat.SableCompat.toWorld(mc.level, e.position()).distanceTo(eye));
             what = e.getDisplayName().copy().withStyle(ChatFormatting.RED);
         } else if (block.getType() != HitResult.Type.MISS) {
             dist = String.format(Locale.ROOT, "%.0f", stop.distanceTo(eye));
-            what = Component.translatable("radar_fcs.designator.no_target").withStyle(ChatFormatting.GRAY);
+            // блок корабля Sable - под перекрестием корабль (его и назначит ЛКМ)
+            var ship = block instanceof net.minecraft.world.phys.BlockHitResult bh
+                    ? dev.radarfcs.compat.SableCompat.containing(mc.level, bh.getBlockPos()) : null;
+            what = ship != null ? Component.literal(dev.radarfcs.compat.SableCompat.name(ship)).withStyle(ChatFormatting.RED)
+                    : Component.translatable("radar_fcs.designator.no_target").withStyle(ChatFormatting.GRAY);
         } else {
             dist = "-";
             what = Component.translatable("radar_fcs.designator.no_target").withStyle(ChatFormatting.GRAY);

@@ -299,7 +299,8 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
             Vec3 d = e.position().subtract(e.xo, e.yo, e.zo);
             aimVelocity = e.onGround() ? new Vec3(d.x, 0, d.z) : d;
             aimHit = new ManualAim.Hit(null, SableCompat.trackingShipId(e), e.getId());
-            return e.getBoundingBox().getCenter();
+            // сущность в плоте постройки Sable (рамка на корабле) - точка в координатах плота: перевести в мир
+            return SableCompat.toWorld(sl, e.getBoundingBox().getCenter());
         }
         aimVelocity = vel;
         return stop;

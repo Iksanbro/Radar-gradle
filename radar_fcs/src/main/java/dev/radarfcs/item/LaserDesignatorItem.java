@@ -158,6 +158,17 @@ public class LaserDesignatorItem extends Item {
         return false;
     }
 
+    /**
+     * Сущность, которую целеуказатель может взять целью: существо, снаряд, транспорт (лодки, вагонетки), контрапшен
+     * Create. Клей (суперклей Create, медовый клей Aeronautics - они ещё и живут в плоте постройки), рамки, выпавшие
+     * предметы и прочее служебное - нет: луч проходит сквозь них к цели или кораблю за ними.
+     */
+    public static boolean targetable(Entity e) {
+        if (e.isSpectator() || e.isRemoved()) return false;
+        return e instanceof net.minecraft.world.entity.LivingEntity || e instanceof net.minecraft.world.entity.projectile.Projectile
+                || e instanceof net.minecraft.world.entity.vehicle.VehicleEntity || dev.radarfcs.compat.ContraptionCompat.isContraption(e);
+    }
+
     /** Что под лучом: точка конца и id возможных целей по порядку (сущность, затем корабль, на котором она). */
     public record Aim(Vec3 point, List<UUID> ids) {}
 
@@ -175,7 +186,7 @@ public class LaserDesignatorItem extends Item {
         }
         Entity best = null;
         double bestD = Double.POSITIVE_INFINITY;
-        for (Entity e : sl.getEntities(p, new AABB(eye, stop).inflate(2.0), e -> !e.isSpectator() && e != p.getVehicle())) {
+        for (Entity e : sl.getEntities(p, new AABB(eye, stop).inflate(2.0), e -> targetable(e) && e != p.getVehicle())) {
             double slack = 0.3 + SLACK_PER_BLOCK * e.position().distanceTo(eye);
             var hit = e.getBoundingBox().inflate(slack).clip(eye, stop);
             if (hit.isEmpty()) continue;
@@ -190,7 +201,7 @@ public class LaserDesignatorItem extends Item {
             ids.add(best.getUUID());
             UUID on = SableCompat.trackingShipId(best);
             if (on != null && !on.equals(own)) ids.add(on);
-            return new Aim(best.getBoundingBox().getCenter(), ids);
+            return new Aim(SableCompat.toWorld(sl, best.getBoundingBox().getCenter()), ids);
         }
         if (shipId != null) ids.add(shipId);
         return new Aim(stop, ids);

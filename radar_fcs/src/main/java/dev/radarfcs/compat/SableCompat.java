@@ -191,12 +191,17 @@ public final class SableCompat {
         }
     }
 
+    /** Имя корабля: заданное в Sable или «ship-» и начало его id (как у отметок радара). */
+    public static String name(SubLevelAccess s) {
+        String name = s.getName();
+        return name == null || name.isBlank() ? "ship-" + s.getUniqueId().toString().substring(0, 4) : name;
+    }
+
     /** Корабль для вычислителя; тело постройки удалено (разобрали в этом тике) - исключение. */
     public static Ship describe(Level level, SubLevelAccess s) {
         BoundingBox3dc b = s.boundingBox();
         AABB box = new AABB(b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ());
-        String name = s.getName();
-        if (name == null || name.isBlank()) name = "ship-" + s.getUniqueId().toString().substring(0, 4);
+        String name = name(s);
         // центр масс: к нему относится скорость от физики Sable (центр габарита при вращении «гуляет»).
         // Габарит Sable отстаёт от позы на тик: у быстрого корабля центр масс впереди габарита на перемещение
         // за тик, и центр габарита дал бы цель с опозданием на тик (3.5 блока на 70 м/с)

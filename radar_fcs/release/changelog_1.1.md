@@ -32,6 +32,7 @@ Merges the earlier 1.1 build and the 1.1-Test / 1.2-Test pre-releases. Remove Gu
 - Optimizations: the bridge does not run its target sensor when there is no target; docking status and network lookups are throttled.
 
 ### Since 1.2-Test
+- **Fix:** the Laser Target Designator no longer picks glue (Create Super Glue, Aeronautics Honey Glue) and other non-targets (item frames, dropped items): the beam passes through them to the ship or mob behind, and a ship block under the crosshair shows the ship name. The range to anything on a ship is in world coordinates (it showed millions of blocks).
 - Laser Target Designator and camera view: the held item and the Create Extendo Grip are no longer drawn.
 - Laser Target Designator: press the mouse wheel while aiming to exclude the target under the crosshair from fire (again to return it).
 - **Fix:** a Gun Bearing disassembled by hand while the turret was aiming no longer re-assembles itself the next tick from the turning ring (only right-click assembles it again). The turning part is no longer lost or thrown off, and a one-off Sable error about the removed body no longer switches off ship support until restart.
@@ -74,6 +75,7 @@ Merges the earlier 1.1 build and the 1.1-Test / 1.2-Test pre-releases. Remove Gu
 - Оптимизации: без цели мост не запускает сенсор; проверки сцепки и поиск сетей при стыковке — реже.
 
 ### По сравнению с 1.2-Test
+- **Исправлено:** лазерный целеуказатель больше не берёт целью клей (суперклей Create, медовый клей Aeronautics) и прочее служебное (рамки, выпавшие предметы): луч проходит сквозь них к кораблю или мобу за ними, а на блоке корабля под перекрестием видно имя корабля. Дальность до всего на корабле — в мировых координатах (показывались миллионы блоков).
 - Лазерный целеуказатель и вид с камеры: предмет в руках и длиннохват Create больше не видны.
 - Лазерный целеуказатель: нажатие колеса мыши при прицеливании — исключить цель под перекрестием из огня (повторно — вернуть).
 - **Исправлено:** подшипник орудия, разобранный вручную во время наводки, больше не собирается сам в следующем тике от вращающегося кольца (собрать снова — ПКМ). Поворотная часть больше не теряется и не слетает, а разовая ошибка Sable об удалённом теле постройки больше не выключает поддержку кораблей до перезапуска.

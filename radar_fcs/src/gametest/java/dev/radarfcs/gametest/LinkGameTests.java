@@ -693,6 +693,37 @@ public class LinkGameTests {
         });
     }
 
+    /**
+     * Целеуказатель не берёт целью клей (и прочее служебное): суперклей на луче перед мобом - луч проходит сквозь него,
+     * под перекрестием моб. Цели - существа, снаряды, транспорт; клей и выпавшие предметы - нет.
+     */
+    @GameTest(template = ARENA, batch = "link_designator", timeoutTicks = 100)
+    public static void designatorIgnoresGlue(GameTestHelper h) {
+        floor(h);
+        ServerLevel level = h.getLevel();
+        Mob husk = SettingsGameTests.tough(movingTarget(h, EntityType.HUSK, new Vec3(30.5, 1, 20.5), 0, 0));
+        BlockPos g = h.absolutePos(new BlockPos(20, 2, 20));
+        var glue = new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(level, new net.minecraft.world.phys.AABB(g).inflate(1));
+        level.addFreshEntity(glue);
+        Player p = h.makeMockPlayer(GameType.CREATIVE);
+        h.runAtTickTime(5, () -> {
+            if (dev.radarfcs.item.LaserDesignatorItem.targetable(glue)) h.fail("super glue is targetable");
+            if (!dev.radarfcs.item.LaserDesignatorItem.targetable(husk)) h.fail("husk is not targetable");
+            var drop = new net.minecraft.world.entity.item.ItemEntity(level, g.getX(), g.getY(), g.getZ(), new ItemStack(net.minecraft.world.item.Items.STONE));
+            if (dev.radarfcs.item.LaserDesignatorItem.targetable(drop)) h.fail("dropped item is targetable");
+            var arrow = new net.minecraft.world.entity.projectile.Arrow(level, g.getX(), g.getY(), g.getZ(),
+                    new ItemStack(net.minecraft.world.item.Items.ARROW), null);
+            if (!dev.radarfcs.item.LaserDesignatorItem.targetable(arrow)) h.fail("arrow is not targetable");
+            Vec3 eye = h.absoluteVec(new Vec3(5.5, 2.5, 20.5)), aim = husk.getBoundingBox().getCenter();
+            Vec3 end = eye.add(aim.subtract(eye).normalize().scale(dev.radarfcs.item.LaserDesignatorItem.RANGE));
+            if (!glue.getBoundingBox().clip(eye, end).isPresent()) h.fail("glue is not on the beam - test setup");
+            var r = dev.radarfcs.item.LaserDesignatorItem.trace(level, p, eye, end);
+            FcsMod.LOG.info("[radar_fcs test] designator_glue: ids {} point {} (husk {}, glue {})", r.ids(), r.point(), husk.getUUID(), glue.getUUID());
+            if (r.ids().isEmpty() || !r.ids().get(0).equals(husk.getUUID())) h.fail("beam did not pass the glue to the husk: " + r.ids());
+            h.succeed();
+        });
+    }
+
     /** Целеуказатель: ПКМ держать - прицеливание (предмет в использовании), ЛКМ - назначить/снять, отпустить ПКМ. */
     private static boolean aimAndFire(GameTestHelper h, Player p, dev.radarfcs.item.LaserDesignatorItem item, ItemStack stack) {
         item.use(h.getLevel(), p, InteractionHand.MAIN_HAND);
