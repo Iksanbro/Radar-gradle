@@ -1,89 +1,43 @@
 # 1.1 — changes since 1.0 Release
 
-Merges the earlier 1.1 build and the 1.1-Test / 1.2-Test pre-releases. Remove Gun Rotators from your builds before updating.
-
 ## English
-- **New: Autopilot Bridge** (only with **Create: Flight Control** 0.8.3+, crafted from its parts). Flies a Flight Control ship to the radar network's target: the one designated on a monitor, otherwise the fire control computer's target, otherwise the nearest hostile radar contact.
-- Works like the Flight Control Navigation Terminal: movement through a **Velocity Coupler**, turning through an **Angular Velocity Coupler** linked to the same Flight Control Computer. While flying to the target the bridge switches off the Attitude and Altitude Stabilizers, the Distance Coupler and the Flight Control Terminal; with no target or when paused, control returns to them.
-- Tracking deflections toggled separately: **yaw**, **roll** (bank into the turn) and **pitch** (nose on the target elevation), with typed roll and pitch limits. Ship nose taken from the Forward Indicator.
-- Modes **"turn only"**, **"distance only"** (keeps the altitude at which the target was acquired) and **"distance and altitude"** with typed distance, height above the target and speed limit.
-- Linked with the Flight Control Tool Gun; redstone pauses it; Engineer's Goggles show the state, the target and what is missing.
-- Ponder scene for the bridge.
-- Reworked English and Russian texts: Flight Control block names as in that mod, "ships" instead of "sublevels", consistent terms and wording. Russian block names: «Передатчик радарной сети» / «Передатчик орудийной сети» (was «линк»), «Механизм горизонтальной/вертикальной наводки» (was «контроллер»).
-- Redrawn 32x32 textures in the Create style with smooth gradients and a richer palette, including the white security camera.
-- Minor optimizations: fewer block updates from the bridge, cached ship lookup.
-- **New: Docking Controller** (only with **Create: Flight Control**; recipe needs a Create Aeronautics Docking Connector). One block with two roles: **port** — next to the connectors ships dock to (ground, station, another ship); **plug** — on the ship next to its own connectors. Linked to up to **8 Docking Connectors** (same facing, one number) with the Flight Control Tool Gun; links are highlighted like Flight Control links, also on moving ships.
-- The Autopilot Bridge takes the ship to the **nearest free port with the plug's number**, turning in advance so that **every connector meets its own port** (for up/down-facing ports also by heading). **Clearance distance** on the controller: the ship lines up for the straight approach that far in front of the port and does not come closer — it flies around the port — until it is on the port axis. Controllers extend the connectors; the connectors lock on their own.
-- **When to dock** (bridge, "No target" tab): off, when there is no target, or on a **redstone signal** (then redstone sends the ship to dock instead of pausing). Busy ports: wait at the port or stay; when docking on "no target" with an orbit set, fly the orbit until a port is free.
-- **While docked** the ship's Flight Control Computer is switched off (engines without thrust) and the guns on the ship are inactive ("Ship docked"); after undocking everything is restored and the ship backs away from the port for 3 s. A redstone pause no longer undocks a docked ship.
-- **The bridge no longer chases the nearest radar contact.** With no target it **hovers** in place or flies an **orbit** around a point or a new **Orbit Beacon** (in the bridge's radar network; a code picks the beacon). Orbit radius, height above the center, direction, **orbit speed** and **where the nose points** (along the path, backward, to the center, outward, keep heading).
-- Bridge screen split into **"Target"** and **"No target"** tabs.
-- **Fix:** "Drop static targets" (on by default) also dropped ships that hover, stand or keep their distance (below 0.6 blocks/s) — ships are never dropped as static now. Friend or foe for ships is decided only by transponders: a ship carrying guns of the same fire control computer is no longer "own" by itself — guns on other ships attack it, but a gun never targets the ship it stands on (nor anything on it), even when aimed by a camera.
-- After undocking the ship backs away along the port axis to the clearance distance. Broken equipment linked with the Flight Control Tool Gun (docking connectors, Flight Control Computer, Forward Indicator) is unlinked automatically.
-- **Redstone on a port Docking Controller locks it:** while a ship is docked there, undocking is not allowed (the connectors stay extended, the bridge shows "port held by redstone"); while the port is free, docking to it is not allowed (the bridge picks another free port or waits). Engineer's Goggles show the state.
-- **New: Gun Bearing** (only with Create Aeronautics — without it the block does not exist; crafted from an Aeronautics Swivel Bearing and 4 springs). A copy of the Aeronautics swivel bearing that damps inertia. As with theirs: right-click with an empty hand assembles the build in front of it onto the bearing plate (nothing in front — just the plate), again or right-click on the plate disassembles it back into blocks; breaking the plate breaks the bearing; the built-in cog ring meshes with cogwheels next to it (turning it assembles the bearing by itself), the same speed limit, Sequenced Gearshift support, the shaft passes through the plate; lock mode on the side panel (always / without signal / with signal / never; unlocked, the part turns freely). The difference: critical damping, stiffness scaled by the moment of inertia of everything it turns and a lead on the target angle — the turning part does not overshoot or sway, even with a pitch bearing and a barrel on it. Looks like their bearing painted black with yellow-black stripes, recolored locally at game start (none of their assets are shipped in this mod).
-- **New: Laser Target Designator.** Shift+right-click a radar monitor to bind it; hold right-click to aim like a spyglass (zoom 2-10x with the mouse wheel, reticle, a green laser beam others see too, target name and range), left-click while aiming designates the target under the crosshair (the beam flashes red) (mob, projectile, any block of a Sable ship) is designated on that monitor, just like right-clicking its blip. Left-click in the air or shift+right-click in the air clears the designation. The target must be seen by the monitor's network radars.
-- **The Gun Rotator is removed** — assembled guns are turned only by Gun Drives (Create Aeronautics swivel bearings, CBC mount shafts). Remove rotators from your builds before updating (they disappear from the world).
-- An assembled gun with a Gun Sight is aimed only by the sight, however many cannons of any type it has. The cannon mounts of an assembled gun are not locked, so drives that turn the mount shafts work.
-- Gun Drive mode (yaw/pitch) is now **Shift+right-click** with an empty hand: a plain right-click (including holding it on the limit slider) no longer switches it.
-- Radar monitor: target info now appears **above the target** you look at (and above the designated target), not in the top corner.
-- **Camera: cursor in the air.** When the camera view does not hit anything, cannons and guns aim along the cursor direction (before, a ballistic solution was searched for the end of the 384-block ray, there was none and the cannon stood still). With the cursor on a block or an entity nothing changes.
-- **Ponder scenes** for the Gun Bearing, Docking Controller, Orbit Beacon and Laser Target Designator; the swivel turret scene now uses Gun Bearings. Item tooltips are one sentence each — the details are in Ponder (hold W).
-- Optimizations: the bridge does not run its target sensor when there is no target; docking status and network lookups are throttled.
+**Added**
+- **Autopilot Bridge** (with Create: Flight Control): flies a ship to the network's target; yaw/roll/pitch tracking, distance and altitude modes; with no target it hovers or orbits a point or an **Orbit Beacon**.
+- **Docking Controller** (with Flight Control + Create Aeronautics): automatic docking to numbered ports, up to 8 connectors; engines off and guns inactive while docked; redstone locks a port.
+- **Gun Bearing** (with Create Aeronautics): a swivel bearing that damps inertia — no overshoot or sway.
+- **Laser Target Designator**: designate (LMB) or exclude (mouse wheel click) targets from afar for a radar monitor.
+- Camera: with the cursor in the air the guns point along your view.
+- Ponder scenes for all new blocks; redrawn 32x32 textures; reworked English and Russian texts.
 
-### Since 1.2-Test
-- **Fix:** the Laser Target Designator no longer picks glue (Create Super Glue, Aeronautics Honey Glue) and other non-targets (item frames, dropped items): the beam passes through them to the ship or mob behind, and a ship block under the crosshair shows the ship name. The range to anything on a ship is in world coordinates (it showed millions of blocks).
-- Laser Target Designator and camera view: the held item and the Create Extendo Grip are no longer drawn.
-- Laser Target Designator: press the mouse wheel while aiming to exclude the target under the crosshair from fire (again to return it).
-- **Fix:** a Gun Bearing disassembled by hand while the turret was aiming no longer re-assembles itself the next tick from the turning ring (only right-click assembles it again). The turning part is no longer lost or thrown off, and a one-off Sable error about the removed body no longer switches off ship support until restart.
-- Docking on "no target" with an orbit set: when all ports are busy or held by redstone, the ship flies the orbit until a port is free.
-- Gun Bearing recipe: an Aeronautics Swivel Bearing and 4 springs (instead of a Mechanical Bearing).
-- Laser Target Designator: the range to a ship block is shown correctly (it showed millions of blocks).
-- **New: redstone on a port Docking Controller locks it:** while a ship is docked there, undocking is not allowed (the connectors stay extended, the bridge shows "port held by redstone"); while the port is free, docking to it is not allowed (the bridge picks another free port or waits). Engineer's Goggles show the state.
-- **Ponder scenes** for the Gun Bearing, Docking Controller, Orbit Beacon and Laser Target Designator; the swivel turret scene now uses Gun Bearings. Item tooltips are one sentence each — the details are in Ponder (hold W).
-- Gun aiming is exactly as in 1.0 Release (gun drive learning restored); the Gun Bearing turns like the Aeronautics swivel bearing, damping inertia.
-- **Camera: cursor in the air.** When the camera view does not hit anything, cannons and guns aim along the cursor direction (before, a ballistic solution was searched for the end of the 384-block ray, there was none and the cannon stood still). With the cursor on a block or an entity nothing changes.
-- Optimization: the Gun Bearing collects the parts it turns and their moment of inertia once per tick instead of every physics step.
+**Removed**
+- **Gun Rotator** — assembled guns are turned by Gun Drives only. Remove rotators from your builds before updating.
+
+**Fixed**
+- "Drop static targets" no longer drops ships that hover or keep distance.
+- Friend or foe for ships — by transponders only; a gun never targets the ship it stands on.
+- Assembled guns with a Gun Sight aim only by the sight and no longer jerk; cannon mounts are not locked.
+- Gun Drive mode switches with Shift+RMB (a plain RMB no longer changes it).
+- Target info on the radar monitor is shown above the target.
+- A one-off Sable error no longer disables ship support until restart.
+- Optimizations: fewer block updates and lookups from the bridge and docking.
 
 ## Русский
-- **Новое: мост автопилота** (только с **Create: Flight Control** 0.8.3+, крафт из его деталей). Ведёт корабль Flight Control к цели радарной сети: назначенной на мониторе, иначе цели вычислителя, иначе ближайшей чужой цели радаров.
-- Работает как навигационный терминал Flight Control: движение — через **регулятор скорости**, повороты — через **регулятор угловой скорости**, связанные с тем же компьютером управления полётом. На время полёта к цели мост выключает стабилизаторы ориентации и высоты, регулятор дистанции и терминал управления полётом; нет цели или пауза — управление возвращается к ним.
-- Отклонения для ведения цели включаются по отдельности: **рыскание**, **крен** (в сторону поворота) и **тангаж** (нос на угол места цели), с вписываемыми пределами крена и тангажа. Нос корабля — по индикатору направления вперёд.
-- Режимы **«только поворот»**, **«только дальность»** (держит высоту, на которой взята цель) и **«дальность и высота»** с вписываемыми дальностью, высотой над целью и пределом скорости.
-- Связь — инструментальным пистолетом Flight Control; редстоун — пауза; очки инженера показывают состояние, цель и чего не хватает.
-- Обучающая сцена Ponder для моста.
-- Переписаны тексты на русском и английском: названия блоков Flight Control — как в самом моде, «корабли» вместо «сублевелов», единые термины и формулировки. Новые русские названия блоков: «Передатчик радарной сети» и «Передатчик орудийной сети» (были «линки»), «Механизм горизонтальной/вертикальной наводки» (были «контроллеры»).
-- Перерисованы текстуры 32x32 в стиле Create — с плавными градиентами и более богатой палитрой, в том числе белая камера наблюдения.
-- Мелкие оптимизации: меньше обновлений блока у моста, кэш поиска корабля.
-- **Новое: стыковочный контроллер** (только с **Create: Flight Control**; в рецепте — стыковочный порт Create Aeronautics). Один блок с двумя ролями: **порт** — у портов, куда садятся (земля, станция, другой корабль); **штекер** — на корабле у его портов. Связь с **до 8 стыковочными портами** (одно направление, один номер) — инструментальным пистолетом Flight Control; связи подсвечиваются, как у Flight Control, в том числе на движущихся кораблях.
-- Мост автопилота ведёт корабль к **ближайшему свободному порту с номером штекера** и заранее разворачивается так, чтобы **каждый порт встал на свой** (к портам вверх/вниз — и по курсу). **Дистанция обхода** в контроллере: на ней перед портом корабль выходит на прямую и, пока не вышел на ось порта, ближе не подходит — облетает порт. Порты выдвигают контроллеры, сцепляются порты сами.
-- **Когда стыковаться** (мост, вкладка «Без цели»): выкл, когда нет цели, по **сигналу редстоуна** (тогда редстоун — на стыковку, а не пауза). Порты заняты — ждать у порта или не лететь; при стыковке «нет цели» с настроенной орбитой — летать по орбите, пока порт не освободится.
-- **Пока корабль пристыкован**, компьютер Flight Control выключен (двигатели без тяги), пушки на корабле неактивны («Корабль пристыкован»); после расстыковки всё возвращается, корабль 3 с отходит от порта. Пауза редстоуном больше не расстыковывает.
-- **Мост больше не ведёт «ближайшую чужую цель радаров».** Без цели корабль **висит** на месте или летит по **орбите** вокруг координаты или нового **маяка орбиты** (в радарной сети моста; маяк выбирается кодом). Радиус, высота над центром, направление, **скорость по орбите** и **куда смотрит нос** (по ходу, против хода, к центру, наружу, не поворачивать).
-- Экран моста разделён на вкладки **«Цель»** и **«Без цели»**.
-- **Исправлено:** «Сбрасывать статичные» (включено по умолчанию) отсеивало и корабли, которые висят, стоят или держат дистанцию (медленнее 0,6 бл/с), — корабли больше не сбрасываются как статичные. Свой-чужой для кораблей — только по транспондеру: корабль с пушками того же вычислителя больше не «свой» сам по себе — пушки на других кораблях его атакуют, но пушка никогда не стреляет по кораблю, на котором стоит (и по тем, кто на нём), в том числе с камеры.
-- После расстыковки корабль отходит по оси порта на дистанцию обхода. Сломанное оборудование, подключённое пистолетом Flight Control (стыковочные порты, компьютер Flight Control, индикатор направления), отключается само.
-- **Сигнал редстоуна на стыковочном контроллере в роли порта блокирует его:** корабль пристыкован — расстыковка запрещена (порты остаются выдвинутыми, мост пишет «порт держат редстоуном»); порт свободен — стыковка к нему запрещена (мост выбирает другой свободный порт или ждёт). Состояние видно в очках инженера.
-- **Новое: подшипник орудия** (только с Create Aeronautics — без него блока нет; крафт из поворотного подшипника Aeronautics и 4 пружин) — повтор поворотного подшипника Aeronautics, но гасящий инерцию. Как у Aeronautics: ПКМ пустой рукой — собрать постройку на пластину подшипника (пусто перед ним — одна пластина), повторно или ПКМ по пластине — разобрать обратно в блоки; сломали пластину — ломается подшипник; встроенное кольцо-шестерня в зацеплении с шестернями рядом (закрутилось — подшипник собирается сам), предел скорости как у Aeronautics, секвенсорный редуктор, вал насквозь через пластину; режим блокировки на панели сбоку (всегда / без сигнала / с сигналом / никогда, без блокировки часть крутится свободно). Отличие: критическое демпфирование, жёсткость по моменту инерции всего поворачиваемого и цель с упреждением — поворотная часть не перелетает угол и не раскачивается даже с подшипником наклона и стволом на ней. Вид — их модель и текстура, перекрашенные в чёрный с жёлто-чёрной разметкой у игрока при запуске (в наш мод их ассеты не копируются).
-- **Новое: лазерный целеуказатель.** Shift+ПКМ по монитору радара — привязать; ПКМ держать — прицеливание, как в подзорную трубу (приближение 2–10x колесом мыши, сетка, зелёный лазерный луч, его видят и другие, имя цели и дальность), ЛКМ при прицеливании — цель под перекрестием (моб, снаряд, любой блок корабля Sable) назначается на этом мониторе, как ПКМ по её отметке. ЛКМ в воздух или Shift+ПКМ в воздух — снять назначение. Цель должна быть видна радарам сети монитора.
-- **Вращатель орудия убран** — сборные орудия поворачивают только приводы (подшипники-шарниры Create Aeronautics, валы станка CBC). Уберите вращатели из построек до обновления (они пропадут из мира).
-- Сборное орудие с прицелом наводится только по прицелу, сколько бы и каких пушек в нём ни было. Станки сборного орудия не блокируются — приводы, крутящие валы станка, работают.
-- Режим привода орудия (курс/наклон) — теперь **Shift+ПКМ** пустой рукой: простой ПКМ (в том числе удержание на ползунке предела) его больше не переключает.
-- Монитор радара: сведения о цели теперь появляются **над целью** под взглядом (и над назначенной целью), а не в верхнем углу.
-- **Камера: курсор в воздухе.** Если взгляд камеры ни во что не упёрся, пушки и орудия наводятся по направлению курсора (раньше к концу луча в 384 блоках искалось баллистическое решение, его не было — пушка стояла). Курсор на блоке или существе — всё как раньше.
-- **Сцены Ponder** для подшипника орудия, стыковочного контроллера, маяка орбиты и лазерного целеуказателя; сцена поворотной башни — на подшипниках орудия. Подсказки предметов — по одному предложению, подробности — в Ponder (удерживать W).
-- Оптимизации: без цели мост не запускает сенсор; проверки сцепки и поиск сетей при стыковке — реже.
+**Добавлено**
+- **Мост автопилота** (с Create: Flight Control): ведёт корабль к цели сети; рыскание/крен/тангаж, режимы дальности и высоты; без цели — висит или летает по орбите вокруг точки или **маяка орбиты**.
+- **Стыковочный контроллер** (с Flight Control + Create Aeronautics): автостыковка к портам по номеру, до 8 портов; пристыкованный корабль — двигатели выключены, пушки неактивны; редстоун блокирует порт.
+- **Подшипник орудия** (с Create Aeronautics): поворотный подшипник, гасящий инерцию, — без перелёта и раскачки.
+- **Лазерный целеуказатель**: назначение (ЛКМ) и исключение (нажатие колеса) целей издалека для монитора радара.
+- Камера: курсор в воздухе — орудия смотрят по направлению взгляда.
+- Сцены Ponder для всех новых блоков; перерисованные текстуры 32x32; переписаны тексты на русском и английском.
 
-### По сравнению с 1.2-Test
-- **Исправлено:** лазерный целеуказатель больше не берёт целью клей (суперклей Create, медовый клей Aeronautics) и прочее служебное (рамки, выпавшие предметы): луч проходит сквозь них к кораблю или мобу за ними, а на блоке корабля под перекрестием видно имя корабля. Дальность до всего на корабле — в мировых координатах (показывались миллионы блоков).
-- Лазерный целеуказатель и вид с камеры: предмет в руках и длиннохват Create больше не видны.
-- Лазерный целеуказатель: нажатие колеса мыши при прицеливании — исключить цель под перекрестием из огня (повторно — вернуть).
-- **Исправлено:** подшипник орудия, разобранный вручную во время наводки, больше не собирается сам в следующем тике от вращающегося кольца (собрать снова — ПКМ). Поворотная часть больше не теряется и не слетает, а разовая ошибка Sable об удалённом теле постройки больше не выключает поддержку кораблей до перезапуска.
-- Стыковка «нет цели» с настроенной орбитой: если все порты заняты или держатся редстоуном, корабль летает по орбите, пока порт не освободится.
-- Рецепт подшипника орудия: поворотный подшипник Aeronautics и 4 пружины (вместо механического подшипника).
-- Лазерный целеуказатель: дальность до блока корабля показывается правильно (показывались миллионы блоков).
-- **Новое: сигнал редстоуна на стыковочном контроллере в роли порта блокирует его:** корабль пристыкован — расстыковка запрещена (порты остаются выдвинутыми, мост пишет «порт держат редстоуном»); порт свободен — стыковка к нему запрещена (мост выбирает другой свободный порт или ждёт). Состояние видно в очках инженера.
-- **Сцены Ponder** для подшипника орудия, стыковочного контроллера, маяка орбиты и лазерного целеуказателя; сцена поворотной башни — на подшипниках орудия. Подсказки предметов — по одному предложению, подробности — в Ponder (удерживать W).
-- Наведение орудия — в точности как в 1.0 Release (обучение привода возвращено); подшипник орудия поворачивает как поворотный подшипник Aeronautics, гася инерцию.
-- **Камера: курсор в воздухе.** Если взгляд камеры ни во что не упёрся, пушки и орудия наводятся по направлению курсора (раньше к концу луча в 384 блоках искалось баллистическое решение, его не было — пушка стояла). Курсор на блоке или существе — всё как раньше.
-- Оптимизация: подшипник орудия собирает поворачиваемые части и их момент инерции раз в тик, а не каждый шаг физики.
+**Убрано**
+- **Вращатель орудия** — сборные орудия поворачивают только приводы. Уберите вращатели из построек до обновления.
+
+**Исправлено**
+- «Сбрасывать статичные» больше не отсеивает висящие и держащие дистанцию корабли.
+- Свой-чужой для кораблей — только по транспондеру; пушка никогда не стреляет по кораблю, на котором стоит.
+- Сборное орудие с прицелом наводится только по прицелу и не дёргается; станки не блокируются.
+- Режим привода орудия — Shift+ПКМ (простой ПКМ его больше не меняет).
+- Сведения о цели на мониторе радара — над целью.
+- Разовая ошибка Sable больше не выключает поддержку кораблей до перезапуска.
+- Оптимизации: меньше обновлений блоков и поисков у моста и стыковки.

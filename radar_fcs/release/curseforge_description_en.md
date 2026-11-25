@@ -34,11 +34,11 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 
 ### 🎥 Cameras
 - Security-style cameras that rotate and remember their view. Look through a camera from the **Camera Monitor**: the guns follow your view, **left-click fires** (hold for continuous fire).
-- Choose which guns each camera controls. Works with targets on moving Sable ships, with lead.
+- Choose which guns each camera controls. Works with targets on moving Sable ships, with lead. With the cursor in the air the guns point along your view.
 
 ### 🔧 Custom guns (Create Aeronautics / Sable)
 - Build your own turret on **Swivel Bearings** or this mod's **Gun Bearings**: a **Sight**, **Gun Drives** (yaw and pitch from any shafts, gear ratio learned automatically) and **Gun Links** that join all parts into one gun.
-- **Gun Bearing** (crafted from an Aeronautics Swivel Bearing and 4 springs): works like the Aeronautics swivel bearing — cog ring, shaft through the plate, lock modes — but damps inertia, so the turret does not overshoot or sway even with a heavy barrel.
+- **Gun Bearing** (only with Create Aeronautics; crafted from an Aeronautics Swivel Bearing and 4 springs): works like the Aeronautics swivel bearing — cog ring, shaft through the plate, lock modes — but damps inertia, so the turret does not overshoot or sway even with a heavy barrel.
 - Gun settings: type (autocannon, medium, big, custom), auto-aim on/off, firing on/off, main cannon, name.
 
 ### 🛩️ Autopilot Bridge (requires Create: Flight Control)
@@ -53,6 +53,7 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 - The bridge takes the ship to the **nearest free port with the plug's number**, turning in advance so every connector meets its own port, keeping the **clearance distance** and flying around the port until it is on the port axis. Controllers extend the connectors; the connectors lock on their own.
 - When to dock: when there is no target or on a redstone signal. While docked, the ship's Flight Control engines are off and its guns are inactive.
 - Redstone on a port controller locks it: a docked ship cannot undock, a free port cannot be docked to.
+- Docking on "no target" with an orbit set: while all ports are busy or locked, the ship flies the orbit.
 
 ### 💥 Shell & rocket interception (requires CBC Interception)
 - Shoots down incoming **big cannon shells** and **rockets** (CBC, CBC Advanced Technologies and other addons): threat filter, types and priorities, "first to arrive first".
@@ -81,7 +82,7 @@ Done — the battery will engage hostile mobs and other targets you allow. Hold 
 - **Create: Radars** 0.4.9.x or 5.x
 
 ## 🔌 Optional
-- **Create Aeronautics / Sable** — ships as targets, transponders on ships, custom turrets on Swivel Bearings
+- **Create Aeronautics / Sable** — ships as targets, transponders on ships, custom turrets on Swivel Bearings and Gun Bearings
 - **CBC Interception** — shooting down shells and rockets
 - **Create: Flight Control** — the Autopilot Bridge, Docking Controller and Orbit Beacon (0.8.3+; docking also needs Create Aeronautics)
 - **CBC Advanced Technologies** — rifled barrels, heavy/twin autocannons, rockets (its reworked cannon physics is taken into account)
@@ -90,7 +91,7 @@ Done — the battery will engage hostile mobs and other targets you allow. Hold 
 - Any **FE** power mod, e.g. **Create Crafts & Additions** (power can be disabled in the server config: `energy.requirePower`)
 
 ## ⚠️ Known issues
-- **CBC Advanced Technologies 0.1.4c** is not compatible with CBC 5.11.4+ on its own (crash when a shell hits a block). Use **CBC: Advanced technologies crash fix** or CBC 5.11.3. This is not caused by this mod.
+- **CBC Advanced Technologies 0.1.4c** is not compatible with CBC 5.11.4+ on its own (crash on firing and when its rockets hit a block). Use **CBC: Advanced technologies crash fix** (tested 1.1.4 with CBC 5.11.7) or CBC 5.11.3. This is not caused by this mod.
 - Don't put Create: Radars' own auto yaw/pitch controllers on the same mount — the computer leaves such mounts to them.
 
 ---
