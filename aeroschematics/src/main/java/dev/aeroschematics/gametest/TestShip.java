@@ -23,6 +23,8 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.material.Fluids;
+import net.neoforged.neoforge.fluids.FluidStack;
 
 /**
  * A small "airship" carrying one device of every mod the user asked about, with every storage filled, every setting
@@ -40,10 +42,52 @@ final class TestShip {
 
     private final GameTestHelper helper;
     private final boolean full;
+    private final boolean tanker;
 
     private TestShip(GameTestHelper helper, boolean full) {
+        this(helper, full, false);
+    }
+
+    private TestShip(GameTestHelper helper, boolean full, boolean tanker) {
         this.helper = helper;
         this.full = full;
+        this.tanker = tanker;
+    }
+
+    /** Every fluid container of the requested mods on one structure, all of them filled. */
+    static TestShip tanker(GameTestHelper helper) {
+        TestShip ship = new TestShip(helper, false, true);
+        ship.buildTanker();
+        return ship;
+    }
+
+    private void buildTanker() {
+        ServerLevel level = this.helper.getLevel();
+        for (int x = 2; x < 7; x++) {
+            for (int z = 2; z < 5; z++) {
+                this.put(null, new BlockPos(x, 2, z), block("minecraft:stone").defaultBlockState());
+            }
+        }
+        this.put("tank", new BlockPos(2, 3, 2), block("create:fluid_tank").defaultBlockState());
+        this.put("spout", new BlockPos(3, 3, 2), block("create:spout").defaultBlockState());
+        this.put("drain", new BlockPos(4, 3, 2), block("create:item_drain").defaultBlockState());
+        this.put("basin", new BlockPos(5, 3, 2), block("create:basin").defaultBlockState());
+        this.put("pulley", new BlockPos(6, 3, 2), block("create:hose_pulley").defaultBlockState());
+        this.put("docking", new BlockPos(2, 3, 4), block("simulated:docking_connector").defaultBlockState());
+        this.put("shell", new BlockPos(3, 3, 4), block("createbigcannons:fluid_shell").defaultBlockState());
+        this.put("thruster", new BlockPos(4, 3, 4), block("create_flight_control:smart_vector_thruster").defaultBlockState());
+        this.put("slab", new BlockPos(5, 3, 4), block("minecraft:oak_slab").defaultBlockState().setValue(BlockStateProperties.WATERLOGGED, true));
+        this.put("cauldron", new BlockPos(6, 3, 4), block("minecraft:lava_cauldron").defaultBlockState());
+
+        FluidFill.fill(level, this.devices.get("tank"), new FluidStack(Fluids.LAVA, 8000));
+        FluidFill.fill(level, this.devices.get("spout"), new FluidStack(Fluids.WATER, 1000));
+        FluidFill.fill(level, this.devices.get("drain"), new FluidStack(Fluids.WATER, 1000));
+        FluidFill.fill(level, this.devices.get("basin"), new FluidStack(Fluids.LAVA, 1000));
+        FluidFill.fill(level, this.devices.get("pulley"), new FluidStack(Fluids.WATER, 1000));
+        // The docking connector only accepts fluid while docked: write its tank the way Simulated stores it.
+        merge(level, this.devices.get("docking"), nbt("{Tank:{Amount:1000L,Variant:{Fluid:\"minecraft:lava\"}}}"));
+        merge(level, this.devices.get("shell"), nbt("{FluidContent:{Fluid:{id:\"minecraft:lava\",amount:250}}}"));
+        merge(level, this.devices.get("thruster"), nbt("{fluidAmountMb:4000,storedFluidId:\"minecraft:lava\"}"));
     }
 
     static Block block(String id) {
@@ -181,6 +225,33 @@ final class TestShip {
     BlockPos in(ServerSubLevel copy, String name) {
         BlockPos original = this.plotPositions.get(name);
         return original.subtract(this.subLevel.getPlot().getCenterBlock()).offset(copy.getPlot().getCenterBlock());
+    }
+
+    /** Whether block entity data still holds a fluid in any layout the sanitizer knows. */
+    static boolean findFluid(net.minecraft.nbt.Tag tag) {
+        dev.aeroschematics.nbt.NbtSanitizer scanner = new dev.aeroschematics.nbt.NbtSanitizer(new dev.aeroschematics.nbt.SanitizerRules(),
+                dev.aeroschematics.nbt.AeroSanitizer.REGISTRY_LOOKUP);
+        return findFluid(scanner, tag);
+    }
+
+    private static boolean findFluid(dev.aeroschematics.nbt.NbtSanitizer scanner, net.minecraft.nbt.Tag tag) {
+        if (tag instanceof CompoundTag compound) {
+            if (scanner.looksLikeFluidStack(compound)) {
+                return true;
+            }
+            for (String key : compound.getAllKeys()) {
+                if (findFluid(scanner, compound.get(key))) {
+                    return true;
+                }
+            }
+        } else if (tag instanceof ListTag list) {
+            for (net.minecraft.nbt.Tag element : list) {
+                if (findFluid(scanner, element)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     static ListTag list(CompoundTag tag, String key) {

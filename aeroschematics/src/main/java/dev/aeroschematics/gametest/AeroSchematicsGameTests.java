@@ -345,6 +345,108 @@ public final class AeroSchematicsGameTests {
                 .thenSucceed();
     }
 
+    private static final List<String> TANKER_CONTAINERS = List.of("tank", "spout", "drain", "basin", "pulley", "docking", "shell");
+
+    @GameTest(template = "platform", timeoutTicks = 200, batch = "aeroschematics_fluids_creative")
+    public static void creativePlacementCopiesNoFluids(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        TestShip ship = TestShip.tanker(helper);
+        ship.assemble();
+        assertTankerFilled(level, ship);
+        String file = "tanker_creative_" + UUID.randomUUID() + ".nbt";
+        helper.startSequence().thenIdle(SETTLE_TICKS).thenExecute(() -> {
+            assertTankerFilled(level, ship);
+            assertSchematicFile(helper, save(helper, file), false);
+            Set<UUID> before = subLevelIds(level);
+            ServerPlayer player = FakePlayerFactory.get(level, new GameProfile(UUID.fromString("0a0e0500-0000-4000-8000-00000000ae50"), "aerotest"));
+            player.setGameMode(GameType.CREATIVE);
+            new SchematicPlacePacket(schematicItem(level, file, helper.absolutePos(new BlockPos(1, 2, 1 + OFFSET)))).handle(player);
+            assertTankerCopyDry(level, ship, single(newSubLevels(level, before), "creative tanker placement"), true);
+        }).thenSucceed();
+    }
+
+    @GameTest(template = "platform", timeoutTicks = 2400, batch = "aeroschematics_fluids_cannon")
+    public static void schematicannonPrintsNoFluids(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        AllConfigs.server().schematics.schematicannonDelay.set(1);
+        TestShip ship = TestShip.tanker(helper);
+        ship.assemble();
+        assertTankerFilled(level, ship);
+        String file = "tanker_cannon_" + UUID.randomUUID() + ".nbt";
+        AtomicReference<Set<UUID>> before = new AtomicReference<>(Set.of());
+        AtomicReference<SchematicannonBlockEntity> cannonRef = new AtomicReference<>();
+        helper.onEachTick(() -> {
+            if (cannonRef.get() != null) {
+                keepRunning(cannonRef.get());
+            }
+        });
+        helper.startSequence()
+                .thenIdle(SETTLE_TICKS)
+                .thenExecute(() -> {
+                    assertSchematicFile(helper, save(helper, file), false);
+                    before.set(subLevelIds(level));
+                    helper.setBlock(new BlockPos(10, 1, 9), AllBlocks.CREATIVE_CRATE.getDefaultState());
+                    cannonRef.set(schematicannon(helper, new BlockPos(9, 1, 9), schematicItem(level, file, helper.absolutePos(new BlockPos(1, 2, 1 + OFFSET)))));
+                })
+                .thenWaitUntil(() -> {
+                    SchematicannonBlockEntity cannon = cannonRef.get();
+                    if (!"finished".equals(cannon.statusMsg)) {
+                        throw new GameTestAssertException("schematicannon: " + cannon.state + " / " + cannon.statusMsg + " placed " + cannon.blocksPlaced);
+                    }
+                })
+                .thenExecute(() -> assertTankerCopyDry(level, ship, single(newSubLevels(level, before.get()), "printed tanker"), false))
+                .thenSucceed();
+    }
+
+    private static void assertTankerFilled(ServerLevel level, TestShip ship) {
+        for (String name : TANKER_CONTAINERS) {
+            BlockPos pos = ship.plotPositions.isEmpty() ? ship.devices.get(name) : ship.plotPositions.get(name);
+            boolean filled = FluidFill.amount(level, pos) > 0 || TestShip.findFluid(TestShip.saved(level, pos));
+            if (!filled) {
+                throw new GameTestAssertException("setup: '" + name + "' is empty: " + FluidFill.describe(level, pos) + " " + TestShip.saved(level, pos));
+            }
+        }
+        if (TestShip.saved(level, ship.plotPositions.get("thruster")).getInt("fluidAmountMb") <= 0) {
+            throw new GameTestAssertException("setup: thruster has no fuel");
+        }
+    }
+
+    private static void assertTankerCopyDry(ServerLevel level, TestShip ship, ServerSubLevel copy, boolean creative) {
+        for (String name : TANKER_CONTAINERS) {
+            BlockPos pos = ship.in(copy, name);
+            if (level.getBlockState(pos).getBlock() != level.getBlockState(ship.plotPositions.get(name)).getBlock()) {
+                throw new GameTestAssertException("'" + name + "' was not printed: " + level.getBlockState(pos));
+            }
+            int amount = FluidFill.amount(level, pos);
+            CompoundTag data = TestShip.saved(level, pos);
+            if (amount > 0 || TestShip.findFluid(data)) {
+                throw new GameTestAssertException("DUPE: printed '" + name + "' contains fluid: " + FluidFill.describe(level, pos) + " " + data);
+            }
+            // ...while the original still has it (nothing was moved out of it either).
+            BlockPos original = ship.plotPositions.get(name);
+            if (FluidFill.amount(level, original) <= 0 && !TestShip.findFluid(TestShip.saved(level, original))) {
+                throw new GameTestAssertException("the original '" + name + "' lost its fluid");
+            }
+        }
+        CompoundTag thruster = TestShip.saved(level, ship.in(copy, "thruster"));
+        if (thruster.getInt("fluidAmountMb") != 0 || thruster.contains("storedFluidId")) {
+            throw new GameTestAssertException("DUPE: printed thruster has fuel: " + thruster);
+        }
+        CompoundTag tank = TestShip.saved(level, ship.in(copy, "tank"));
+        if (tank.getInt("Luminosity") != 0 || level.getLightEmission(ship.in(copy, "tank")) != 0) {
+            throw new GameTestAssertException("the printed empty tank still glows: " + tank);
+        }
+        if (level.getBlockState(ship.in(copy, "slab")).getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.WATERLOGGED)) {
+            throw new GameTestAssertException("DUPE: the printed slab is waterlogged");
+        }
+        net.minecraft.world.level.block.state.BlockState cauldron = level.getBlockState(ship.in(copy, "cauldron"));
+        // Creative prints an empty cauldron; the schematicannon skips filled cauldrons (no item form), like Create.
+        boolean ok = cauldron.is(net.minecraft.world.level.block.Blocks.CAULDRON) || (!creative && cauldron.isAir());
+        if (!ok) {
+            throw new GameTestAssertException("DUPE: the printed cauldron is " + cauldron);
+        }
+    }
+
     // ------------------------------------------------------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------------------------------------------------------

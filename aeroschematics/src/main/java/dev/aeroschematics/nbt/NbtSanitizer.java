@@ -124,13 +124,80 @@ public final class NbtSanitizer {
                     tag.put(key, new CompoundTag());
                     report.itemStacks++;
                 } else if (this.looksLikeFluidStack(compound)) {
-                    tag.put(key, new CompoundTag());
+                    tag.put(key, emptyFluid(compound));
                     report.fluidStacks++;
                 } else {
                     this.deepStrip(compound, ghostKeys, report, depth + 1);
                 }
             } else if (value instanceof ListTag list) {
                 this.stripList(list, ghostKeys, report, depth + 1);
+            }
+        }
+        cleanUpAfterFluids(tag);
+    }
+
+    /**
+     * An empty replacement for a fluid stack, in a shape its reader still understands:
+     * {@code {}} for NeoForge {@code FluidStack}s (parsed as empty), and an in-place emptied copy (amount 0, fluid
+     * {@code minecraft:empty}) for other layouts such as Simulated's {@code {Amount, Variant:{Fluid}}} tanks, whose
+     * readers expect the keys to be there.
+     */
+    static CompoundTag emptyFluid(CompoundTag fluid) {
+        if (fluid.contains("id", Tag.TAG_STRING) && fluid.contains("amount", Tag.TAG_ANY_NUMERIC) && !fluid.contains("Variant") && !fluid.contains("variant")) {
+            return new CompoundTag();
+        }
+        CompoundTag emptied = fluid.copy();
+        for (String amountKey : AMOUNT_KEYS) {
+            if (emptied.get(amountKey) instanceof NumericTag numeric) {
+                emptied.put(amountKey, zeroLike(numeric));
+            }
+        }
+        for (String idKey : FLUID_ID_KEYS) {
+            if (emptied.contains(idKey, Tag.TAG_STRING)) {
+                emptied.putString(idKey, "minecraft:empty");
+            }
+        }
+        for (String variantKey : VARIANT_KEYS) {
+            if (emptied.get(variantKey) instanceof CompoundTag variant) {
+                CompoundTag emptyVariant = new CompoundTag();
+                for (String idKey : FLUID_ID_KEYS) {
+                    if (variant.contains(idKey, Tag.TAG_STRING)) {
+                        emptyVariant.putString(idKey, "minecraft:empty");
+                    }
+                }
+                emptied.put(variantKey, emptyVariant);
+            }
+        }
+        return emptied;
+    }
+
+    private static Tag zeroLike(NumericTag numeric) {
+        return switch (numeric.getId()) {
+            case Tag.TAG_BYTE -> net.minecraft.nbt.ByteTag.valueOf((byte) 0);
+            case Tag.TAG_SHORT -> net.minecraft.nbt.ShortTag.valueOf((short) 0);
+            case Tag.TAG_LONG -> net.minecraft.nbt.LongTag.valueOf(0L);
+            case Tag.TAG_FLOAT -> net.minecraft.nbt.FloatTag.valueOf(0f);
+            case Tag.TAG_DOUBLE -> net.minecraft.nbt.DoubleTag.valueOf(0d);
+            default -> net.minecraft.nbt.IntTag.valueOf(0);
+        };
+    }
+
+    /**
+     * State that only makes sense together with fluid that was just removed:
+     * <ul>
+     *     <li>Create pipes: a {@code Flow} whose fluid is gone is dropped (a fresh pipe has none);</li>
+     *     <li>Create tanks of spouts/drains/basins: the rendered fill {@code Level} next to {@code TankContent} goes to 0.</li>
+     * </ul>
+     */
+    private static void cleanUpAfterFluids(CompoundTag tag) {
+        if (tag.get("Flow") instanceof CompoundTag flow && flow.contains("Fluid") && flow.getCompound("Fluid").isEmpty()) {
+            tag.remove("Flow");
+        }
+        if (tag.contains("TankContent", Tag.TAG_COMPOUND) && tag.get("Level") instanceof CompoundTag level && level.contains("Value", Tag.TAG_ANY_NUMERIC)) {
+            CompoundTag fluidTank = tag.getCompound("TankContent");
+            if (!fluidTank.contains("Fluid") || fluidTank.getCompound("Fluid").isEmpty()) {
+                level.putFloat("Value", 0f);
+                level.putFloat("Target", 0f);
             }
         }
     }
@@ -149,9 +216,9 @@ public final class NbtSanitizer {
                 } else {
                     report.fluidStacks++;
                 }
-                if (hasSlotKey(element) || !this.isStackItself(element)) {
-                    // Slot-addressed entries ({Slot, id, count}, {slot, item:{...}}, {Slot, Projectile, Propellant})
-                    // are simply dropped: readers iterate entries and look the slot up.
+                if (kind == ContentKind.FLUID || hasSlotKey(element) || !this.isStackItself(element)) {
+                    // Fluids, and slot-addressed entries ({Slot, id, count}, {slot, item:{...}}, {Slot, Projectile,
+                    // Propellant}) are simply dropped: readers iterate entries and look the slot up.
                     list.remove(i);
                 } else {
                     // Positional lists (e.g. ArmorItems) keep their size; an empty compound decodes to an empty stack.
@@ -214,16 +281,49 @@ public final class NbtSanitizer {
         return !id.isEmpty() && !id.equals("minecraft:air") && this.lookup.isItem(id);
     }
 
-    /** NeoForge {@code {id: "minecraft:water", amount: 1000}} or the legacy {@code {FluidName, Amount}}. */
+    private static final List<String> AMOUNT_KEYS = List.of("amount", "Amount");
+    private static final List<String> FLUID_ID_KEYS = List.of("id", "FluidName", "Fluid", "fluid");
+    private static final List<String> VARIANT_KEYS = List.of("Variant", "variant");
+
+    /**
+     * A fluid amount of a registered fluid, in any of the layouts used by the mods:
+     * <ul>
+     *     <li>NeoForge {@code FluidStack}: {@code {id: "minecraft:water", amount: 1000}},</li>
+     *     <li>legacy Forge: {@code {FluidName: "minecraft:water", Amount: 1000}},</li>
+     *     <li>multiloader / Fabric style (Simulated's docking connector tank):
+     *     {@code {Amount: 1000L, Variant: {Fluid: "minecraft:water"}}}, {@code {amount, variant: {fluid}}},
+     *     {@code {Fluid: "...", Amount: ...}}.</li>
+     * </ul>
+     */
     public boolean looksLikeFluidStack(CompoundTag tag) {
-        if (tag.get("id") instanceof StringTag idTag && tag.get("amount") instanceof NumericTag) {
-            String id = idTag.getAsString();
-            return !id.equals("minecraft:empty") && this.lookup.isFluid(id);
+        NumericTag amount = null;
+        for (String key : AMOUNT_KEYS) {
+            if (tag.get(key) instanceof NumericTag numeric) {
+                amount = numeric;
+                break;
+            }
         }
-        if (tag.get("FluidName") instanceof StringTag nameTag && tag.get("Amount") instanceof NumericTag) {
-            String id = nameTag.getAsString();
-            return !id.equals("minecraft:empty") && this.lookup.isFluid(id);
+        if (amount == null || tag.contains("count") || tag.contains("Count")) {
+            return false;
+        }
+        for (String key : FLUID_ID_KEYS) {
+            if (tag.get(key) instanceof StringTag idTag && this.isRealFluid(idTag.getAsString())) {
+                return true;
+            }
+        }
+        for (String variantKey : VARIANT_KEYS) {
+            if (tag.get(variantKey) instanceof CompoundTag variant) {
+                for (String key : FLUID_ID_KEYS) {
+                    if (variant.get(key) instanceof StringTag idTag && this.isRealFluid(idTag.getAsString())) {
+                        return true;
+                    }
+                }
+            }
         }
         return false;
+    }
+
+    private boolean isRealFluid(String id) {
+        return !id.isEmpty() && !id.equals("minecraft:empty") && this.lookup.isFluid(id);
     }
 }

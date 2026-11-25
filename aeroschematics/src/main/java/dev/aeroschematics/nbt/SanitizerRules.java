@@ -104,24 +104,33 @@ public final class SanitizerRules {
 
         void apply(CompoundTag tag, NbtSanitizer.Report report) {
             for (KeyEdit edit : this.edits) {
-                if (!tag.contains(edit.key())) {
+                // "Outer/Inner" addresses a key inside a nested compound.
+                CompoundTag owner = tag;
+                String key = edit.key();
+                int slash;
+                while ((slash = key.indexOf('/')) > 0 && owner != null) {
+                    String part = key.substring(0, slash);
+                    owner = owner.get(part) instanceof CompoundTag child ? child : null;
+                    key = key.substring(slash + 1);
+                }
+                if (owner == null || !owner.contains(key)) {
                     continue;
                 }
                 switch (edit.action()) {
                     case REMOVE -> {
-                        tag.remove(edit.key());
+                        owner.remove(key);
                         report.ruleEdits++;
                     }
                     case ZERO -> {
-                        Tag value = tag.get(edit.key());
+                        Tag value = owner.get(key);
                         if (value instanceof NumericTag numeric && numeric.getAsDouble() != 0) {
                             switch (value.getId()) {
-                                case Tag.TAG_BYTE -> tag.putByte(edit.key(), (byte) 0);
-                                case Tag.TAG_SHORT -> tag.putShort(edit.key(), (short) 0);
-                                case Tag.TAG_LONG -> tag.putLong(edit.key(), 0L);
-                                case Tag.TAG_FLOAT -> tag.putFloat(edit.key(), 0f);
-                                case Tag.TAG_DOUBLE -> tag.putDouble(edit.key(), 0d);
-                                default -> tag.putInt(edit.key(), 0);
+                                case Tag.TAG_BYTE -> owner.putByte(key, (byte) 0);
+                                case Tag.TAG_SHORT -> owner.putShort(key, (short) 0);
+                                case Tag.TAG_LONG -> owner.putLong(key, 0L);
+                                case Tag.TAG_FLOAT -> owner.putFloat(key, 0f);
+                                case Tag.TAG_DOUBLE -> owner.putDouble(key, 0d);
+                                default -> owner.putInt(key, 0);
                             }
                             report.ruleEdits++;
                         }
@@ -146,6 +155,11 @@ public final class SanitizerRules {
         rules.type("create:blaze_heater", new BlockEntityRule().zero("burnTimeRemaining", "fuelLevel"));
         // The player currently using a lectern controller.
         rules.type("create:lectern_controller", new BlockEntityRule().remove("User"));
+        // Fluid tanks: the light level of the (removed) fluid and the boiler's measured water supply, which would let a
+        // steam engine run on water that is no longer there until the supply is sampled again.
+        BlockEntityRule tank = new BlockEntityRule().zero("Luminosity", "Boiler/Supply");
+        rules.type("create:fluid_tank", tank);
+        rules.type("create:creative_fluid_tank", tank);
 
         // ---- Create Big Cannons -------------------------------------------------------------------------------------
         // BigCannonBehavior: loaded shell / powder charge stored as a block (Pos + State + Data).
@@ -181,8 +195,11 @@ public final class SanitizerRules {
         rules.type("drivebywire:backup_block", new BlockEntityRule().remove("WireNetwork"));
 
         // ---- Create Aeronautics / Simulated / Offroad --------------------------------------------------------------
-        // Portable engine fuel, docking connector battery charge.
+        // Portable engine fuel, docking connector battery charge. (Its fluid "Tank" uses Simulated's own
+        // {Amount, Variant:{Fluid}} layout and is emptied by the generic fluid detection.)
         rules.namespace("simulated", new BlockEntityRule().zero("BurnTime").remove("Battery"));
+        // Cannon casts: casting progress only makes sense with the (removed) molten metal.
+        rules.type("createbigcannons:cannon_cast", new BlockEntityRule().zero("CastingTime").remove("StartCastingTime"));
 
         // Charged content: these blocks charge the held item in their schematic requirement (StrictNbtStackRequirement),
         // so the item is paid for by the schematicannon and may stay.

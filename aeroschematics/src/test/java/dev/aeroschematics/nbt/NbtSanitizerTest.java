@@ -490,6 +490,196 @@ class NbtSanitizerTest {
     }
 
     @Nested
+    class Fluids {
+        private CompoundTag neoForgeTank(String fluid, int amount) {
+            CompoundTag tank = new CompoundTag();
+            tank.put("Fluid", fluid(fluid, amount)); // NeoForge FluidTank#writeToNBT
+            return tank;
+        }
+
+        private CompoundTag lerped(float value) {
+            CompoundTag level = new CompoundTag();
+            level.putFloat("Speed", 0.25f);
+            level.putFloat("Target", value);
+            level.putFloat("Value", value);
+            return level;
+        }
+
+        @Test
+        void createFluidTankIsEmptiedAndStopsGlowingAndBoiling() {
+            // FluidTankBlockEntity#write (controller)
+            CompoundTag tag = new CompoundTag();
+            tag.put("TankContent", neoForgeTank("minecraft:lava", 8000));
+            tag.putBoolean("Window", true);
+            tag.putInt("Size", 2);
+            tag.putInt("Height", 3);
+            tag.putInt("Luminosity", 12);
+            CompoundTag boiler = new CompoundTag();
+            boiler.putFloat("Supply", 30f);
+            boiler.putInt("ActiveHeat", 4);
+            boiler.putInt("Engines", 2);
+            tag.put("Boiler", boiler);
+            sanitizer.sanitizeBlockEntity("create:fluid_tank", tag, false);
+            assertNoContents(tag);
+            assertEquals(0, tag.getInt("Luminosity"), "empty tank must not glow");
+            assertEquals(0f, tag.getCompound("Boiler").getFloat("Supply"), "no phantom water for the steam engine");
+            assertEquals(2, tag.getCompound("Boiler").getInt("Engines"));
+            assertEquals(2, tag.getInt("Size"));
+            assertEquals(3, tag.getInt("Height"));
+            assertTrue(tag.getBoolean("Window"));
+        }
+
+        @Test
+        void spoutDrainAndBasinTanksAreEmptiedIncludingRenderedLevel() {
+            // SmartFluidTankBehaviour: "<type>Tanks": [{TankContent: {Fluid}, Level: LerpedFloat}]
+            for (String type : List.of("create:spout", "create:item_drain", "create:basin")) {
+                CompoundTag tag = new CompoundTag();
+                ListTag tanks = new ListTag();
+                CompoundTag segment = new CompoundTag();
+                segment.put("TankContent", neoForgeTank("minecraft:water", 1000));
+                segment.put("Level", lerped(1f));
+                tanks.add(segment);
+                tag.put("FluidTanks", tanks);
+                ListTag overflow = new ListTag();
+                overflow.add(fluid("create:honey", 250));
+                tag.put("FluidOverflow", overflow); // basin output buffer
+                sanitizer.sanitizeBlockEntity(type, tag, false);
+                assertNoContents(tag);
+                CompoundTag cleaned = tag.getList("FluidTanks", Tag.TAG_COMPOUND).getCompound(0);
+                assertEquals(0f, cleaned.getCompound("Level").getFloat("Value"), type + " rendered level");
+                assertEquals(0, tag.getList("FluidOverflow", Tag.TAG_COMPOUND).size(), type + " overflow buffer");
+            }
+        }
+
+        @Test
+        void pipeFlowsAndOpenEndsAreEmptied() {
+            // FluidTransportBehaviour/PipeConnection: per side {Pressure, Flow: {Fluid, In, Progress}, OpenEnd: {Fluid, ...}}
+            CompoundTag tag = new CompoundTag();
+            CompoundTag north = new CompoundTag();
+            ListTag pressure = new ListTag();
+            pressure.add(net.minecraft.nbt.FloatTag.valueOf(1f));
+            pressure.add(net.minecraft.nbt.FloatTag.valueOf(0f));
+            north.put("Pressure", pressure);
+            CompoundTag flow = new CompoundTag();
+            flow.put("Fluid", fluid("minecraft:water", 250));
+            flow.putBoolean("In", true);
+            flow.put("Progress", lerped(0.5f));
+            north.put("Flow", flow);
+            CompoundTag openEnd = new CompoundTag();
+            openEnd.put("Fluid", fluid("minecraft:water", 1000));
+            openEnd.putBoolean("Pulling", true);
+            north.put("OpenEnd", openEnd);
+            tag.put("north", north);
+            sanitizer.sanitizeBlockEntity("create:fluid_pipe", tag, false);
+            assertNoContents(tag);
+            assertFalse(tag.getCompound("north").contains("Flow"), "a flow without fluid is dropped");
+            assertTrue(tag.getCompound("north").contains("Pressure"));
+        }
+
+        @Test
+        void hosePulleyAndPortableInterfaceTanksAreEmptied() {
+            CompoundTag tag = new CompoundTag();
+            tag.put("Tank", neoForgeTank("minecraft:lava", 1000));
+            tag.putInt("Offset", 5);
+            sanitizer.sanitizeBlockEntity("create:hose_pulley", tag, true);
+            assertNoContents(tag);
+            assertEquals(5, tag.getInt("Offset"));
+        }
+
+        @Test
+        void simulatedDockingConnectorTankInItsOwnLayoutIsEmptied() {
+            // Simulated SingleTank#write: {Amount: long, Variant: {Fluid: "...", data: {...}}} - not a FluidStack!
+            CompoundTag tag = new CompoundTag();
+            CompoundTag tank = new CompoundTag();
+            tank.putLong("Amount", 4000L);
+            CompoundTag variant = new CompoundTag();
+            variant.putString("Fluid", "minecraft:lava");
+            variant.put("data", new CompoundTag());
+            tank.put("Variant", variant);
+            tag.put("Tank", tank);
+            CompoundTag battery = new CompoundTag();
+            battery.putLong("Amount", 100000L);
+            tag.put("Battery", battery);
+            tag.putBoolean("Extended", true);
+
+            NbtSanitizer.Report report = sanitizer.sanitizeBlockEntity("simulated:docking_connector", tag, false);
+
+            CompoundTag emptied = tag.getCompound("Tank");
+            assertEquals(0L, emptied.getLong("Amount"), "docking connector fluid amount");
+            assertEquals("minecraft:empty", emptied.getCompound("Variant").getString("Fluid"), "docking connector fluid type");
+            assertEquals(Tag.TAG_LONG, emptied.get("Amount").getId(), "reader keeps working: same tag type");
+            assertFalse(tag.contains("Battery"));
+            assertTrue(tag.getBoolean("Extended"));
+            assertEquals(1, report.fluidStacks);
+            assertNoContents(tag);
+        }
+
+        @Test
+        void otherLoaderLayoutsAreRecognised() {
+            CompoundTag fabricLike = new CompoundTag();
+            CompoundTag variant = new CompoundTag();
+            variant.putString("fluid", "minecraft:water");
+            fabricLike.put("variant", variant);
+            fabricLike.putLong("amount", 81000L);
+            assertTrue(sanitizer.looksLikeFluidStack(fabricLike));
+
+            CompoundTag flat = new CompoundTag();
+            flat.putString("Fluid", "minecraft:lava");
+            flat.putInt("Amount", 1000);
+            assertTrue(sanitizer.looksLikeFluidStack(flat));
+
+            CompoundTag empty = new CompoundTag();
+            empty.putString("Fluid", "minecraft:empty");
+            empty.putInt("Amount", 0);
+            assertFalse(sanitizer.looksLikeFluidStack(empty));
+
+            CompoundTag item = stack("minecraft:stone", 3);
+            item.putInt("amount", 3);
+            assertFalse(sanitizer.looksLikeFluidStack(item), "item stacks are not fluids");
+        }
+
+        @Test
+        void fluidsOfMountedTanksOnContraptionsAreEmptied() {
+            // MountedStorageManager: fluids: [{pos, storage: {type, capacity, fluid: FluidStack.OPTIONAL_CODEC}}]
+            CompoundTag entity = new CompoundTag();
+            entity.putString("id", "create:contraption");
+            CompoundTag contraption = new CompoundTag();
+            CompoundTag storageManager = new CompoundTag();
+            ListTag fluids = new ListTag();
+            CompoundTag entry = new CompoundTag();
+            entry.putLong("pos", 0L);
+            CompoundTag storage = new CompoundTag();
+            storage.putString("type", "create:fluid_tank");
+            storage.putInt("capacity", 8000);
+            storage.put("fluid", fluid("minecraft:lava", 8000));
+            entry.put("storage", storage);
+            fluids.add(entry);
+            storageManager.put("fluids", fluids);
+            contraption.put("Storage", storageManager);
+            entity.put("Contraption", contraption);
+            sanitizer.sanitizeEntity(entity);
+            assertNoContents(entity);
+            CompoundTag cleaned = entity.getCompound("Contraption").getCompound("Storage").getList("fluids", Tag.TAG_COMPOUND).getCompound(0);
+            assertEquals(8000, cleaned.getCompound("storage").getInt("capacity"), "tank stays, only its content goes");
+        }
+
+        @Test
+        void cannonCastLosesMoltenMetalAndCastingProgress() {
+            CompoundTag tag = new CompoundTag();
+            tag.put("FluidContent", neoForgeTank("createbigcannons:molten_cast_iron", 1296));
+            tag.put("Leakage", fluid("createbigcannons:molten_cast_iron", 144));
+            tag.putInt("CastingTime", 400);
+            tag.putInt("StartCastingTime", 1200);
+            tag.putInt("Height", 3);
+            sanitizer.sanitizeBlockEntity("createbigcannons:cannon_cast", tag, false);
+            assertNoContents(tag);
+            assertEquals(0, tag.getInt("CastingTime"));
+            assertFalse(tag.contains("StartCastingTime"));
+            assertEquals(3, tag.getInt("Height"));
+        }
+    }
+
+    @Nested
     class Entities {
         @Test
         void itemFrameAndArmorStandItemsAreRemovedKeepingSlots() {

@@ -39,6 +39,12 @@ is **placed/printed** (an edited schematic file cannot bring them back):
 
 * any item or fluid stack anywhere in block entity or entity data (chests, tanks, machine buffers, held items,
   container components...), except "ghost" items that are pure configuration (filters, frequencies);
+* **fluids in every layout the mods use**: NeoForge `{id, amount}` (Create fluid tanks, spouts, item drains, basins,
+  mixers, hose pulleys, pipes and open pipe ends, tanks mounted on contraptions; CBC fluid shells, cannon casts,
+  drill lubricant), legacy `{FluidName, Amount}`, and Simulated's own `{Amount, Variant:{Fluid}}` (docking connector
+  tank). Related state goes too: the light of an emptied Create tank, the boiler's measured water supply, the rendered
+  fill level, pipe flows. Waterlogged blocks are printed dry and filled cauldrons empty (Create's own placement rules);
+  loose water/lava blocks have no item form and are not printed by the schematicannon;
 * **Create Big Cannons** – loaded shells / powder charges inside barrels and chambers, rounds inside autocannon
   barrels, breech input/output/magazine, ammo container contents, fuzes and tracers, fluid shell contents;
 * **CBC: Firepower Components** – large ammo box counters, ready ammunition compartment and carousel rack rounds,
@@ -89,6 +95,7 @@ changed settings, a lectern-hub link and a wire, assemble it with Sable and save
 | `schematicannonChargesBlocksButNeverStoredItems` | survival: material list, exactly the block items are consumed, the printed ammo container is empty |
 | `handEditedSchematicCannotSmuggleItems` | items, a loaded shell, ammo counters and fuel written back into the file by hand never reach the world |
 | `schematicannonResumesAfterReloadWithoutDuplicating` | the schematicannon is reloaded from its saved data mid-print and finishes the same structure, no second copy |
+| `creativePlacementCopiesNoFluids`, `schematicannonPrintsNoFluids` | a "tanker" with a lava-filled Create tank, spout, item drain, basin, hose pulley, Simulated docking connector, CBC fluid shell, Flight Control thruster, waterlogged slab and lava cauldron: every printed container is empty when measured through its real fluid capability, the original keeps its fluids, the empty tank does not glow |
 
 The build uses ModDevGradle 2.0.148 from the Gradle plugin portal; the third-party mods are resolved from Modrinth's
 maven and installed into `run/*/mods` automatically.

@@ -18,7 +18,7 @@ final class TestNbt {
             "cbc_firepower_components:large_autocannon_ap_round", "cbc_firepower_components:large_autocannon_he_round",
             "create:linked_controller", "create:redstone_link", "create:andesite_alloy", "create:wrench",
             "create_flight_control:navigation_profile", "drivebywire:wire", "create_afn:frequency_card", "offroad:tire");
-    static final Set<String> FLUIDS = Set.of("minecraft:water", "minecraft:lava", "create_flight_control:kerosene", "createbigcannons:molten_cast_iron");
+    static final Set<String> FLUIDS = Set.of("minecraft:water", "minecraft:lava", "minecraft:empty", "create:honey", "create_flight_control:kerosene", "createbigcannons:molten_cast_iron");
 
     static final NbtSanitizer.Lookup LOOKUP = new NbtSanitizer.Lookup() {
         @Override
