@@ -730,7 +730,7 @@ Flight Control не подходит (у него нет внешних регу
 ```bash
 ./gradlew build              # jar в build/libs/
 ./gradlew coreTest           # офлайн-тест баллистики и треков
-./gradlew runGameTestServer  # 111 игровых тестов (моды скачиваются в run/mods)
+./gradlew runGameTestServer  # 128 игровых тестов (моды скачиваются в run/mods; CBC-AT на CBC 5.11.7 - только с cbcatfix)
 ./gradlew runGameTestServer -PfcsMinimal   # то же только с обязательными Create, CBC и Create Radars
 ./gradlew runGameTestServer -PfcsNoCbcAt   # без CBC Advanced Technologies
 ./gradlew runGameTestServer -PfcsNoFpc     # без CBC: Firepower Components

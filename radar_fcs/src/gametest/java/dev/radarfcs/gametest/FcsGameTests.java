@@ -1369,7 +1369,9 @@ public class FcsGameTests {
         for (int x = 5; x <= 15; x++) for (int z = 27; z <= 35; z++) h.setBlock(new BlockPos(x, 2, z), Blocks.IRON_BLOCK.defaultBlockState());
         for (int x = 35; x <= 45; x++) for (int z = 27; z <= 35; z++) h.setBlock(new BlockPos(x, 2, z), Blocks.IRON_BLOCK.defaultBlockState());
         bigCannon(h, new BlockPos(10, 5, 32), Direction.EAST, 2, 4, true);
-        bigCannon(h, new BlockPos(40, 5, 32), Direction.WEST, 2, 4, true);
+        // пушка B без заряда: цель она выбирает так же (проверка - не свой корабль), но не стреляет навстречу - с CBC
+        // Interception встречные снаряды по одной линии сбивали бы друг друга, и пушка A не попадала бы
+        bigCannon(h, new BlockPos(40, 5, 32), Direction.WEST, 2, 4, false);
         fcs(h, new BlockPos(6, 3, 28));                                        // обе пушки - в сети вычислителя
         Object shipA = SableTestSupport.staticSub(h, new BlockPos(5, 2, 27), new BlockPos(15, 8, 35));
         Object shipB = SableTestSupport.staticSub(h, new BlockPos(35, 2, 27), new BlockPos(45, 8, 35));
@@ -1404,6 +1406,12 @@ public class FcsGameTests {
             if (t % 40 == 0) FcsMod.LOG.info("[radar_fcs test] own_ship t={} mounts={}{}", t, be[0].mountStates().size(), sb);
             if (hitsB.get() > 0 && t > 60) {
                 if (be[0].mountStates().size() < 2) h.fail("expected two guns in the network, got " + be[0].mountStates().size());
+                // пушка B (без заряда) ведёт чужой корабль A - проверка «не свой корабль» не пустая
+                boolean bOnA = false;
+                for (MountState m : be[0].mountStates()) {
+                    if (idB.equals(dev.radarfcs.compat.SableCompat.containingId(level, m.pos)) && idA.toString().equals(m.targetId)) bOnA = true;
+                }
+                if (!bOnA) h.fail("gun on ship B does not target ship A:" + sb);
                 FcsMod.LOG.info("[radar_fcs test] own_ship: ship B hit by the gun on ship A{}", sb);
                 h.succeed();
             }

@@ -43,6 +43,10 @@ public class LimitGameTests {
 
     @BeforeBatch(batch = "limits") public static void b1(ServerLevel l) { FcsGameTests.direct(l); }
     @AfterBatch(batch = "limits") public static void a1(ServerLevel l) { FcsGameTests.cleanup(l); }
+    // отдельный пакет: тесты пакета стоят в ряд, станки в одной точке площадки и стреляют вдоль ряда - снаряд соседнего
+    // теста изредка разбивал станок этого (он выпадал предметом на ~25-м тике)
+    @BeforeBatch(batch = "limits_drive") public static void b2(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "limits_drive") public static void a2(ServerLevel l) { FcsGameTests.cleanup(l); }
 
     private static String f(double v) {
         return String.format(Locale.ROOT, "%.1f", v);
@@ -150,7 +154,7 @@ public class LimitGameTests {
      * направления недостижима ни так, ни в обход - орудие стоит у правого предела, «вне сектора», огня нет. Вправо 60° -
      * попадает. (Без предела влево цель была бы достижима обходом на 322° влево - так и должно быть.)
      */
-    @GameTest(template = ARENA, batch = "limits", timeoutTicks = 900)
+    @GameTest(template = ARENA, batch = "limits_drive", timeoutTicks = 900)
     public static void gunDriveYawLimit(GameTestHelper h) {
         floor(h);
         BlockPos mount = new BlockPos(10, 1, 32), fcsPos = new BlockPos(6, 1, 28);
@@ -176,8 +180,7 @@ public class LimitGameTests {
         boolean[] mountSeen = {false};
         h.onEachTick(() -> {
             int t = (int) h.getTick();
-            // станок CBC изредка пропадает в начале теста (не от вычислителя: огня ещё нет) - сразу понятная ошибка с
-            // окружением станка, а не таймаут
+            // станок пропал (разбит не вычислителем этого теста) - сразу понятная ошибка с окружением станка, а не таймаут
             BlockPos am = h.absolutePos(mount);
             if (!h.getLevel().getBlockState(am).isAir()) mountSeen[0] = true;
             else if (mountSeen[0]) {

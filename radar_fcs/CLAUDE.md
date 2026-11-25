@@ -39,6 +39,7 @@
 ./gradlew runGameTestServer         # игровые тесты (моды качаются в run/mods)
 ./gradlew runGameTestServer -PfcsMinimal    # только обязательные Create + CBC + Create Radars (без Sable и CBC-AT)
 ./gradlew runGameTestServer -PfcsTests=camera,infra   # только тесты с этими подстроками в имени (класс.метод)
+./gradlew runGameTestServer -PfcsExtraMods=<папка>    # все аддоны: + jar'ы CurseForge (cbcatfix, CBC Neo Warfare, CBC Interception)
 ./gradlew runGameTestServer -Pcbc_version=bsGaXKEd -Pradars_runtime_version=0.4.9.4-1.21.1   # CBC 5.11.3 + CR 0.4.9.4
 ./gradlew runServer -PfcsAutostop   # сгенерировать мир run/world и остановиться
 xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # скриншоты (нужен run/saves/fcs_test)
@@ -46,6 +47,9 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # �
 Компиляция идёт против Create Radars 0.4.9.4 (минимальное API). Sable companion 1.6.0 и Flywheel извлекаются при конфигурации
 из jar-in-jar Sable и Create в `build/embedded/`; companion встраивается в наш jar (jarJar), Flywheel — только для компиляции.
 Скриншоты: каждый запуск `-PfcsScreenshot` уходит на 640 блоков от прошлой сцены (`-PfcsWorld=<сохранение>` — другой мир).
+CBC-AT 0.1.4c на CBC 5.11.7 без cbcatfix роняет сервер (выстрел, удар ракеты): полный прогон с CBC-AT - только с
+`-PfcsExtraMods` (jar'ы CurseForge качаются с `mediafilez.forgecdn.net`, номера файлов - `api.cfwidget.com/<проект>`,
+см. `features.md` п. 69).
 У CBC на Modrinth Forge и NeoForge сборки имеют один номер версии: для NeoForge-сборки старых версий указывай ID версии
 (5.11.3 = `bsGaXKEd`).
 
@@ -160,6 +164,4 @@ xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClient -PfcsScreenshot   # �
 - Стыковка: физика подлёта в игре игровым тестом не проверена (корабль Sable в тесте сам не летит; сцепка порта
   корабля с портом на земле и отключение двигателей - проверены); пушка на пристыкованном корабле - не проверена;
   порты выгруженных чанков после перезапуска сервера неизвестны, пока их чанк не загрузится.
-- Тест `gunDriveYawLimit` в `-PfcsMinimal` изредка (≈1 из 6 полных прогонов) падает: станок CBC пропадает на ~26-м
-  тике, до огня (причина не найдена; тест сразу пишет окружение станка). Отдельно и в `-PfcsNoCbcAt` проходит.
 - Lua-версия (`lua/`) — исходный прототип для CC:Tweaked, в моде не используется.
