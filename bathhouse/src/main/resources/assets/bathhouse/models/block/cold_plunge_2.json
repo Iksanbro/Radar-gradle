@@ -1,0 +1,11 @@
+{
+  "parent": "bathhouse:block/plunge_template_2",
+  "textures": {
+    "side": "bathhouse:block/plunge_side",
+    "front": "bathhouse:block/plunge_side",
+    "inner": "bathhouse:block/plunge_inner",
+    "rim": "bathhouse:block/plunge_rim",
+    "bottom": "bathhouse:block/plunge_bottom",
+    "content": "minecraft:block/water_still"
+  }
+}

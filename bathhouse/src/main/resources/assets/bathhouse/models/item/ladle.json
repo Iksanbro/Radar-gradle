@@ -1,0 +1,14 @@
+{
+  "parent": "minecraft:item/handheld",
+  "textures": {
+    "layer0": "bathhouse:item/ladle"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "bathhouse:filled": 1
+      },
+      "model": "bathhouse:item/ladle_filled"
+    }
+  ]
+}

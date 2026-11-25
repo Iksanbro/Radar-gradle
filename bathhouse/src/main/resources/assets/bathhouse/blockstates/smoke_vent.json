@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "open=false": {
+      "model": "bathhouse:block/smoke_vent"
+    },
+    "open=true": {
+      "model": "bathhouse:block/smoke_vent_open"
+    }
+  }
+}

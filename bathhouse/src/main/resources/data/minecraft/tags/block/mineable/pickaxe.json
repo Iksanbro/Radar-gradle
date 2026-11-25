@@ -1,0 +1,12 @@
+{
+  "values": [
+    "bathhouse:inner_heater",
+    "bathhouse:outer_heater",
+    "bathhouse:brick_stove",
+    "bathhouse:iron_stove",
+    "bathhouse:electric_heater",
+    "bathhouse:steam_generator",
+    "bathhouse:warm_lounger",
+    "bathhouse:chimney"
+  ]
+}

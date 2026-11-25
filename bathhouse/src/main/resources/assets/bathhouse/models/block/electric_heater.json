@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "top": "bathhouse:block/electric_heater_top",
+    "front": "bathhouse:block/electric_heater_front",
+    "side": "bathhouse:block/electric_heater_side"
+  }
+}

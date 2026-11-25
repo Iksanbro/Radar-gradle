@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "top": "bathhouse:block/warm_lounger_top",
+    "front": "bathhouse:block/warm_lounger_front_on",
+    "side": "bathhouse:block/warm_lounger_side"
+  }
+}

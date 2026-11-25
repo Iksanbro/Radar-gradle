@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "bathhouse:cold_plunge"
+    },
+    {
+      "item": "minecraft:furnace"
+    },
+    {
+      "item": "bathhouse:sawdust"
+    }
+  ],
+  "result": {
+    "count": 1,
+    "id": "bathhouse:sawdust_plunge"
+  }
+}

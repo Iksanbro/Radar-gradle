@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "top": "bathhouse:block/iron_stove_top",
+    "front": "bathhouse:block/iron_stove_front_on",
+    "side": "bathhouse:block/iron_stove_side"
+  }
+}

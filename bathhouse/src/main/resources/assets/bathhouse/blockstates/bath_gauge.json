@@ -1,0 +1,34 @@
+{
+  "variants": {
+    "active=false,facing=north": {
+      "model": "bathhouse:block/bath_gauge"
+    },
+    "active=true,facing=north": {
+      "model": "bathhouse:block/bath_gauge_active"
+    },
+    "active=false,facing=east": {
+      "model": "bathhouse:block/bath_gauge",
+      "y": 90
+    },
+    "active=true,facing=east": {
+      "model": "bathhouse:block/bath_gauge_active",
+      "y": 90
+    },
+    "active=false,facing=south": {
+      "model": "bathhouse:block/bath_gauge",
+      "y": 180
+    },
+    "active=true,facing=south": {
+      "model": "bathhouse:block/bath_gauge_active",
+      "y": 180
+    },
+    "active=false,facing=west": {
+      "model": "bathhouse:block/bath_gauge",
+      "y": 270
+    },
+    "active=true,facing=west": {
+      "model": "bathhouse:block/bath_gauge_active",
+      "y": 270
+    }
+  }
+}
