@@ -178,6 +178,33 @@ public class BathGameTests {
     }
 
     @GameTest(template = EMPTY)
+    public static void secondGaugeIsIgnored(GameTestHelper helper) {
+        shell(helper, Blocks.OAK_PLANKS);
+        ApplianceBlockEntity heater = appliance(helper, HEATER, ModBlocks.INNER_HEATER.get());
+        BathGaugeBlockEntity first = gauge(helper);
+        BlockPos otherPos = new BlockPos(2, 3, 4);
+        helper.setBlock(otherPos, ModBlocks.BATH_GAUGE.get().defaultBlockState().setValue(BathGaugeBlock.FACING, Direction.NORTH));
+        BathGaugeBlockEntity second = helper.getBlockEntity(otherPos);
+        first.rescan();
+        second.rescan();
+        expect(helper, first.scan().duplicateGauge() != second.scan().duplicateGauge(), "exactly one gauge is the main one");
+        BathGaugeBlockEntity main = first.scan().duplicateGauge() ? second : first;
+        BathGaugeBlockEntity spare = main == first ? second : first;
+
+        heater.setFuel(ApplianceBlockEntity.MAX_FUEL);
+        for (int s = 0; s < 120; s++) {
+            spare.simulate(1.0);
+            heater.advanceSecond();
+            main.simulate(1.0);
+        }
+        expect(helper, main.temperature() > spare.temperature() + 20,
+                "the main gauge gets the heat: main " + main.temperature() + ", spare " + spare.temperature());
+        BathAssessment a = assess(spare, 70, 55, 0);
+        expect(helper, a.type() == null, "the spare gauge reports a duplicate: " + describe(a));
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY)
     public static void openDoorLeaks(GameTestHelper helper) {
         shell(helper, Blocks.OAK_PLANKS);
         appliance(helper, HEATER, ModBlocks.INNER_HEATER.get());

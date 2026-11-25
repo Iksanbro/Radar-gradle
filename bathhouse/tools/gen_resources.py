@@ -61,6 +61,7 @@ def assets():
     for suffix in ('', '_active'):
         write(f'{a}/models/block/bath_gauge{suffix}.json', {
             'parent': 'minecraft:block/block',
+            'render_type': 'minecraft:cutout',
             'textures': {
                 'particle': f'{NS}:block/bath_gauge_side',
                 'front': f'{NS}:block/bath_gauge_front{suffix}',
@@ -91,7 +92,8 @@ def assets():
             'faces': {
                 'north': {'texture': '#side'}, 'south': {'texture': '#side'},
                 'east': {'texture': '#side'}, 'west': {'texture': '#side'},
-                'up': {'texture': '#top', 'cullface': 'up'}, 'down': {'texture': '#top', 'cullface': 'down'},
+                # no bottom face: stacked flues would z-fight at the joint
+                'up': {'texture': '#top', 'cullface': 'up'},
             },
         }],
     })

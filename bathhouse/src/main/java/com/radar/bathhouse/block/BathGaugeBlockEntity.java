@@ -154,7 +154,7 @@ public class BathGaugeBlockEntity extends BlockEntity {
         double steam = 0.0;
         double smokeIn = 0.0;
         double drying = 0.0;
-        if (scan != null) {
+        if (scan != null && !scan.duplicateGauge()) { // only the room's main gauge runs the appliances
             for (BlockPos pos : scan.appliances().keySet()) {
                 if (level.isLoaded(pos) && level.getBlockEntity(pos) instanceof ApplianceBlockEntity appliance) {
                     appliance.link(worldPosition, temperature, level.getGameTime(), smokyAppliances.contains(pos));

@@ -93,7 +93,7 @@ def bricks(seed, mortar='#b9ad9c', reds=('#9b4a35', '#8a3f2d', '#a85640', '#7d3a
                 img.putpixel((x, y), shade(m, 1 + rnd.uniform(-0.06, 0.06)))
     for row in range(16 // h):
         off = (w // 2) if row % 2 else 0
-        for bx in range(-1, 16 // w + 1):
+        for bx in range(-1, 16 // w + 2):
             col = hexc(rnd.choice(reds))
             for y in range(row * h, row * h + h - 1):
                 for x in range(bx * w - off, bx * w - off + w - 1):
@@ -330,34 +330,34 @@ def steam_generator():
 def gauge():
     wood = planks(71, '#b58456', '#7b5130')
     save(wood, 'block/bath_gauge_side')
+    cx = cy = 7.5
     for active in (False, True):
         f = new()
-        # wooden round frame within 3..12
         for y in range(3, 13):
             for x in range(3, 13):
-                d = math.hypot(x - 7.5, y - 7.5)
-                if d <= 5.2:
-                    f.putpixel((x, y), shade(hexc('#9a6a3e'), 1.0 + (0.12 if x + y < 14 else -0.1)))
-                if d <= 4.1:
+                d = math.hypot(x - cx, y - cy)
+                if d <= 5.1:
+                    f.putpixel((x, y), shade(hexc('#9a6a3e'), 1.12 if x + y < 15 else 0.85))
+                if d <= 4.0:
                     f.putpixel((x, y), hexc('#f4efe2'))
-        # scale: blue -> red arc
-        for a, c in ((200, '#3d7fd6'), (240, '#3d7fd6'), (270, '#e6b23a'), (300, '#e06a2a'), (340, '#c4302b')):
-            x = int(round(7.5 + 3.3 * math.cos(math.radians(a))))
-            y = int(round(7.5 + 3.3 * math.sin(math.radians(a))))
-            f.putpixel((x, y), hexc(c))
-        # needle
-        f.putpixel((7, 8), hexc('#2b2b2b'))
-        f.putpixel((8, 7), hexc('#2b2b2b'))
-        f.putpixel((9, 6), hexc('#c4302b'))
-        f.putpixel((10, 5), hexc('#c4302b') if active else hexc('#2b2b2b'))
+        # scale along the upper half: cold blue -> hot red
+        for i, c in enumerate(('#3d7fd6', '#3d7fd6', '#e6b23a', '#e06a2a', '#c4302b', '#c4302b')):
+            a = math.radians(200 + i * 28)
+            f.putpixel((int(round(cx + 3.3 * math.cos(a))), int(round(cy + 3.3 * math.sin(a)))), hexc(c))
+        # needle from the hub
+        angle = math.radians(318 if active else 225)
+        for t in (0.0, 0.8, 1.6, 2.4):
+            x = int(round(cx + t * math.cos(angle)))
+            y = int(round(cy + t * math.sin(angle)))
+            f.putpixel((x, y), hexc('#b3241f') if t > 1.0 else hexc('#2b2b2b'))
         # status lamp
-        f.putpixel((7, 10), hexc('#3fe06b') if active else hexc('#6b6b6b'))
-        f.putpixel((8, 10), hexc('#2fb556') if active else hexc('#555555'))
+        f.putpixel((7, 10), hexc('#3fe06b') if active else hexc('#7a7a7a'))
+        f.putpixel((8, 10), hexc('#2fb556') if active else hexc('#5f5f5f'))
         save(f, 'block/bath_gauge_front' + ('_active' if active else ''))
 
 
 def chimney():
-    img = bricks(81, mortar='#b5a998', reds=('#8f3e2c', '#7f3626', '#9a4834'), h=3, w=4)
+    img = bricks(81, mortar='#b5a998', reds=('#8f3e2c', '#7f3626', '#9a4834'), h=4, w=6)
     save(img, 'block/chimney')
     top = img.copy()
     rect(top, 5, 5, 10, 10, hexc('#1b1614'))

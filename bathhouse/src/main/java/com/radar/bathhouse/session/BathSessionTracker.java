@@ -103,7 +103,8 @@ public final class BathSessionTracker {
             } else {
                 player.displayClientMessage(readyLine(assessment, gauge, session.progress, required), true);
             }
-        } else {
+        } else if (gauge.scan() != null && !gauge.scan().appliances().isEmpty()) {
+            // Only nag in rooms that are actually set up as a bath.
             player.displayClientMessage(notReadyLine(assessment, gauge), true);
         }
         applyHazards(player, gauge);

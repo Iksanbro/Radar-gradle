@@ -1,5 +1,6 @@
 {
   "parent": "minecraft:block/block",
+  "render_type": "minecraft:cutout",
   "textures": {
     "particle": "bathhouse:block/bath_gauge_side",
     "front": "bathhouse:block/bath_gauge_front_active",

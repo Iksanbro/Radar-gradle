@@ -33,10 +33,6 @@
         "up": {
           "texture": "#top",
           "cullface": "up"
-        },
-        "down": {
-          "texture": "#top",
-          "cullface": "down"
         }
       }
     }
