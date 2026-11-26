@@ -2,45 +2,60 @@ package com.radar.bathhouse.gametest;
 
 import com.radar.bathhouse.BathConfig;
 import com.radar.bathhouse.Bathhouse;
-import com.radar.bathhouse.block.ApplianceBlock;
-import com.radar.bathhouse.block.ApplianceBlockEntity;
 import com.radar.bathhouse.block.BathGaugeBlock;
 import com.radar.bathhouse.block.BathGaugeBlockEntity;
-import com.radar.bathhouse.block.PlungeBlock;
-import com.radar.bathhouse.block.PlungeBlockEntity;
 import com.radar.bathhouse.climate.BathAssessment;
 import com.radar.bathhouse.climate.BathType;
 import com.radar.bathhouse.climate.SmokeVariant;
+import com.radar.bathhouse.item.WaterPortions;
+import com.radar.bathhouse.plunge.PlungeBenchBlock;
+import com.radar.bathhouse.plunge.PlungeControllerBlockEntity;
+import com.radar.bathhouse.plunge.PlungeKind;
+import com.radar.bathhouse.plunge.PlungeStoveBlock;
+import com.radar.bathhouse.plunge.PlungeStoveBlockEntity;
+import com.radar.bathhouse.plunge.PlungeThermometerBlock;
 import com.radar.bathhouse.registry.ModBlocks;
 import com.radar.bathhouse.registry.ModEffects;
+import com.radar.bathhouse.registry.ModTags;
 import com.radar.bathhouse.session.BathSessionTracker;
 import com.radar.bathhouse.session.PlungeTracker;
+import com.radar.bathhouse.stove.ChamberType;
+import com.radar.bathhouse.stove.FireboxBlock;
+import com.radar.bathhouse.stove.StoneQuality;
+import com.radar.bathhouse.stove.StoveBlockEntity;
+import com.radar.bathhouse.stove.StovePartBlock;
+import com.radar.bathhouse.stove.StovePartBlockEntity;
+import com.radar.bathhouse.stove.StoveStructure;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
+import net.minecraft.world.level.storage.loot.LootTable;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+import org.jetbrains.annotations.Nullable;
 
 /**
- * In-game tests: build small rooms in the test world and check scanning, classification, the climate model,
- * buff granting and the plunge rules. Run with {@code ./gradlew runGameTestServer}.
+ * In-game tests: build rooms, stoves and plunges in the test world and check assembly, classification, the climate
+ * model, steam levels and the plunge rules. Run with {@code ./gradlew runGameTestServer}.
  */
 @GameTestHolder(Bathhouse.MOD_ID)
 @PrefixGameTestTemplate(false)
 public class BathGameTests {
     private static final String EMPTY = "empty";
-    /** Interior of the standard test room: x, y, z in 2..4 (3x3x3), shell in 1..5. */
-    private static final BlockPos HEATER = new BlockPos(3, 2, 3);
+    /** Standard test room: interior x, y, z in 2..4 (3x3x3), shell in 1..5. The stove stands in the middle. */
+    private static final BlockPos FIREBOX = new BlockPos(3, 2, 3);
     private static final BlockPos GAUGE = new BlockPos(4, 3, 2);
 
     // ------------------------------------------------------------------------------------------------ helpers
@@ -56,15 +71,27 @@ public class BathGameTests {
         }
     }
 
-    private static ApplianceBlockEntity appliance(GameTestHelper helper, BlockPos pos, Block block) {
-        helper.setBlock(pos, block.defaultBlockState().setValue(ApplianceBlock.FACING, Direction.NORTH));
-        return helper.getBlockEntity(pos);
+    /** Firebox at {@link #FIREBOX}, optional ash pit in the floor, optional chamber on top, optional chimney through the ceiling. */
+    private static StoveBlockEntity stove(GameTestHelper helper, Block firebox, boolean ashPit, @Nullable Block chamber, boolean chimney) {
+        helper.setBlock(FIREBOX, firebox.defaultBlockState().setValue(FireboxBlock.FACING, Direction.NORTH));
+        if (ashPit) {
+            helper.setBlock(FIREBOX.below(), ModBlocks.ASH_PIT.get().defaultBlockState());
+        }
+        int top = FIREBOX.getY();
+        if (chamber != null) {
+            helper.setBlock(FIREBOX.above(), chamber.defaultBlockState());
+            top++;
+        }
+        if (chimney) {
+            for (int y = top + 1; y <= 6; y++) {
+                helper.setBlock(new BlockPos(FIREBOX.getX(), y, FIREBOX.getZ()), ModBlocks.CHIMNEY.get());
+            }
+        }
+        return helper.getBlockEntity(FIREBOX);
     }
 
-    private static void chimneyOn(GameTestHelper helper, BlockPos stove) {
-        for (int y = stove.getY() + 1; y <= 6; y++) {
-            helper.setBlock(new BlockPos(stove.getX(), y, stove.getZ()), ModBlocks.CHIMNEY.get());
-        }
+    private static StovePartBlockEntity chamber(GameTestHelper helper) {
+        return helper.getBlockEntity(FIREBOX.above());
     }
 
     private static BathGaugeBlockEntity gauge(GameTestHelper helper) {
@@ -91,11 +118,11 @@ public class BathGameTests {
                 + a.problems().stream().map(c -> c.getString()).toList();
     }
 
-    private static ServerPlayer player(GameTestHelper helper, BlockPos relative) {
+    private static ServerPlayer player(GameTestHelper helper, BlockPos relative, double dy) {
         @SuppressWarnings("removal")
         ServerPlayer player = helper.makeMockServerPlayerInLevel();
         BlockPos abs = helper.absolutePos(relative);
-        player.moveTo(abs.getX() + 0.5, abs.getY() + 0.2, abs.getZ() + 0.5);
+        player.moveTo(abs.getX() + 0.5, abs.getY() + dy, abs.getZ() + 0.5);
         return player;
     }
 
@@ -103,84 +130,256 @@ public class BathGameTests {
         helper.getLevel().getServer().getPlayerList().remove(player);
     }
 
-    // ------------------------------------------------------------------------------------------------ tests
+    // ------------------------------------------------------------------------------------------------ stove
 
     @GameTest(template = EMPTY)
-    public static void emberRoomHeatedWhite(GameTestHelper helper) {
-        shell(helper, Blocks.SPRUCE_PLANKS);
-        appliance(helper, HEATER, ModBlocks.INNER_HEATER.get());
-        chimneyOn(helper, HEATER);
-        BathGaugeBlockEntity gauge = gauge(helper);
+    public static void stoveAssembly(GameTestHelper helper) {
+        helper.setBlock(FIREBOX, ModBlocks.BRICK_FIREBOX.get().defaultBlockState().setValue(FireboxBlock.FACING, Direction.NORTH));
+        helper.setBlock(FIREBOX.below(), ModBlocks.ASH_PIT.get());
+        helper.setBlock(FIREBOX.above(), ModBlocks.CLOSED_HEATER.get());
+        helper.setBlock(FIREBOX.above(2), ModBlocks.DAMPER.get().defaultBlockState().setValue(StovePartBlock.ACTIVE, false));
+        helper.setBlock(FIREBOX.above(3), ModBlocks.WATER_TANK.get());
+        helper.setBlock(FIREBOX.above(4), ModBlocks.CHIMNEY.get());
+        helper.setBlock(FIREBOX.north(), ModBlocks.FUEL_TUNNEL.get());
+        helper.setBlock(FIREBOX.west(), ModBlocks.STOVE_CLADDING.get());
+        helper.setBlock(FIREBOX.above().east(), ModBlocks.STOVE_CLADDING.get());
 
-        expect(helper, gauge.scan() != null && !gauge.leaky(), "room should be enclosed");
-        expect(helper, gauge.scan().volume() == 24, "volume should be 27 - heater - 2 flue blocks, was " + gauge.scan().volume());
-        expect(helper, gauge.variant() == SmokeVariant.WHITE, "a heater with a chimney is white, was " + gauge.variant());
+        BlockPos core = helper.absolutePos(FIREBOX);
+        StoveStructure.Assembly asm = StoveStructure.assemble(helper.getLevel(), core);
+        expect(helper, asm.ashPit() != null, "ash pit under the firebox");
+        expect(helper, asm.chamber() == ChamberType.CLOSED, "closed heater on top, got " + asm.chamber());
+        expect(helper, asm.chimney() && asm.flue().size() == 3, "flue of damper, tank and chimney: " + asm.flue());
+        expect(helper, asm.damper() != null && !asm.damperOpen(), "the damper is closed");
+        expect(helper, asm.tanks().size() == 1, "one water tank");
+        expect(helper, asm.tunnel() != null, "fuel tunnel in front of the door");
+        expect(helper, asm.cladding() == 2, "two cladding blocks, got " + asm.cladding());
 
-        BathAssessment a = assess(gauge, 95, 10, 0);
-        expect(helper, a.type() == BathType.EMBER, "95 C / 10 % in wood should be an ember room: " + describe(a));
-        a = assess(gauge, 95, 25, 0);
-        expect(helper, a.type() == null && a.closest() == BathType.EMBER, "25 % is too humid for an ember room: " + describe(a));
-        a = assess(gauge, 125, 10, 0);
-        expect(helper, a.type() == null, "125 C is dangerous, not a bath: " + describe(a));
+        for (BlockPos part : new BlockPos[]{FIREBOX.below(), FIREBOX.above(), FIREBOX.above(2), FIREBOX.above(3),
+                FIREBOX.above(4), FIREBOX.north(), FIREBOX.west(), FIREBOX.above().east()}) {
+            BlockPos found = StoveStructure.findCore(helper.getLevel(), helper.absolutePos(part));
+            expect(helper, core.equals(found), "part at " + part + " should lead to the firebox, got " + found);
+        }
         helper.succeed();
     }
 
     @GameTest(template = EMPTY)
-    public static void steamLodgeBlackThenGray(GameTestHelper helper) {
+    public static void steamLodgeWhiteBlackGray(GameTestHelper helper) {
         shell(helper, Blocks.OAK_PLANKS);
-        appliance(helper, HEATER, ModBlocks.INNER_HEATER.get());
+        stove(helper, ModBlocks.STEEL_FIREBOX.get(), true, ModBlocks.CLOSED_HEATER.get(), true);
         BathGaugeBlockEntity gauge = gauge(helper);
-
-        expect(helper, gauge.variant() == SmokeVariant.BLACK, "no chimney anywhere is black, was " + gauge.variant());
+        expect(helper, gauge.scan() != null && !gauge.leaky(), "room should be enclosed");
+        expect(helper, gauge.scan().sources().size() == 1, "one stove found, got " + gauge.scan().sources());
+        expect(helper, gauge.variant() == SmokeVariant.WHITE, "stove with a chimney is white, was " + gauge.variant());
         BathAssessment a = assess(gauge, 70, 55, 0);
-        expect(helper, a.type() == BathType.STEAM && a.variant() == SmokeVariant.BLACK, "aired black lodge should be ready: " + describe(a));
-        a = assess(gauge, 70, 55, 50);
-        expect(helper, a.type() == null && a.closest() == BathType.STEAM, "smoky black lodge must not be ready: " + describe(a));
+        expect(helper, a.type() == BathType.STEAM, "70 C / 55 % with an inner heater is a steam lodge: " + describe(a));
+        a = assess(gauge, 95, 10, 0);
+        expect(helper, a.type() == null && a.closest() == BathType.EMBER, "an inner heater makes no ember room: " + describe(a));
 
-        // A flue in the ceiling, not on the stove: smoke passes through the room -> gray.
+        for (int y = 4; y <= 6; y++) {
+            helper.setBlock(new BlockPos(3, y, 3), y == 5 ? Blocks.OAK_PLANKS : Blocks.AIR);
+        }
+        gauge.rescan();
+        expect(helper, gauge.variant() == SmokeVariant.BLACK, "no chimney is black, was " + gauge.variant());
+
         helper.setBlock(new BlockPos(2, 5, 2), ModBlocks.CHIMNEY.get());
         helper.setBlock(new BlockPos(2, 6, 2), ModBlocks.CHIMNEY.get());
         gauge.rescan();
         expect(helper, gauge.variant() == SmokeVariant.GRAY, "ceiling flue makes it gray, was " + gauge.variant());
         a = assess(gauge, 70, 55, 20);
         expect(helper, a.type() == BathType.STEAM && a.variant() == SmokeVariant.GRAY, "gray lodge tolerates some smoke: " + describe(a));
-        a = assess(gauge, 95, 10, 20);
-        expect(helper, a.type() == BathType.EMBER && a.variant() == SmokeVariant.GRAY, "ember rooms can be gray too: " + describe(a));
         helper.succeed();
     }
 
     @GameTest(template = EMPTY)
-    public static void mistHallOnlyWhite(GameTestHelper helper) {
-        shell(helper, Blocks.STONE_BRICKS);
-        appliance(helper, HEATER, ModBlocks.STEAM_GENERATOR.get());
+    public static void emberRoomElectricOpenHeater(GameTestHelper helper) {
+        shell(helper, Blocks.SPRUCE_PLANKS);
+        stove(helper, ModBlocks.HEATING_ELEMENT.get(), false, ModBlocks.OPEN_HEATER.get(), false);
         BathGaugeBlockEntity gauge = gauge(helper);
+        expect(helper, gauge.variant() == SmokeVariant.WHITE, "an electric stove never smokes");
+        BathAssessment a = assess(gauge, 95, 10, 0);
+        expect(helper, a.type() == BathType.EMBER, "open heater, 95 C / 10 %: " + describe(a));
+        a = assess(gauge, 70, 55, 0);
+        expect(helper, a.type() == null && a.closest() == BathType.STEAM, "an outer heater makes no steam lodge: " + describe(a));
+        helper.succeed();
+    }
 
+    @GameTest(template = EMPTY)
+    public static void mistHallBoilerStoveAndGenerator(GameTestHelper helper) {
+        shell(helper, Blocks.STONE_BRICKS);
+        stove(helper, ModBlocks.STEEL_FIREBOX.get(), true, ModBlocks.BOILER.get(), true);
+        BathGaugeBlockEntity gauge = gauge(helper);
         BathAssessment a = assess(gauge, 45, 95, 0);
-        expect(helper, a.type() == BathType.MIST && a.variant() == SmokeVariant.WHITE, "stone + steam generator, 45 C / 95 %: " + describe(a));
+        expect(helper, a.type() == BathType.MIST && a.variant() == SmokeVariant.WHITE, "boiler stove in stone: " + describe(a));
 
-        appliance(helper, new BlockPos(2, 2, 2), ModBlocks.IRON_STOVE.get());
+        helper.setBlock(new BlockPos(3, 6, 3), Blocks.AIR);
+        helper.setBlock(new BlockPos(3, 5, 3), Blocks.STONE_BRICKS);
+        helper.setBlock(new BlockPos(3, 4, 3), Blocks.AIR);
         gauge.rescan();
         a = assess(gauge, 45, 95, 0);
-        expect(helper, a.type() == null && a.closest() == BathType.MIST && a.variant() == SmokeVariant.BLACK,
-                "a smoky stove makes the mist hall invalid: " + describe(a));
+        expect(helper, a.type() == null && a.variant() == SmokeVariant.BLACK, "a smoky stove spoils a mist hall: " + describe(a));
+
+        helper.setBlock(FIREBOX.above(), Blocks.AIR);
+        helper.setBlock(FIREBOX, ModBlocks.STEAM_GENERATOR.get());
+        helper.setBlock(FIREBOX.below(), Blocks.STONE_BRICKS);
+        gauge.rescan();
+        a = assess(gauge, 45, 95, 0);
+        expect(helper, a.type() == BathType.MIST, "steam generator works too: " + describe(a));
         helper.succeed();
     }
 
     @GameTest(template = EMPTY)
-    public static void woodRequiredForSteam(GameTestHelper helper) {
-        shell(helper, Blocks.STONE_BRICKS);
-        appliance(helper, HEATER, ModBlocks.INNER_HEATER.get());
-        chimneyOn(helper, HEATER);
+    public static void stoveHeatsStonesAndMakesSteam(GameTestHelper helper) {
+        shell(helper, Blocks.SPRUCE_PLANKS);
+        StoveBlockEntity stove = stove(helper, ModBlocks.STEEL_FIREBOX.get(), true, ModBlocks.CLOSED_HEATER.get(), true);
+        StovePartBlockEntity heater = chamber(helper);
+        BathGaugeBlockEntity gauge = gauge(helper);
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+
+        expect(helper, !stove.throwWater(helper.getLevel(), heater, WaterPortions.LADLE_PORTION, false, player),
+                "an empty heater takes no water");
+        expect(helper, heater.addStones(new ItemStack(Items.BASALT, 64), 64) == 12, "the inner heater holds 12 stones");
+        expect(helper, heater.stoneQuality() == 3.0, "basalt is excellent");
+        stove.setFuel(StoveBlockEntity.MAX_FUEL);
+
+        for (int s = 0; s < 480; s++) {
+            if (s % 2 == 0) {
+                gauge.rescan();
+            }
+            stove.advanceSecond();
+            gauge.simulate(1.0);
+        }
+        double room = gauge.temperature();
+        double stones = stove.stoneTemperature();
+        expect(helper, room > 75 && room < 120, "8 minutes of firing should heat the room to 75-120 C, got " + room);
+        expect(helper, stones > 250, "stones of an inner heater get very hot, got " + stones);
+
+        double dry = gauge.humidity();
+        for (int i = 0; i < 4; i++) {
+            stove.throwWater(helper.getLevel(), heater, WaterPortions.LADLE_PORTION, i % 2 == 0, player);
+            stove.advanceSecond();
+            gauge.simulate(1.0);
+        }
+        expect(helper, gauge.humidity() > dry + 8, "four ladles should raise humidity, " + dry + " -> " + gauge.humidity());
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY)
+    public static void ashPitDraftAndDamperSmoke(GameTestHelper helper) {
+        shell(helper, Blocks.OAK_PLANKS);
+        StoveBlockEntity stove = stove(helper, ModBlocks.STEEL_FIREBOX.get(), false, ModBlocks.CLOSED_HEATER.get(), true);
+        stove.setFuel(StoveBlockEntity.MAX_FUEL);
+        BathGaugeBlockEntity gauge = gauge(helper);
+        gauge.simulate(1.0);
+        stove.advanceSecond();
+        expect(helper, stove.draft() < 1.0, "no ash pit: poor draft");
+
+        helper.setBlock(FIREBOX.below(), ModBlocks.ASH_PIT.get());
+        stove.advanceSecond();
+        expect(helper, stove.draft() == 1.0, "ash pit gives full draft");
+        for (int s = 0; s < 130; s++) {
+            stove.advanceSecond();
+        }
+        StovePartBlockEntity ashPit = helper.getBlockEntity(FIREBOX.below());
+        expect(helper, ashPit.ash() >= 1, "two minutes of burning leave ash, got " + ashPit.ash());
+
+        // Shut the damper while burning: smoke backs into the room even with a chimney.
+        helper.setBlock(new BlockPos(3, 4, 3), ModBlocks.DAMPER.get().defaultBlockState().setValue(StovePartBlock.ACTIVE, false));
+        gauge.rescan();
+        for (int s = 0; s < 20; s++) {
+            stove.advanceSecond();
+            gauge.simulate(1.0);
+        }
+        expect(helper, gauge.smoke() > 10, "closed damper while burning fills the room with smoke, got " + gauge.smoke());
+        helper.succeed();
+    }
+
+    // ------------------------------------------------------------------------------------------------ levels
+
+    private static void session(ServerPlayer player, BathGaugeBlockEntity gauge, int toolUses) {
+        for (int i = 0; i < BathConfig.SESSION_SECONDS.get() && !player.hasEffect(gauge.assessment().type().effects().getFirst()); i++) {
+            BathSessionTracker.visit(player, gauge);
+            if (i >= 2 && i < 2 + toolUses) {
+                BathSessionTracker.recordTool(player, 0.0);
+            }
+        }
+    }
+
+    @GameTest(template = EMPTY)
+    public static void steamLevelThreeGivesAllParts(GameTestHelper helper) {
+        shell(helper, Blocks.OAK_PLANKS);
+        stove(helper, ModBlocks.BRICK_FIREBOX.get(), true, ModBlocks.CLOSED_HEATER.get(), true);
+        chamber(helper).addStones(new ItemStack(Items.SMOOTH_BASALT, 12), 12);
         BathGaugeBlockEntity gauge = gauge(helper);
         BathAssessment a = assess(gauge, 70, 55, 0);
-        expect(helper, a.type() == null && a.closest() == BathType.STEAM, "a stone room is no steam lodge: " + describe(a));
+        expect(helper, a.type() == BathType.STEAM, "steam lodge expected: " + describe(a));
+        expect(helper, gauge.bathCriteria(BathType.STEAM).stream().allMatch(c -> c.met()),
+                "brick stove, ash pit, full heater, wooden room: all bath criteria met");
+
+        ServerPlayer player = player(helper, new BlockPos(2, 2, 4), 0.0);
+        session(player, gauge, 3);
+        expect(helper, player.hasEffect(ModEffects.FORTITUDE) && player.hasEffect(ModEffects.PROWESS)
+                && player.hasEffect(ModEffects.STEADFASTNESS), "steam level 3 grants all three parts");
+        expect(helper, player.getEffect(ModEffects.FORTITUDE).getDuration() >= BathConfig.BUFF_DURATION_TICKS.get() - 5,
+                "as long as Hero of the Village");
+        remove(helper, player);
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY)
+    public static void steamLevelOneGivesFirstPart(GameTestHelper helper) {
+        shell(helper, Blocks.OAK_PLANKS);
+        stove(helper, ModBlocks.STEEL_FIREBOX.get(), false, ModBlocks.CLOSED_HEATER.get(), true);
+        BathGaugeBlockEntity gauge = gauge(helper);
+        BathAssessment a = assess(gauge, 61, 41, 0); // ready, but not in the ideal band
+        expect(helper, a.type() == BathType.STEAM, "steam lodge expected: " + describe(a));
+
+        ServerPlayer player = player(helper, new BlockPos(2, 2, 4), 0.0);
+        session(player, gauge, 0);
+        expect(helper, player.hasEffect(ModEffects.FORTITUDE), "level 1 grants the first part");
+        expect(helper, !player.hasEffect(ModEffects.PROWESS) && !player.hasEffect(ModEffects.STEADFASTNESS),
+                "a poor bath and a sloppy session give level 1 only");
+        remove(helper, player);
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY)
+    public static void blackBathBonusRaisesLevel(GameTestHelper helper) {
+        shell(helper, Blocks.OAK_PLANKS);
+        stove(helper, ModBlocks.STEEL_FIREBOX.get(), false, ModBlocks.CLOSED_HEATER.get(), false);
+        BathGaugeBlockEntity gauge = gauge(helper);
+        BathAssessment a = assess(gauge, 70, 55, 0); // aired black lodge, ideal climate
+        expect(helper, a.type() == BathType.STEAM && a.variant() == SmokeVariant.BLACK, "aired black lodge: " + describe(a));
+        ServerPlayer player = player(helper, new BlockPos(2, 2, 4), 0.0);
+        session(player, gauge, 0);
+        // finish + steady + unbroken + black bonus = 4 points -> level 2
+        expect(helper, player.hasEffect(ModEffects.PROWESS) && !player.hasEffect(ModEffects.STEADFASTNESS),
+                "black bonus lifts an ordinary session to level 2");
+        remove(helper, player);
+        helper.succeed();
+    }
+
+    // ------------------------------------------------------------------------------------------------ room
+
+    @GameTest(template = EMPTY)
+    public static void openDoorLeaks(GameTestHelper helper) {
+        shell(helper, Blocks.OAK_PLANKS);
+        stove(helper, ModBlocks.STEEL_FIREBOX.get(), true, ModBlocks.CLOSED_HEATER.get(), true);
+        BlockState door = Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.FACING, Direction.NORTH).setValue(DoorBlock.OPEN, true);
+        helper.setBlock(new BlockPos(2, 2, 1), door.setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER));
+        helper.setBlock(new BlockPos(2, 3, 1), door.setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
+        BathGaugeBlockEntity gauge = gauge(helper);
+        expect(helper, gauge.leaky() && gauge.scan() == null, "an open door must leak");
+        helper.setBlock(new BlockPos(2, 2, 1), door.setValue(DoorBlock.OPEN, false).setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER));
+        helper.setBlock(new BlockPos(2, 3, 1), door.setValue(DoorBlock.OPEN, false).setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
+        gauge.rescan();
+        expect(helper, !gauge.leaky() && gauge.scan() != null, "a closed door seals the room");
         helper.succeed();
     }
 
     @GameTest(template = EMPTY)
     public static void secondGaugeIsIgnored(GameTestHelper helper) {
         shell(helper, Blocks.OAK_PLANKS);
-        ApplianceBlockEntity heater = appliance(helper, HEATER, ModBlocks.INNER_HEATER.get());
+        StoveBlockEntity stove = stove(helper, ModBlocks.STEEL_FIREBOX.get(), true, ModBlocks.CLOSED_HEATER.get(), true);
         BathGaugeBlockEntity first = gauge(helper);
         BlockPos otherPos = new BlockPos(2, 3, 4);
         helper.setBlock(otherPos, ModBlocks.BATH_GAUGE.get().defaultBlockState().setValue(BathGaugeBlock.FACING, Direction.NORTH));
@@ -190,196 +389,189 @@ public class BathGameTests {
         expect(helper, first.scan().duplicateGauge() != second.scan().duplicateGauge(), "exactly one gauge is the main one");
         BathGaugeBlockEntity main = first.scan().duplicateGauge() ? second : first;
         BathGaugeBlockEntity spare = main == first ? second : first;
-
-        heater.setFuel(ApplianceBlockEntity.MAX_FUEL);
-        for (int s = 0; s < 120; s++) {
+        stove.setFuel(StoveBlockEntity.MAX_FUEL);
+        for (int s = 0; s < 240; s++) {
             spare.simulate(1.0);
-            heater.advanceSecond();
+            stove.advanceSecond();
             main.simulate(1.0);
         }
         expect(helper, main.temperature() > spare.temperature() + 20,
                 "the main gauge gets the heat: main " + main.temperature() + ", spare " + spare.temperature());
-        BathAssessment a = assess(spare, 70, 55, 0);
-        expect(helper, a.type() == null, "the spare gauge reports a duplicate: " + describe(a));
         helper.succeed();
     }
 
-    @GameTest(template = EMPTY)
-    public static void openDoorLeaks(GameTestHelper helper) {
-        shell(helper, Blocks.OAK_PLANKS);
-        appliance(helper, HEATER, ModBlocks.INNER_HEATER.get());
-        BlockState door = Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.FACING, Direction.NORTH).setValue(DoorBlock.OPEN, true);
-        helper.setBlock(new BlockPos(3, 2, 1), door.setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER));
-        helper.setBlock(new BlockPos(3, 3, 1), door.setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
-        BathGaugeBlockEntity gauge = gauge(helper);
-        expect(helper, gauge.leaky() && gauge.scan() == null, "an open door must leak");
+    // ------------------------------------------------------------------------------------------------ plunges
 
-        helper.setBlock(new BlockPos(3, 2, 1), door.setValue(DoorBlock.OPEN, false).setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER));
-        helper.setBlock(new BlockPos(3, 3, 1), door.setValue(DoorBlock.OPEN, false).setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
-        gauge.rescan();
-        expect(helper, !gauge.leaky() && gauge.scan() != null, "a closed door seals the room");
-        helper.succeed();
-    }
-
-    @GameTest(template = EMPTY)
-    public static void heaterWarmsRoomAndWaterMakesSteam(GameTestHelper helper) {
-        shell(helper, Blocks.SPRUCE_PLANKS);
-        ApplianceBlockEntity heater = appliance(helper, HEATER, ModBlocks.INNER_HEATER.get());
-        chimneyOn(helper, HEATER);
-        BathGaugeBlockEntity gauge = gauge(helper);
-        heater.setFuel(ApplianceBlockEntity.MAX_FUEL);
-
-        double start = Double.NaN;
-        for (int s = 0; s < 360; s++) {
-            if (s % 2 == 0) {
-                gauge.rescan();
-            }
-            heater.advanceSecond();
-            gauge.simulate(1.0);
-            if (s == 0) {
-                start = gauge.temperature();
+    /**
+     * Basin with a 2x2 interior at x0..x0+1, z0..z0+1, y 2..3 (floor at y 1), thermometer at the rim on the west side.
+     *
+     * @return the thermometer position
+     */
+    private static BlockPos basin(GameTestHelper helper, int x0, int z0, Block wall) {
+        for (int x = x0 - 1; x <= x0 + 2; x++) {
+            for (int z = z0 - 1; z <= z0 + 2; z++) {
+                for (int y = 1; y <= 3; y++) {
+                    boolean inside = x >= x0 && x <= x0 + 1 && z >= z0 && z <= z0 + 1 && y >= 2;
+                    helper.setBlock(new BlockPos(x, y, z), inside ? Blocks.AIR : wall);
+                }
             }
         }
-        double hot = gauge.temperature();
-        expect(helper, hot > 80 && hot < 120, "6 minutes of firing should heat a 3x3x3 room to 80-120 C, got " + hot + " (from " + start + ")");
-        expect(helper, gauge.humidity() < 5, "dry heat should be dry, got " + gauge.humidity());
-
-        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
-        for (int i = 0; i < 3; i++) {
-            heater.throwWater(helper.getLevel(), ApplianceBlock.LADLE_PORTION, player);
-            heater.advanceSecond();
-            gauge.simulate(1.0);
-        }
-        double humid = gauge.humidity();
-        expect(helper, humid > 7, "three ladles should raise humidity noticeably, got " + humid);
-        gauge.reassess();
-        helper.succeed();
+        BlockPos thermometer = new BlockPos(x0 - 1, 3, z0);
+        helper.setBlock(thermometer, ModBlocks.PLUNGE_THERMOMETER.get().defaultBlockState().setValue(PlungeThermometerBlock.FACING, Direction.EAST));
+        return thermometer;
     }
 
-    @GameTest(template = EMPTY)
-    public static void sessionGrantsLongBuff(GameTestHelper helper) {
-        shell(helper, Blocks.OAK_PLANKS);
-        appliance(helper, HEATER, ModBlocks.INNER_HEATER.get());
-        BathGaugeBlockEntity gauge = gauge(helper);
-        assess(gauge, 70, 55, 0); // black lodge, aired
-        ServerPlayer player = player(helper, new BlockPos(2, 2, 4));
-        expect(helper, gauge.isInside(player), "player should be inside the room");
-
-        for (int i = 0; i < BathConfig.SESSION_SECONDS.get(); i++) {
-            BathSessionTracker.visit(player, gauge);
+    private static void fill(GameTestHelper helper, int x0, int z0, boolean bench) {
+        for (int x = x0; x <= x0 + 1; x++) {
+            for (int z = z0; z <= z0 + 1; z++) {
+                for (int y = 2; y <= 3; y++) {
+                    helper.setBlock(new BlockPos(x, y, z), Blocks.WATER);
+                }
+            }
         }
-        MobEffectInstance effect = player.getEffect(ModEffects.FORTITUDE);
-        expect(helper, effect != null, "a full session should grant Fortitude");
-        expect(helper, effect.getAmplifier() == BathConfig.BLACK_AMPLIFIER_BONUS.get(), "black bath is stronger, amplifier " + effect.getAmplifier());
-        expect(helper, effect.getDuration() >= BathConfig.BUFF_DURATION_TICKS.get() - 5, "buff should last as long as Hero of the Village");
-        expect(helper, BathSessionTracker.isWarm(player), "a steam lodge warms the player up");
-        remove(helper, player);
-        helper.succeed();
+        if (bench) {
+            helper.setBlock(new BlockPos(x0, 2, z0), ModBlocks.PLUNGE_BENCH.get().defaultBlockState().setValue(PlungeBenchBlock.WATERLOGGED, true));
+        }
+    }
+
+    private static void ticks(ServerPlayer player, int seconds) {
+        for (int t = 0; t < seconds * 20; t++) {
+            PlungeTracker.tick(player);
+        }
     }
 
     @GameTest(template = EMPTY)
     public static void coldPlungeContrast(GameTestHelper helper) {
-        BlockPos tubPos = new BlockPos(8, 1, 8);
-        helper.setBlock(tubPos, ModBlocks.COLD_PLUNGE.get().defaultBlockState().setValue(PlungeBlock.LEVEL, 3));
-        PlungeBlockEntity tub = helper.getBlockEntity(tubPos);
-        tub.setTemperature(8.0);
-
-        // Warm up in a steam lodge first.
         shell(helper, Blocks.OAK_PLANKS);
-        appliance(helper, HEATER, ModBlocks.INNER_HEATER.get());
+        stove(helper, ModBlocks.STEEL_FIREBOX.get(), false, ModBlocks.CLOSED_HEATER.get(), true);
         BathGaugeBlockEntity gauge = gauge(helper);
-        assess(gauge, 70, 55, 0);
-        ServerPlayer warm = player(helper, new BlockPos(2, 2, 4));
+        assess(gauge, 61, 41, 0);
+
+        BlockPos thermometerPos = basin(helper, 8, 8, ModBlocks.PLUNGE_WALL_TILE.get());
+        fill(helper, 8, 8, true);
+        PlungeControllerBlockEntity plunge = helper.getBlockEntity(thermometerPos);
+        plunge.rescan();
+        expect(helper, plunge.kind() == PlungeKind.COLD, "water without a stove is a cold plunge, problem: "
+                + (plunge.problem() == null ? "-" : plunge.problem().getString()));
+        plunge.setTemperature(6.0);
+
+        ServerPlayer warm = player(helper, new BlockPos(2, 2, 4), 0.0);
         BathSessionTracker.visit(warm, gauge);
-
-        BlockPos abs = helper.absolutePos(tubPos);
-        warm.moveTo(abs.getX() + 0.5, abs.getY() + 0.2, abs.getZ() + 0.5);
-        for (int t = 0; t < 15 * 20; t++) {
-            PlungeTracker.tick(warm);
-        }
-        warm.moveTo(abs.getX() + 0.5, abs.getY() + 1.2, abs.getZ() - 1.5);
+        expect(helper, BathSessionTracker.isWarm(warm), "a steam lodge warms the player up");
+        BlockPos bench = helper.absolutePos(new BlockPos(8, 2, 8));
+        warm.moveTo(bench.getX() + 0.5, bench.getY() + 0.5, bench.getZ() + 0.5);
+        ticks(warm, 15);
+        expect(helper, PlungeTracker.current(warm) != null, "the player should be in the plunge");
+        warm.moveTo(bench.getX() + 0.5, bench.getY() + 3.0, bench.getZ() - 3.0);
         PlungeTracker.tick(warm);
-        expect(helper, warm.hasEffect(ModEffects.TEMPERING), "a 15 s dip after the steam room grants Tempering");
-        expect(helper, !BathSessionTracker.isWarm(warm), "the contrast uses up the warmth");
+        // icy water (4-8 C) is one point: level 2
+        expect(helper, warm.hasEffect(ModEffects.TEMPERING) && warm.hasEffect(ModEffects.HARDINESS)
+                && !warm.hasEffect(ModEffects.FROSTPROOF), "contrast level 2: Tempering and Hardiness");
 
-        // Without warming up: cold shock and no reward.
-        ServerPlayer cold = player(helper, tubPos);
-        for (int t = 0; t < 15 * 20; t++) {
-            PlungeTracker.tick(cold);
-        }
-        cold.moveTo(abs.getX() + 0.5, abs.getY() + 1.2, abs.getZ() - 1.5);
+        ServerPlayer cold = player(helper, new BlockPos(8, 2, 8), 0.5);
+        ticks(cold, 15);
+        cold.moveTo(bench.getX() + 0.5, bench.getY() + 3.0, bench.getZ() - 3.0);
         PlungeTracker.tick(cold);
         expect(helper, !cold.hasEffect(ModEffects.TEMPERING), "no contrast without warming up");
-
         remove(helper, warm);
         remove(helper, cold);
         helper.succeed();
     }
 
     @GameTest(template = EMPTY)
-    public static void hotPlungeChestLevel(GameTestHelper helper) {
-        BlockPos tubPos = new BlockPos(8, 1, 4);
+    public static void hotPlungeChestDeepOnBench(GameTestHelper helper) {
+        BlockPos thermometerPos = basin(helper, 8, 4, ModBlocks.PLUNGE_WALL_WOOD.get());
+        fill(helper, 8, 4, true);
+        helper.setBlock(new BlockPos(10, 2, 4), ModBlocks.PLUNGE_STOVE.get().defaultBlockState().setValue(PlungeStoveBlock.FACING, Direction.EAST));
+        PlungeControllerBlockEntity plunge = helper.getBlockEntity(thermometerPos);
+        plunge.rescan();
+        expect(helper, plunge.kind() == PlungeKind.HOT, "water, stove and bench make a hot plunge, problem: "
+                + (plunge.problem() == null ? "-" : plunge.problem().getString()));
+        plunge.setTemperature(40.0);
+        plunge.setHerbs(true);
         int soak = BathConfig.HOT_SOAK_SECONDS.get() + 1;
 
-        // Water to the brim (level 3) covers the heart: no soaking progress.
-        helper.setBlock(tubPos, ModBlocks.HOT_PLUNGE.get().defaultBlockState().setValue(PlungeBlock.LEVEL, 3));
-        PlungeBlockEntity tub = helper.getBlockEntity(tubPos);
-        tub.setTemperature(40.0);
-        ServerPlayer player = player(helper, tubPos);
-        for (int t = 0; t < soak * 20; t++) {
-            PlungeTracker.tick(player);
-        }
-        expect(helper, !player.hasEffect(ModEffects.BLISS), "water above the chest must not count");
+        ServerPlayer standing = player(helper, new BlockPos(9, 2, 5), 0.0);
+        ticks(standing, soak);
+        expect(helper, !standing.hasEffect(ModEffects.BLISS), "standing on the floor the water covers the heart");
 
-        // Scoop down to chest level.
-        tub.removeContent(1);
-        tub.setTemperature(40.0);
-        BlockPos abs = helper.absolutePos(tubPos);
-        player.moveTo(abs.getX() + 0.5, abs.getY() + 1.2, abs.getZ() - 1.5);
-        PlungeTracker.tick(player);
-        player.moveTo(abs.getX() + 0.5, abs.getY() + 0.2, abs.getZ() + 0.5);
-        for (int t = 0; t < soak * 20; t++) {
-            PlungeTracker.tick(player);
-        }
-        MobEffectInstance bliss = player.getEffect(ModEffects.BLISS);
-        expect(helper, bliss != null && bliss.getAmplifier() == 0, "a good soak at chest level grants Bliss I");
-        remove(helper, player);
+        ServerPlayer seated = player(helper, new BlockPos(8, 2, 4), 0.5);
+        ticks(seated, soak);
+        expect(helper, seated.hasEffect(ModEffects.BLISS) && seated.hasEffect(ModEffects.SUPPLENESS)
+                && seated.hasEffect(ModEffects.FEATHERLIGHT), "herbs, ideal 40 C, wooden basin: level 3");
+        remove(helper, standing);
+        remove(helper, seated);
         helper.succeed();
     }
+
+    @GameTest(template = EMPTY)
+    public static void hotPlungeStoveHeatsWater(GameTestHelper helper) {
+        BlockPos thermometerPos = basin(helper, 8, 4, ModBlocks.PLUNGE_WALL_WOOD.get());
+        fill(helper, 8, 4, true);
+        BlockPos stovePos = new BlockPos(10, 2, 4);
+        helper.setBlock(stovePos, ModBlocks.PLUNGE_STOVE.get().defaultBlockState().setValue(PlungeStoveBlock.FACING, Direction.EAST));
+        PlungeStoveBlockEntity stove = helper.getBlockEntity(stovePos);
+        stove.setFuel(PlungeStoveBlockEntity.MAX_FUEL);
+        PlungeControllerBlockEntity plunge = helper.getBlockEntity(thermometerPos);
+        plunge.rescan();
+        for (int s = 0; s < 500; s++) {
+            plunge.simulate(1.0);
+            stove.burnSecond();
+        }
+        double t = plunge.temperature();
+        expect(helper, t >= 38 && t <= 43, "an outside stove should bring the water to 38-42 C and hold it, got " + t);
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY)
+    public static void plungeProblems(GameTestHelper helper) {
+        BlockPos thermometerPos = basin(helper, 8, 4, ModBlocks.PLUNGE_WALL_WOOD.get());
+        PlungeControllerBlockEntity plunge = helper.getBlockEntity(thermometerPos);
+        plunge.rescan();
+        expect(helper, plunge.kind() == null, "an empty basin is no plunge");
+
+        fill(helper, 8, 4, false);
+        helper.setBlock(new BlockPos(10, 2, 4), ModBlocks.PLUNGE_STOVE.get().defaultBlockState().setValue(PlungeStoveBlock.FACING, Direction.EAST));
+        plunge.rescan();
+        expect(helper, plunge.kind() == null, "a hot plunge without a bench is refused");
+
+        helper.setBlock(new BlockPos(11, 3, 5), Blocks.AIR);
+        helper.setBlock(new BlockPos(10, 3, 5), Blocks.GLASS);
+        plunge.rescan();
+        expect(helper, plunge.scan() != null && !plunge.scan().valid(), "a foreign block in the wall breaks the basin");
+
+        BlockPos sawdustThermometer = basin(helper, 8, 8, ModBlocks.PLUNGE_WALL_WOOD.get());
+        for (int x = 8; x <= 9; x++) {
+            for (int z = 8; z <= 9; z++) {
+                helper.setBlock(new BlockPos(x, 2, z), ModBlocks.SAWDUST.get());
+                helper.setBlock(new BlockPos(x, 3, z), ModBlocks.SAWDUST.get());
+            }
+        }
+        helper.setBlock(new BlockPos(10, 2, 8), ModBlocks.PLUNGE_STOVE.get().defaultBlockState().setValue(PlungeStoveBlock.FACING, Direction.EAST));
+        PlungeControllerBlockEntity sawdust = helper.getBlockEntity(sawdustThermometer);
+        sawdust.rescan();
+        expect(helper, sawdust.kind() == PlungeKind.SAWDUST, "shavings and a stove make a sawdust plunge");
+        helper.succeed();
+    }
+
+    // ------------------------------------------------------------------------------------------------ data
 
     @GameTest(template = EMPTY)
     public static void dataIsLoaded(GameTestHelper helper) {
         var server = helper.getLevel().getServer();
-        String[] recipes = {"bath_gauge", "inner_heater", "outer_heater", "brick_stove", "iron_stove", "electric_heater",
-                "steam_generator", "warm_lounger", "chimney", "cold_plunge", "smoke_vent", "ladle", "bath_broom", "scrub_mitt",
-                "sawdust", "hot_plunge", "sawdust_plunge"};
-        for (String id : recipes) {
-            expect(helper, server.getRecipeManager().byKey(Bathhouse.id(id)).isPresent(), "missing recipe " + id);
+        for (var item : com.radar.bathhouse.registry.ModItems.ITEMS.getEntries()) {
+            expect(helper, server.getRecipeManager().byKey(item.getId()).isPresent(), "missing recipe for " + item.getId());
         }
         for (var block : ModBlocks.BLOCKS.getEntries()) {
             var key = block.get().getLootTable();
-            expect(helper, server.reloadableRegistries().getLootTable(key) != net.minecraft.world.level.storage.loot.LootTable.EMPTY,
-                    "missing loot table " + key.location());
+            expect(helper, server.reloadableRegistries().getLootTable(key) != LootTable.EMPTY, "missing loot table " + key.location());
         }
-        expect(helper, helper.getLevel().registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE)
+        expect(helper, helper.getLevel().registryAccess().registryOrThrow(Registries.DAMAGE_TYPE)
                 .containsKey(com.radar.bathhouse.registry.ModDamageTypes.OVERHEAT), "missing overheat damage type");
-        expect(helper, Blocks.OAK_PLANKS.defaultBlockState().is(com.radar.bathhouse.registry.ModTags.BATH_WOOD), "oak planks are wood");
-        expect(helper, Blocks.CALCITE.defaultBlockState().is(com.radar.bathhouse.registry.ModTags.BATH_STONE), "calcite is stone");
-        expect(helper, Blocks.WHITE_WOOL.defaultBlockState().is(com.radar.bathhouse.registry.ModTags.BATH_INSULATION), "wool insulates");
-        helper.succeed();
-    }
-
-    @GameTest(template = EMPTY)
-    public static void hotPlungeHeatsUp(GameTestHelper helper) {
-        BlockPos tubPos = new BlockPos(8, 1, 4);
-        helper.setBlock(tubPos, ModBlocks.HOT_PLUNGE.get().defaultBlockState().setValue(PlungeBlock.LEVEL, 2));
-        PlungeBlockEntity tub = helper.getBlockEntity(tubPos);
-        tub.setFuel(PlungeBlockEntity.MAX_FUEL);
-        for (int s = 0; s < 600; s++) {
-            tub.advanceSecond();
-        }
-        double t = tub.temperature();
-        expect(helper, t >= 38 && t <= 43, "the damper should hold the hot plunge around 38-42 C, got " + t);
+        expect(helper, Blocks.OAK_PLANKS.defaultBlockState().is(ModTags.BATH_WOOD), "oak planks are wood");
+        expect(helper, Blocks.CALCITE.defaultBlockState().is(ModTags.BATH_MARBLE), "calcite is marble");
+        expect(helper, StoneQuality.of(new ItemStack(Items.BASALT)) == 3, "basalt is an excellent heater stone");
+        expect(helper, StoneQuality.of(new ItemStack(Items.COBBLESTONE)) == 1, "cobblestone is a poor heater stone");
         helper.succeed();
     }
 }

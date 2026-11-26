@@ -1,8 +1,9 @@
 package com.radar.bathhouse.climate;
 
-import com.radar.bathhouse.block.ApplianceType;
 import com.radar.bathhouse.registry.ModEffects;
+import com.radar.bathhouse.stove.ChamberType;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
 import net.minecraft.ChatFormatting;
@@ -12,24 +13,25 @@ import net.minecraft.world.effect.MobEffect;
 /**
  * The three kinds of bathhouse.
  * <ul>
- *     <li>MIST ("Туманница", hammam-like) — a stone steam hall: 35–50 °C, 90–100 %, steam generator. Only white.</li>
- *     <li>STEAM ("Парильня", banya-like) — a wooden steam lodge: 60–80 °C, 40–70 %, wood-fired stone heater.</li>
- *     <li>EMBER ("Калильня", sauna-like) — a wooden dry-heat room: 80–110 °C, 5–15 %, any stone heater.</li>
+ *     <li>MIST ("Туманница", hammam-like) — stone steam hall: 35–50 °C, 90–100 %, steam generator or boiler stove. Only white.</li>
+ *     <li>STEAM ("Парильня", banya-like) — wooden steam lodge: 60–80 °C, 40–70 %, wood stove with a closed (inner) heater.</li>
+ *     <li>EMBER ("Калильня", sauna-like) — wooden dry-heat room: 80–110 °C, 5–15 %, stove with an open (outer) heater.</li>
  * </ul>
- * Wood-fired lodges and ember rooms can be heated white, gray or black.
- * <ul>
- * </ul>
+ * Lodges and ember rooms can be heated white, gray or black. Each type's buff is split into three parts that the
+ * steam level (1–3) grants cumulatively.
  */
 public enum BathType {
     MIST("mist", 35, 50, 90, 100, WallMaterial.STONE, Equipment.STEAM_SOURCE,
-            EnumSet.of(SmokeVariant.WHITE), ModEffects.PURITY, ChatFormatting.AQUA),
-    STEAM("steam", 60, 80, 40, 70, WallMaterial.WOOD, Equipment.FIRED_STONE_HEATER,
-            EnumSet.allOf(SmokeVariant.class), ModEffects.FORTITUDE, ChatFormatting.GOLD),
-    EMBER("ember", 80, 110, 5, 15, WallMaterial.WOOD, Equipment.STONE_HEATER,
-            EnumSet.allOf(SmokeVariant.class), ModEffects.LIGHTNESS, ChatFormatting.RED);
+            EnumSet.of(SmokeVariant.WHITE), ModEffects.MIST_PARTS, ChatFormatting.AQUA),
+    STEAM("steam", 60, 80, 40, 70, WallMaterial.WOOD, Equipment.CLOSED_HEATER_STOVE,
+            EnumSet.allOf(SmokeVariant.class), ModEffects.STEAM_PARTS, ChatFormatting.GOLD),
+    EMBER("ember", 80, 110, 5, 15, WallMaterial.WOOD, Equipment.OPEN_HEATER_STOVE,
+            EnumSet.allOf(SmokeVariant.class), ModEffects.EMBER_PARTS, ChatFormatting.RED);
 
     /** Minimum share of the required wall material. */
     public static final double REQUIRED_WALL_FRACTION = 0.5;
+    /** The "ideal" band is the range shrunk by this share of its width from each side. */
+    private static final double IDEAL_MARGIN = 0.2;
 
     private final String id;
     private final int minTemperature;
@@ -39,11 +41,11 @@ public enum BathType {
     private final WallMaterial walls;
     private final Equipment equipment;
     private final Set<SmokeVariant> variants;
-    private final Holder<MobEffect> effect;
+    private final List<Holder<MobEffect>> effects;
     private final ChatFormatting color;
 
     BathType(String id, int minTemperature, int maxTemperature, int minHumidity, int maxHumidity, WallMaterial walls,
-             Equipment equipment, Set<SmokeVariant> variants, Holder<MobEffect> effect, ChatFormatting color) {
+             Equipment equipment, Set<SmokeVariant> variants, List<Holder<MobEffect>> effects, ChatFormatting color) {
         this.id = id;
         this.minTemperature = minTemperature;
         this.maxTemperature = maxTemperature;
@@ -52,8 +54,12 @@ public enum BathType {
         this.walls = walls;
         this.equipment = equipment;
         this.variants = variants;
-        this.effect = effect;
+        this.effects = effects;
         this.color = color;
+    }
+
+    public String id() {
+        return id;
     }
 
     public String translationKey() {
@@ -92,30 +98,54 @@ public enum BathType {
         return variants.contains(variant);
     }
 
-    public Holder<MobEffect> effect() {
-        return effect;
+    /** The three parts of this bath's buff, in the order the steam levels grant them. */
+    public List<Holder<MobEffect>> effects() {
+        return effects;
     }
 
     public ChatFormatting color() {
         return color;
     }
 
-    /** Which appliance the bath type needs. */
+    public double idealMinTemperature() {
+        return minTemperature + (maxTemperature - minTemperature) * IDEAL_MARGIN;
+    }
+
+    public double idealMaxTemperature() {
+        return maxTemperature - (maxTemperature - minTemperature) * IDEAL_MARGIN;
+    }
+
+    public double idealMinHumidity() {
+        return minHumidity + (maxHumidity - minHumidity) * IDEAL_MARGIN;
+    }
+
+    public double idealMaxHumidity() {
+        // Saturated air is fine for a mist hall.
+        return maxHumidity >= 100 ? 100 : maxHumidity - (maxHumidity - minHumidity) * IDEAL_MARGIN;
+    }
+
+    /** Climate in the comfortable middle of the range. */
+    public boolean ideal(double temperature, double humidity) {
+        return temperature >= idealMinTemperature() && temperature <= idealMaxTemperature()
+                && humidity >= idealMinHumidity() && humidity <= idealMaxHumidity();
+    }
+
+    /** Which heat source the bath type needs. */
     public enum Equipment {
-        STEAM_SOURCE("steam_source", t -> t == ApplianceType.STEAM_GENERATOR),
-        FIRED_STONE_HEATER("fired_stone_heater", t -> t.isFueled() && t.hasStones()),
-        STONE_HEATER("stone_heater", ApplianceType::hasStones);
+        STEAM_SOURCE("steam_source", SourceInfo::steamSource),
+        CLOSED_HEATER_STOVE("closed_heater_stove", s -> s.kind() == SourceInfo.Kind.STOVE && s.woodFired() && s.chamber() == ChamberType.CLOSED),
+        OPEN_HEATER_STOVE("open_heater_stove", s -> s.kind() == SourceInfo.Kind.STOVE && s.chamber() == ChamberType.OPEN);
 
         private final String id;
-        private final Predicate<ApplianceType> matcher;
+        private final Predicate<SourceInfo> matcher;
 
-        Equipment(String id, Predicate<ApplianceType> matcher) {
+        Equipment(String id, Predicate<SourceInfo> matcher) {
             this.id = id;
             this.matcher = matcher;
         }
 
-        public boolean matches(ApplianceType type) {
-            return matcher.test(type);
+        public boolean matches(SourceInfo source) {
+            return matcher.test(source);
         }
 
         public String translationKey() {

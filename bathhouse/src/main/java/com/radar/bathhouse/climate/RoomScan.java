@@ -5,7 +5,6 @@ import java.util.EnumMap;
 import java.util.Map;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.world.phys.AABB;
 import org.jetbrains.annotations.Nullable;
 
@@ -32,7 +31,8 @@ public final class RoomScan {
     private final LongSet interior;
     private final long[] interiorArray;
     private final EnumMap<WallMaterial, Integer> faces;
-    private final Map<BlockPos, Set<Direction>> appliances;
+    private final Set<BlockPos> sources;
+    private final int marbleFaces;
     private final Set<BlockPos> openVents;
     private final Set<BlockPos> closedVents;
     private final Set<BlockPos> draftFlues;
@@ -40,14 +40,15 @@ public final class RoomScan {
     @Nullable
     private final AABB bounds;
 
-    RoomScan(boolean enclosed, LongSet interior, EnumMap<WallMaterial, Integer> faces,
-             Map<BlockPos, Set<Direction>> appliances, Set<BlockPos> openVents, Set<BlockPos> closedVents,
+    RoomScan(boolean enclosed, LongSet interior, EnumMap<WallMaterial, Integer> faces, int marbleFaces,
+             Set<BlockPos> sources, Set<BlockPos> openVents, Set<BlockPos> closedVents,
              Set<BlockPos> draftFlues, boolean duplicateGauge, @Nullable AABB bounds) {
         this.enclosed = enclosed;
         this.interior = interior;
         this.interiorArray = interior.toLongArray();
         this.faces = faces;
-        this.appliances = appliances;
+        this.sources = sources;
+        this.marbleFaces = marbleFaces;
         this.openVents = openVents;
         this.closedVents = closedVents;
         this.draftFlues = draftFlues;
@@ -77,9 +78,15 @@ public final class RoomScan {
         return bounds;
     }
 
-    /** Appliance position → faces of that appliance that touch the room. */
-    public Map<BlockPos, Set<Direction>> appliances() {
-        return appliances;
+    /** Heat sources bordering the room: stove cores (fireboxes) and single-block appliances. */
+    public Set<BlockPos> sources() {
+        return sources;
+    }
+
+    /** Share of surfaces that are marble-like (calcite, quartz, white concrete…), 0..1. */
+    public double marbleFraction() {
+        int total = wallFaces();
+        return total == 0 ? 0.0 : (double) marbleFaces / total;
     }
 
     public Set<BlockPos> openVents() {

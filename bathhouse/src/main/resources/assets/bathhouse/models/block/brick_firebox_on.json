@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "top": "bathhouse:block/brick_firebox_top",
+    "front": "bathhouse:block/brick_firebox_front_on",
+    "side": "bathhouse:block/brick_firebox_side"
+  }
+}

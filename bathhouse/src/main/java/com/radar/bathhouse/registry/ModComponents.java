@@ -17,6 +17,11 @@ public final class ModComponents {
             COMPONENTS.registerComponentType("ladle_water",
                     builder -> builder.persistent(Codec.intRange(0, 64)).networkSynchronized(ByteBufCodecs.VAR_INT));
 
+    /** The ladle holds hot water from the stove's tank. */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> LADLE_HOT =
+            COMPONENTS.registerComponentType("ladle_hot",
+                    builder -> builder.persistent(Codec.BOOL).networkSynchronized(ByteBufCodecs.BOOL));
+
     private ModComponents() {
     }
 }

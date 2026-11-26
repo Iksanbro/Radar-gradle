@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/cube_column",
+  "textures": {
+    "side": "bathhouse:block/plunge_wall_wood",
+    "end": "bathhouse:block/plunge_wall_wood_top"
+  }
+}

@@ -69,7 +69,7 @@ public class BathToolItem extends Item {
             return InteractionResultHolder.fail(stack);
         }
 
-        BathSessionTracker.addProgress(serverPlayer, PROGRESS_PER_USE);
+        BathSessionTracker.recordTool(serverPlayer, PROGRESS_PER_USE);
         player.heal(1.0F);
         player.getCooldowns().addCooldown(this, COOLDOWN);
         stack.hurtAndBreak(1, player, LivingEntity.getSlotForHand(hand));

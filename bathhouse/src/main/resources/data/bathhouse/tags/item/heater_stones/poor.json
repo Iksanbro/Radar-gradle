@@ -1,0 +1,20 @@
+{
+  "values": [
+    {
+      "id": "minecraft:cobblestone",
+      "required": false
+    },
+    {
+      "id": "minecraft:mossy_cobblestone",
+      "required": false
+    },
+    {
+      "id": "minecraft:granite",
+      "required": false
+    },
+    {
+      "id": "minecraft:diorite",
+      "required": false
+    }
+  ]
+}

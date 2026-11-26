@@ -1,0 +1,20 @@
+{
+  "values": [
+    {
+      "id": "minecraft:smooth_basalt",
+      "required": false
+    },
+    {
+      "id": "minecraft:basalt",
+      "required": false
+    },
+    {
+      "id": "minecraft:polished_basalt",
+      "required": false
+    },
+    {
+      "id": "minecraft:blackstone",
+      "required": false
+    }
+  ]
+}

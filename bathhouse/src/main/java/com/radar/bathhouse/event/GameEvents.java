@@ -1,8 +1,9 @@
 package com.radar.bathhouse.event;
 
 import com.radar.bathhouse.Bathhouse;
-import com.radar.bathhouse.effect.PurityEffect;
-import com.radar.bathhouse.registry.ModEffects;
+import com.radar.bathhouse.effect.ImmunityEffect;
+import com.radar.bathhouse.plunge.PlungeRegistry;
+import net.minecraft.world.effect.MobEffectInstance;
 import com.radar.bathhouse.session.BathSessionTracker;
 import com.radar.bathhouse.session.PlungeTracker;
 import net.minecraft.server.level.ServerPlayer;
@@ -21,8 +22,11 @@ public final class GameEvents {
 
     @SubscribeEvent
     public static void onEffectApplicable(MobEffectEvent.Applicable event) {
-        if (event.getEntity().hasEffect(ModEffects.PURITY) && PurityEffect.blocks(event.getEffectInstance().getEffect())) {
-            event.setResult(MobEffectEvent.Applicable.Result.DO_NOT_APPLY);
+        for (MobEffectInstance active : event.getEntity().getActiveEffects()) {
+            if (active.getEffect().value() instanceof ImmunityEffect immunity && immunity.blocks(event.getEffectInstance().getEffect())) {
+                event.setResult(MobEffectEvent.Applicable.Result.DO_NOT_APPLY);
+                return;
+            }
         }
     }
 
@@ -31,6 +35,13 @@ public final class GameEvents {
         int now = event.getServer().getTickCount();
         if (now % 200 == 0) {
             BathSessionTracker.cleanup(now);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPlayerTickPre(PlayerTickEvent.Pre event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            PlungeTracker.beforeTick(player);
         }
     }
 
@@ -52,5 +63,6 @@ public final class GameEvents {
     public static void onServerStopped(ServerStoppedEvent event) {
         BathSessionTracker.clear();
         PlungeTracker.clear();
+        PlungeRegistry.clear();
     }
 }

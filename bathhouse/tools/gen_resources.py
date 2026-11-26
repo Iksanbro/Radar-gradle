@@ -11,8 +11,11 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src', 'ma
 NS = 'bathhouse'
 FACINGS = {'north': 0, 'east': 90, 'south': 180, 'west': 270}
 
-APPLIANCES = ['inner_heater', 'outer_heater', 'brick_stove', 'iron_stove', 'electric_heater', 'steam_generator', 'warm_lounger']
-PLUNGES = {'cold_plunge': 'water', 'hot_plunge': 'water', 'sawdust_plunge': 'sawdust'}
+FIREBOXES = ['steel_firebox', 'cast_iron_firebox', 'brick_firebox', 'heating_element']
+APPLIANCES = ['steam_generator', 'warm_lounger']
+STOVE_PARTS = ['ash_pit', 'closed_heater', 'open_heater', 'boiler', 'water_tank', 'damper', 'fuel_tunnel', 'stove_cladding']
+PLUNGE_PARTS = ['plunge_wall_wood', 'plunge_wall_composite', 'plunge_wall_tile', 'plunge_bench', 'plunge_stove',
+                'plunge_chiller', 'plunge_thermometer', 'sawdust']
 
 
 def write(path, obj):
@@ -30,26 +33,90 @@ def variant(model, y):
     return v
 
 
+def orientable(name, top, front, side):
+    return {'parent': 'minecraft:block/orientable', 'textures': {'top': top, 'front': front, 'side': side}}
+
+
+def tex(name):
+    return f'{NS}:block/{name}'
+
+
+def facing_states(name, prop, models, rotate=0):
+    """Blockstate over facing x boolean property; models = {false_model, true_model}."""
+    variants = {}
+    for facing, y in FACINGS.items():
+        for value in ('false', 'true'):
+            variants[f'facing={facing},{prop}={value}'] = variant(models[value], (y + rotate) % 360)
+    return {'variants': variants}
+
+
 def assets():
     a = f'assets/{NS}'
-    # appliances: orientable cubes with a lit front
-    for name in APPLIANCES:
-        variants = {}
-        for facing, y in FACINGS.items():
-            for lit in ('false', 'true'):
-                model = f'{NS}:block/{name}' + ('_on' if lit == 'true' else '')
-                variants[f'facing={facing},lit={lit}'] = variant(model, y)
-        write(f'{a}/blockstates/{name}.json', {'variants': variants})
+    bs = f'{a}/blockstates'
+    bm = f'{a}/models/block'
+    im = f'{a}/models/item'
+
+    # fireboxes and single appliances: orientable cubes with a lit front
+    for name in FIREBOXES + APPLIANCES:
         for suffix in ('', '_on'):
-            write(f'{a}/models/block/{name}{suffix}.json', {
-                'parent': 'minecraft:block/orientable',
-                'textures': {
-                    'top': f'{NS}:block/{name}_top',
-                    'front': f'{NS}:block/{name}_front{suffix}',
-                    'side': f'{NS}:block/{name}_side',
+            write(f'{bm}/{name}{suffix}.json', orientable(name, tex(f'{name}_top'), tex(f'{name}_front{suffix}'), tex(f'{name}_side')))
+        write(f'{bs}/{name}.json', facing_states(name, 'lit', {'false': f'{NS}:block/{name}', 'true': f'{NS}:block/{name}_on'}))
+        write(f'{im}/{name}.json', {'parent': f'{NS}:block/{name}'})
+
+    # stove parts (all have facing + active)
+    write(f'{bm}/ash_pit.json', orientable('ash_pit', tex('ash_pit_top'), tex('ash_pit_front'), tex('ash_pit_side')))
+    write(f'{bm}/ash_pit_full.json', orientable('ash_pit', tex('ash_pit_top'), tex('ash_pit_front_full'), tex('ash_pit_side')))
+    write(f'{bs}/ash_pit.json', facing_states('ash_pit', 'active', {'false': f'{NS}:block/ash_pit', 'true': f'{NS}:block/ash_pit_full'}))
+
+    write(f'{bm}/closed_heater.json', orientable('closed_heater', tex('closed_heater_top'), tex('closed_heater_front'), tex('closed_heater_side')))
+    write(f'{bm}/closed_heater_filled.json', orientable('closed_heater', tex('closed_heater_top'), tex('closed_heater_front_filled'), tex('closed_heater_side')))
+    write(f'{bs}/closed_heater.json', facing_states('closed_heater', 'active',
+                                                     {'false': f'{NS}:block/closed_heater', 'true': f'{NS}:block/closed_heater_filled'}))
+
+    write(f'{bm}/open_heater.json', {'parent': 'minecraft:block/cube_column',
+                                     'textures': {'side': tex('open_heater_side_empty'), 'end': tex('open_heater_top_empty')}})
+    write(f'{bm}/open_heater_filled.json', {'parent': 'minecraft:block/cube_column',
+                                            'textures': {'side': tex('open_heater_side'), 'end': tex('open_heater_top')}})
+    write(f'{bs}/open_heater.json', facing_states('open_heater', 'active',
+                                                   {'false': f'{NS}:block/open_heater', 'true': f'{NS}:block/open_heater_filled'}))
+
+    for name in ('boiler', 'water_tank'):
+        write(f'{bm}/{name}.json', orientable(name, tex(f'{name}_top'), tex(f'{name}_front'), tex(f'{name}_side')))
+        write(f'{bs}/{name}.json', facing_states(name, 'active', {'false': f'{NS}:block/{name}', 'true': f'{NS}:block/{name}'}))
+
+    write(f'{bm}/fuel_tunnel.json', orientable('fuel_tunnel', tex('fuel_tunnel_side'), tex('fuel_tunnel_front'), tex('fuel_tunnel_side')))
+    write(f'{bs}/fuel_tunnel.json', facing_states('fuel_tunnel', 'active', {'false': f'{NS}:block/fuel_tunnel', 'true': f'{NS}:block/fuel_tunnel'}))
+
+    write(f'{bm}/stove_cladding.json', {'parent': 'minecraft:block/cube_all', 'textures': {'all': tex('stove_cladding')}})
+    write(f'{bs}/stove_cladding.json', facing_states('stove_cladding', 'active',
+                                                      {'false': f'{NS}:block/stove_cladding', 'true': f'{NS}:block/stove_cladding'}))
+
+    def pillar(texture):
+        return {
+            'parent': 'minecraft:block/block',
+            'textures': {'particle': texture, 'side': texture, 'top': tex('chimney_top')},
+            'elements': [{
+                'from': [4, 0, 4], 'to': [12, 16, 12],
+                'faces': {
+                    'north': {'texture': '#side'}, 'south': {'texture': '#side'},
+                    'east': {'texture': '#side'}, 'west': {'texture': '#side'},
+                    # no bottom face: stacked flues would z-fight at the joint
+                    'up': {'texture': '#top', 'cullface': 'up'},
                 },
-            })
-        write(f'{a}/models/item/{name}.json', {'parent': f'{NS}:block/{name}'})
+            }],
+        }
+    write(f'{bm}/damper.json', pillar(tex('damper')))
+    write(f'{bm}/damper_open.json', pillar(tex('damper_open')))
+    write(f'{bs}/damper.json', facing_states('damper', 'active', {'false': f'{NS}:block/damper', 'true': f'{NS}:block/damper_open'}))
+
+    for name in STOVE_PARTS:
+        model = {'closed_heater': 'closed_heater_filled', 'open_heater': 'open_heater_filled', 'damper': 'damper_open'}.get(name, name)
+        write(f'{im}/{name}.json', {'parent': f'{NS}:block/{model}'})
+
+    # chimney
+    write(f'{bs}/chimney.json', {'variants': {'': {'model': f'{NS}:block/chimney'}}})
+    write(f'{bm}/chimney.json', pillar(tex('chimney')))
+    write(f'{im}/chimney.json', {'parent': f'{NS}:block/chimney'})
 
     # thermo-hygrometer: thin plate on the wall
     variants = {}
@@ -57,16 +124,12 @@ def assets():
         for active in ('false', 'true'):
             model = f'{NS}:block/bath_gauge' + ('_active' if active == 'true' else '')
             variants[f'active={active},facing={facing}'] = variant(model, y)
-    write(f'{a}/blockstates/bath_gauge.json', {'variants': variants})
+    write(f'{bs}/bath_gauge.json', {'variants': variants})
     for suffix in ('', '_active'):
-        write(f'{a}/models/block/bath_gauge{suffix}.json', {
+        write(f'{bm}/bath_gauge{suffix}.json', {
             'parent': 'minecraft:block/block',
             'render_type': 'minecraft:cutout',
-            'textures': {
-                'particle': f'{NS}:block/bath_gauge_side',
-                'front': f'{NS}:block/bath_gauge_front{suffix}',
-                'side': f'{NS}:block/bath_gauge_side',
-            },
+            'textures': {'particle': tex('bath_gauge_side'), 'front': tex(f'bath_gauge_front{suffix}'), 'side': tex('bath_gauge_side')},
             'elements': [{
                 'from': [3, 3, 14], 'to': [13, 13, 16],
                 'faces': {
@@ -79,112 +142,71 @@ def assets():
                 },
             }],
         })
-    write(f'{a}/models/item/bath_gauge.json', {'parent': 'minecraft:item/generated',
-                                              'textures': {'layer0': f'{NS}:block/bath_gauge_front'}})
-
-    # chimney: brick pillar
-    write(f'{a}/blockstates/chimney.json', {'variants': {'': {'model': f'{NS}:block/chimney'}}})
-    write(f'{a}/models/block/chimney.json', {
-        'parent': 'minecraft:block/block',
-        'textures': {'particle': f'{NS}:block/chimney', 'side': f'{NS}:block/chimney', 'top': f'{NS}:block/chimney_top'},
-        'elements': [{
-            'from': [4, 0, 4], 'to': [12, 16, 12],
-            'faces': {
-                'north': {'texture': '#side'}, 'south': {'texture': '#side'},
-                'east': {'texture': '#side'}, 'west': {'texture': '#side'},
-                # no bottom face: stacked flues would z-fight at the joint
-                'up': {'texture': '#top', 'cullface': 'up'},
-            },
-        }],
-    })
-    write(f'{a}/models/item/chimney.json', {'parent': f'{NS}:block/chimney'})
+    write(f'{im}/bath_gauge.json', {'parent': 'minecraft:item/generated', 'textures': {'layer0': tex('bath_gauge_front')}})
 
     # smoke window
-    write(f'{a}/blockstates/smoke_vent.json', {'variants': {
+    write(f'{bs}/smoke_vent.json', {'variants': {
         'open=false': {'model': f'{NS}:block/smoke_vent'},
         'open=true': {'model': f'{NS}:block/smoke_vent_open'},
     }})
     for suffix in ('', '_open'):
-        write(f'{a}/models/block/smoke_vent{suffix}.json', {
-            'parent': 'minecraft:block/cube_all', 'textures': {'all': f'{NS}:block/smoke_vent{suffix}'}})
-    write(f'{a}/models/item/smoke_vent.json', {'parent': f'{NS}:block/smoke_vent'})
+        write(f'{bm}/smoke_vent{suffix}.json', {'parent': 'minecraft:block/cube_all', 'textures': {'all': tex(f'smoke_vent{suffix}')}})
+    write(f'{im}/smoke_vent.json', {'parent': f'{NS}:block/smoke_vent'})
 
-    # plunge tubs: one template per content level
-    def wall(frm, to, outer, inner_dir):
-        faces = {}
-        for d in ('north', 'south', 'east', 'west'):
-            if d == outer:
-                faces[d] = {'texture': '#front' if outer == 'north' else '#side', 'cullface': d}
-            elif d == inner_dir:
-                faces[d] = {'texture': '#inner'}
-            else:
-                faces[d] = {'texture': '#side'}
-        faces['up'] = {'texture': '#rim'}
-        faces['down'] = {'texture': '#bottom', 'cullface': 'down'}
-        return {'from': frm, 'to': to, 'faces': faces}
+    # plunge parts
+    write(f'{bm}/plunge_wall_wood.json', {'parent': 'minecraft:block/cube_column',
+                                          'textures': {'side': tex('plunge_wall_wood'), 'end': tex('plunge_wall_wood_top')}})
+    write(f'{bm}/plunge_wall_composite.json', {'parent': 'minecraft:block/cube_column',
+                                               'textures': {'side': tex('plunge_wall_composite'), 'end': tex('plunge_wall_composite_top')}})
+    write(f'{bm}/plunge_wall_tile.json', {'parent': 'minecraft:block/cube_all', 'textures': {'all': tex('plunge_wall_tile')}})
+    for name in ('plunge_wall_wood', 'plunge_wall_composite', 'plunge_wall_tile'):
+        write(f'{bs}/{name}.json', {'variants': {'': {'model': f'{NS}:block/{name}'}}})
 
-    walls = [
-        wall([0, 0, 0], [16, 16, 1], 'north', 'south'),
-        wall([0, 0, 15], [16, 16, 16], 'south', 'north'),
-        wall([0, 0, 1], [1, 16, 15], 'west', 'east'),
-        wall([15, 0, 1], [16, 16, 15], 'east', 'west'),
-        {'from': [1, 0, 1], 'to': [15, 3, 15], 'faces': {
-            'up': {'texture': '#inner'}, 'down': {'texture': '#bottom', 'cullface': 'down'}}},
-        # inner bench
-        {'from': [1, 3, 11], 'to': [15, 7, 15], 'faces': {
-            'up': {'texture': '#rim'}, 'north': {'texture': '#inner'}}},
-    ]
-    heights = {1: 6, 2: 11, 3: 15}
-    for level in range(4):
-        elements = list(walls)
-        if level:
-            elements.append({'from': [1, 3, 1], 'to': [15, heights[level], 15], 'faces': {
-                'up': {'texture': '#content', 'tintindex': 0}}})
-        write(f'{a}/models/block/plunge_template_{level}.json', {
-            'parent': 'minecraft:block/block',
-            'ambientocclusion': False,
-            'textures': {'particle': '#side'},
-            'elements': elements,
-        })
+    write(f'{bm}/plunge_bench.json', {'parent': 'minecraft:block/slab',
+                                      'textures': {'bottom': tex('plunge_bench'), 'top': tex('plunge_bench'), 'side': tex('plunge_bench')}})
+    write(f'{bs}/plunge_bench.json', {'variants': {
+        'waterlogged=false': {'model': f'{NS}:block/plunge_bench'},
+        'waterlogged=true': {'model': f'{NS}:block/plunge_bench'},
+    }})
 
-    for name, medium in PLUNGES.items():
-        side = f'{NS}:block/sawdust_plunge_side' if name == 'sawdust_plunge' else f'{NS}:block/plunge_side'
-        content = 'minecraft:block/water_still' if medium == 'water' else f'{NS}:block/sawdust'
-        heated = name != 'cold_plunge'
-        variants = {}
-        for lit in (('false', 'true') if heated else ('false',)):
-            for level in range(4):
-                model = f'{NS}:block/{name}_{level}' + ('_on' if lit == 'true' else '')
-                textures = {
-                    'side': side,
-                    'front': (f'{NS}:block/{name}_front' + ('_on' if lit == 'true' else '')) if heated else side,
-                    'inner': f'{NS}:block/plunge_inner',
-                    'rim': f'{NS}:block/plunge_rim',
-                    'bottom': f'{NS}:block/plunge_bottom',
-                    'content': content,
-                }
-                write(f'{a}/models/block/{name}_{level}' + ('_on' if lit == 'true' else '') + '.json', {
-                    'parent': f'{NS}:block/plunge_template_{level}', 'textures': textures})
-        for facing, y in FACINGS.items():
-            for level in range(4):
-                for lit in ('false', 'true'):
-                    for warm in ('false', 'true'):
-                        on = heated and lit == 'true'
-                        model = f'{NS}:block/{name}_{level}' + ('_on' if on else '')
-                        variants[f'facing={facing},level={level},lit={lit},warm={warm}'] = variant(model, y)
-        write(f'{a}/blockstates/{name}.json', {'variants': variants})
-        write(f'{a}/models/item/{name}.json', {'parent': f'{NS}:block/{name}_2'})
+    for suffix in ('', '_on'):
+        write(f'{bm}/plunge_stove{suffix}.json', orientable('plunge_stove', tex('plunge_stove_top'),
+                                                           tex(f'plunge_stove_front{suffix}'), tex('plunge_stove_side')))
+        write(f'{bm}/plunge_chiller{suffix}.json', {'parent': 'minecraft:block/cube_column',
+                                                    'textures': {'side': tex(f'plunge_chiller_front{suffix}'), 'end': tex('plunge_chiller_top')}})
+    write(f'{bs}/plunge_stove.json', facing_states('plunge_stove', 'lit',
+                                                    {'false': f'{NS}:block/plunge_stove', 'true': f'{NS}:block/plunge_stove_on'}))
+    write(f'{bs}/plunge_chiller.json', {'variants': {
+        'powered=false': {'model': f'{NS}:block/plunge_chiller'},
+        'powered=true': {'model': f'{NS}:block/plunge_chiller_on'},
+    }})
+
+    for suffix in ('', '_active'):
+        write(f'{bm}/plunge_thermometer{suffix}.json', orientable('plunge_thermometer', tex('plunge_wall_wood_top'),
+                                                                  tex(f'plunge_thermometer_front{suffix}'), tex('plunge_wall_wood')))
+    # FACING points into the basin; the dial faces out.
+    write(f'{bs}/plunge_thermometer.json', facing_states('plunge_thermometer', 'active',
+                                                          {'false': f'{NS}:block/plunge_thermometer',
+                                                           'true': f'{NS}:block/plunge_thermometer_active'}, rotate=180))
+
+    write(f'{bm}/sawdust.json', {'parent': 'minecraft:block/cube_all', 'textures': {'all': tex('sawdust')}})
+    write(f'{bs}/sawdust.json', {'variants': {'': {'model': f'{NS}:block/sawdust'}}})
+
+    for name in PLUNGE_PARTS:
+        write(f'{im}/{name}.json', {'parent': f'{NS}:block/{name}'})
 
     # items
-    write(f'{a}/models/item/ladle.json', {
+    write(f'{im}/ladle.json', {
         'parent': 'minecraft:item/handheld',
         'textures': {'layer0': f'{NS}:item/ladle'},
-        'overrides': [{'predicate': {f'{NS}:filled': 1}, 'model': f'{NS}:item/ladle_filled'}],
+        'overrides': [
+            {'predicate': {f'{NS}:filled': 0.5}, 'model': f'{NS}:item/ladle_filled'},
+            {'predicate': {f'{NS}:filled': 1.0}, 'model': f'{NS}:item/ladle_hot'},
+        ],
     })
-    write(f'{a}/models/item/ladle_filled.json', {'parent': 'minecraft:item/handheld', 'textures': {'layer0': f'{NS}:item/ladle_filled'}})
-    write(f'{a}/models/item/bath_broom.json', {'parent': 'minecraft:item/handheld', 'textures': {'layer0': f'{NS}:item/bath_broom'}})
-    write(f'{a}/models/item/scrub_mitt.json', {'parent': 'minecraft:item/generated', 'textures': {'layer0': f'{NS}:item/scrub_mitt'}})
-    write(f'{a}/models/item/sawdust.json', {'parent': 'minecraft:item/generated', 'textures': {'layer0': f'{NS}:item/sawdust'}})
+    for name in ('ladle_filled', 'ladle_hot', 'bath_broom'):
+        write(f'{im}/{name}.json', {'parent': 'minecraft:item/handheld', 'textures': {'layer0': f'{NS}:item/{name}'}})
+    write(f'{im}/scrub_mitt.json', {'parent': 'minecraft:item/generated', 'textures': {'layer0': f'{NS}:item/scrub_mitt'}})
 
 
 def item(i):
@@ -208,7 +230,7 @@ def shapeless(name, ingredients, count=1):
 
 
 def data():
-    blocks = APPLIANCES + ['bath_gauge', 'chimney', 'smoke_vent'] + list(PLUNGES)
+    blocks = FIREBOXES + STOVE_PARTS + ['chimney'] + APPLIANCES + ['bath_gauge', 'smoke_vent'] + PLUNGE_PARTS
     for name in blocks:
         write(f'data/{NS}/loot_table/blocks/{name}.json', {
             'type': 'minecraft:block',
@@ -220,10 +242,11 @@ def data():
             'random_sequence': f'{NS}:blocks/{name}',
         })
 
-    write('data/minecraft/tags/block/mineable/pickaxe.json',
-          {'values': [f'{NS}:{n}' for n in APPLIANCES + ['chimney']]})
-    write('data/minecraft/tags/block/mineable/axe.json',
-          {'values': [f'{NS}:{n}' for n in ['bath_gauge', 'smoke_vent'] + list(PLUNGES)]})
+    write('data/minecraft/tags/block/mineable/pickaxe.json', {'values': [f'{NS}:{n}' for n in
+          FIREBOXES + STOVE_PARTS + ['chimney'] + APPLIANCES + ['plunge_stove', 'plunge_chiller', 'plunge_wall_tile']]})
+    write('data/minecraft/tags/block/mineable/axe.json', {'values': [f'{NS}:{n}' for n in
+          ['bath_gauge', 'smoke_vent', 'plunge_wall_wood', 'plunge_wall_composite', 'plunge_bench', 'plunge_thermometer']]})
+    write('data/minecraft/tags/block/mineable/shovel.json', {'values': [f'{NS}:sawdust']})
 
     def opt(values):
         return [{'id': v, 'required': False} for v in values]
@@ -257,40 +280,73 @@ def data():
                   'cyan', 'purple', 'blue', 'brown', 'green', 'red', 'black']:
         stone += [f'minecraft:{color}_concrete', f'minecraft:{color}_glazed_terracotta']
     write(f'data/{NS}/tags/block/bath_stone.json', {'values': opt(sorted(set(stone)))})
+    write(f'data/{NS}/tags/block/bath_marble.json', {'values': opt([
+        'minecraft:calcite', 'minecraft:quartz_block', 'minecraft:smooth_quartz', 'minecraft:quartz_bricks',
+        'minecraft:quartz_pillar', 'minecraft:chiseled_quartz_block', 'minecraft:quartz_slab', 'minecraft:quartz_stairs',
+        'minecraft:smooth_quartz_slab', 'minecraft:smooth_quartz_stairs', 'minecraft:diorite', 'minecraft:polished_diorite',
+        'minecraft:polished_diorite_slab', 'minecraft:polished_diorite_stairs', 'minecraft:white_concrete',
+        'minecraft:white_glazed_terracotta', 'minecraft:white_terracotta'])})
     write(f'data/{NS}/tags/block/bath_glass.json', {'values': opt([
         '#c:glass_blocks', '#c:glass_panes', 'minecraft:glass', 'minecraft:glass_pane', 'minecraft:tinted_glass'])})
     write(f'data/{NS}/tags/block/bath_insulation.json', {'values': opt(['#minecraft:wool', '#minecraft:wool_carpets'])})
+
+    # heater stones (item tags)
+    write(f'data/{NS}/tags/item/heater_stones/excellent.json', {'values': opt([
+        'minecraft:smooth_basalt', 'minecraft:basalt', 'minecraft:polished_basalt', 'minecraft:blackstone'])})
+    write(f'data/{NS}/tags/item/heater_stones/good.json', {'values': opt([
+        'minecraft:deepslate', 'minecraft:cobbled_deepslate', 'minecraft:tuff', 'minecraft:andesite',
+        'minecraft:polished_andesite', 'minecraft:stone'])})
+    write(f'data/{NS}/tags/item/heater_stones/poor.json', {'values': opt([
+        'minecraft:cobblestone', 'minecraft:mossy_cobblestone', 'minecraft:granite', 'minecraft:diorite'])})
 
     write(f'data/{NS}/damage_type/overheat.json', {
         'exhaustion': 0.1, 'message_id': f'{NS}.overheat', 'scaling': 'never', 'effects': 'burning'})
     for tag in ('is_fire', 'bypasses_armor', 'no_knockback'):
         write(f'data/minecraft/tags/damage_type/{tag}.json', {'values': [f'{NS}:overheat']})
 
-    # recipes
+    # recipes: gauge and appliances
     shaped('bath_gauge', ['PGP', 'CRC'], {'P': '#minecraft:planks', 'G': 'minecraft:glass_pane',
                                           'C': 'minecraft:copper_ingot', 'R': 'minecraft:redstone'})
-    shaped('inner_heater', ['SSS', 'I I', 'IFI'], {'S': 'minecraft:cobblestone', 'I': 'minecraft:iron_ingot', 'F': 'minecraft:furnace'})
-    shaped('outer_heater', ['SSS', 'BFB', 'BBB'], {'S': 'minecraft:cobblestone', 'B': 'minecraft:bricks', 'F': 'minecraft:furnace'})
-    shaped('brick_stove', ['BBB', 'BFB', 'BSB'], {'S': 'minecraft:cobblestone', 'B': 'minecraft:bricks', 'F': 'minecraft:furnace'})
-    shaped('iron_stove', [' I ', 'IFI', 'III'], {'I': 'minecraft:iron_ingot', 'F': 'minecraft:furnace'})
-    shaped('electric_heater', ['SSS', 'IRI', 'IRI'], {'S': 'minecraft:cobblestone', 'I': 'minecraft:iron_ingot', 'R': 'minecraft:redstone'})
     shaped('steam_generator', ['IGI', 'ICI', 'IRI'], {'I': 'minecraft:iron_ingot', 'G': 'minecraft:glass',
                                                       'C': 'minecraft:cauldron', 'R': 'minecraft:redstone'})
     shaped('warm_lounger', ['QQQ', 'CRC'], {'Q': 'minecraft:calcite', 'C': 'minecraft:copper_ingot', 'R': 'minecraft:redstone'})
-    shaped('chimney', ['B B', 'B B', 'B B'], {'B': 'minecraft:brick'}, count=4)
-    shaped('cold_plunge', ['I I', 'P P', 'PPP'], {'I': 'minecraft:iron_ingot', 'P': '#minecraft:planks'})
     shapeless('smoke_vent', ['#minecraft:wooden_trapdoors', 'minecraft:iron_bars'])
+    # stove
+    shaped('steel_firebox', [' I ', 'IFI', 'III'], {'I': 'minecraft:iron_ingot', 'F': 'minecraft:furnace'})
+    shaped('cast_iron_firebox', ['ICI', 'IFI', 'III'], {'I': 'minecraft:iron_ingot', 'C': '#minecraft:coals', 'F': 'minecraft:furnace'})
+    shaped('brick_firebox', ['BBB', 'BFB', 'BBB'], {'B': 'minecraft:bricks', 'F': 'minecraft:furnace'})
+    shaped('heating_element', ['III', 'RCR', 'III'], {'I': 'minecraft:iron_ingot', 'R': 'minecraft:redstone', 'C': 'minecraft:copper_ingot'})
+    shaped('ash_pit', ['BXB', 'B B', 'BBB'], {'B': 'minecraft:brick', 'X': 'minecraft:iron_bars'})
+    shaped('closed_heater', ['BIB', 'I I', 'BIB'], {'B': 'minecraft:bricks', 'I': 'minecraft:iron_ingot'})
+    shaped('open_heater', ['X X', 'X X', 'XXX'], {'X': 'minecraft:iron_bars'})
+    shaped('boiler', ['I I', 'ICI', 'III'], {'I': 'minecraft:copper_ingot', 'C': 'minecraft:cauldron'})
+    shaped('water_tank', ['ICI', 'I I', 'III'], {'I': 'minecraft:iron_ingot', 'C': 'minecraft:copper_ingot'})
+    shaped('damper', ['BIB'], {'B': 'minecraft:brick', 'I': 'minecraft:iron_ingot'})
+    shaped('fuel_tunnel', ['B B', 'B B', 'B B'], {'B': 'minecraft:bricks'})
+    shaped('stove_cladding', ['SC', 'CS'], {'S': 'minecraft:smooth_stone', 'C': 'minecraft:clay_ball'}, count=4)
+    shaped('chimney', ['B B', 'B B', 'B B'], {'B': 'minecraft:brick'}, count=4)
+    # plunge
+    shaped('plunge_wall_wood', ['PIP', 'PIP'], {'P': '#minecraft:planks', 'I': 'minecraft:iron_ingot'}, count=4)
+    shaped('plunge_wall_composite', ['PSP', 'PSP'], {'P': '#minecraft:planks', 'S': 'minecraft:slime_ball'}, count=4)
+    shaped('plunge_wall_tile', ['TT', 'TT'], {'T': '#minecraft:terracotta'}, count=4)
+    shaped('plunge_bench', ['PPP', 'S S'], {'P': '#minecraft:planks', 'S': 'minecraft:stick'}, count=2)
+    shaped('plunge_stove', [' I ', 'IFI', ' I '], {'I': 'minecraft:iron_ingot', 'F': 'minecraft:furnace'})
+    shaped('plunge_chiller', ['IRI', 'IPI', 'III'], {'I': 'minecraft:iron_ingot', 'R': 'minecraft:redstone', 'P': 'minecraft:packed_ice'})
+    shapeless('plunge_thermometer', [f'{NS}:plunge_wall_wood', 'minecraft:glass_pane', 'minecraft:redstone'])
+    shapeless('sawdust', ['#minecraft:logs'], count=8)
+    # tools
     shapeless('ladle', ['minecraft:bowl', 'minecraft:stick'])
     shapeless('bath_broom', ['#minecraft:leaves', '#minecraft:leaves', '#minecraft:leaves', 'minecraft:stick', 'minecraft:string'])
     shapeless('scrub_mitt', ['#minecraft:wool', 'minecraft:leather', 'minecraft:string'])
-    shapeless('sawdust', ['#minecraft:logs'], count=8)
-    shapeless('hot_plunge', [f'{NS}:cold_plunge', 'minecraft:furnace', 'minecraft:iron_ingot'])
-    shapeless('sawdust_plunge', [f'{NS}:cold_plunge', 'minecraft:furnace', f'{NS}:sawdust'])
 
     write('pack.mcmeta', {'pack': {'description': 'Bathhouse resources', 'pack_format': 34}})
 
 
 if __name__ == '__main__':
+    import shutil
+    for d in ('assets/bathhouse/blockstates', 'assets/bathhouse/models', 'data/bathhouse/recipe',
+              'data/bathhouse/loot_table', 'data/bathhouse/tags', 'data/minecraft'):
+        shutil.rmtree(os.path.join(ROOT, d), ignore_errors=True)
     assets()
     data()
     print('resources written to', os.path.normpath(ROOT))

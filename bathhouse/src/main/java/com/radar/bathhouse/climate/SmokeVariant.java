@@ -13,7 +13,7 @@ import net.minecraft.ChatFormatting;
  * </ul>
  */
 public enum SmokeVariant {
-    WHITE("white", 100.0, ChatFormatting.WHITE),
+    WHITE("white", 20.0, ChatFormatting.WHITE),
     GRAY("gray", 35.0, ChatFormatting.GRAY),
     BLACK("black", 10.0, ChatFormatting.DARK_GRAY);
 

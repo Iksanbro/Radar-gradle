@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/cube_column",
+  "textures": {
+    "side": "bathhouse:block/open_heater_side_empty",
+    "end": "bathhouse:block/open_heater_top_empty"
+  }
+}

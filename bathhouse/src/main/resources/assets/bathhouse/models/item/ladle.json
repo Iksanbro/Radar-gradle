@@ -6,9 +6,15 @@
   "overrides": [
     {
       "predicate": {
-        "bathhouse:filled": 1
+        "bathhouse:filled": 0.5
       },
       "model": "bathhouse:item/ladle_filled"
+    },
+    {
+      "predicate": {
+        "bathhouse:filled": 1.0
+      },
+      "model": "bathhouse:item/ladle_hot"
     }
   ]
 }

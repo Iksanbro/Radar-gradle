@@ -3,22 +3,26 @@ package com.radar.bathhouse.block;
 import com.radar.bathhouse.BathConfig;
 import com.radar.bathhouse.climate.BathAssessment;
 import com.radar.bathhouse.climate.BathClassifier;
+import com.radar.bathhouse.climate.BathQuality;
 import com.radar.bathhouse.climate.BathType;
 import com.radar.bathhouse.climate.Climate;
+import com.radar.bathhouse.climate.HeatSource;
 import com.radar.bathhouse.climate.RoomScan;
 import com.radar.bathhouse.climate.RoomScanner;
 import com.radar.bathhouse.climate.SmokeVariant;
+import com.radar.bathhouse.climate.SourceInfo;
 import com.radar.bathhouse.climate.WallMaterial;
 import com.radar.bathhouse.registry.ModBlockEntities;
 import com.radar.bathhouse.session.BathRewards;
 import com.radar.bathhouse.session.BathSessionTracker;
-import java.util.EnumSet;
-import java.util.HashSet;
+import com.radar.bathhouse.stove.ChamberType;
+import com.radar.bathhouse.stove.StoneQuality;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
@@ -58,8 +62,7 @@ public class BathGaugeBlockEntity extends BlockEntity {
     @Nullable
     private RoomScan scan;
     private boolean leaky = true;
-    private final Set<BlockPos> smokyAppliances = new HashSet<>();
-    private final EnumSet<ApplianceType> present = EnumSet.noneOf(ApplianceType.class);
+    private final Map<BlockPos, SourceInfo> sources = new LinkedHashMap<>();
     private SmokeVariant variant = SmokeVariant.WHITE;
     private BathAssessment assessment = BathAssessment.NONE;
     private int seconds;
@@ -106,27 +109,20 @@ public class BathGaugeBlockEntity extends BlockEntity {
     }
 
     private void refreshAppliances() {
-        present.clear();
-        smokyAppliances.clear();
+        sources.clear();
         if (scan == null || level == null) {
             variant = SmokeVariant.WHITE;
             return;
         }
-        for (Map.Entry<BlockPos, Set<Direction>> entry : scan.appliances().entrySet()) {
-            BlockPos pos = entry.getKey();
-            BlockState state = level.getBlockState(pos);
-            if (!(state.getBlock() instanceof ApplianceBlock block)) {
-                continue;
-            }
-            ApplianceType type = block.type();
-            present.add(type);
-            boolean hasChimney = ChimneyBlock.isChimney(level.getBlockState(pos.above()));
-            boolean fireboxInside = !type.outerFirebox() || entry.getValue().contains(state.getValue(ApplianceBlock.FACING));
-            if (type.isFueled() && !hasChimney && fireboxInside) {
-                smokyAppliances.add(pos);
+        boolean smoky = false;
+        for (BlockPos pos : scan.sources()) {
+            if (level.getBlockEntity(pos) instanceof HeatSource source) {
+                SourceInfo info = source.info();
+                sources.put(pos, info);
+                smoky |= info.smoky();
             }
         }
-        if (smokyAppliances.isEmpty()) {
+        if (!smoky) {
             variant = SmokeVariant.WHITE;
         } else {
             variant = scan.draftFlues().isEmpty() ? SmokeVariant.BLACK : SmokeVariant.GRAY;
@@ -155,10 +151,10 @@ public class BathGaugeBlockEntity extends BlockEntity {
         double smokeIn = 0.0;
         double drying = 0.0;
         if (scan != null && !scan.duplicateGauge()) { // only the room's main gauge runs the appliances
-            for (BlockPos pos : scan.appliances().keySet()) {
-                if (level.isLoaded(pos) && level.getBlockEntity(pos) instanceof ApplianceBlockEntity appliance) {
-                    appliance.link(worldPosition, temperature, level.getGameTime(), smokyAppliances.contains(pos));
-                    ApplianceBlockEntity.Output out = appliance.drainOutput(worldPosition);
+            for (BlockPos pos : scan.sources()) {
+                if (level.isLoaded(pos) && level.getBlockEntity(pos) instanceof HeatSource source) {
+                    source.link(worldPosition, temperature, level.getGameTime());
+                    HeatSource.Output out = source.drainOutput(worldPosition);
                     heat += out.heat();
                     steam += out.vapour();
                     smokeIn += out.smoke();
@@ -186,7 +182,15 @@ public class BathGaugeBlockEntity extends BlockEntity {
     }
 
     public void reassess() {
-        assessment = BathClassifier.assess(scan, leaky, temperature(), humidity(), smoke, variant, present,
+        if (level != null && scan != null) {
+            // stones, fuel and power change between scans
+            for (BlockPos pos : List.copyOf(sources.keySet())) {
+                if (level.getBlockEntity(pos) instanceof HeatSource source) {
+                    sources.put(pos, source.info());
+                }
+            }
+        }
+        assessment = BathClassifier.assess(scan, leaky, temperature(), humidity(), smoke, variant, sources.values(),
                 BathConfig.MIN_ROOM_VOLUME.get(), BathConfig.MAX_ROOM_VOLUME.get());
     }
 
@@ -292,28 +296,11 @@ public class BathGaugeBlockEntity extends BlockEntity {
                         BathClassifier.fmt(level == null ? 0 : Climate.ambientTemperature(level, worldPosition)))
                 .withStyle(ChatFormatting.WHITE));
 
-        if (scan.appliances().isEmpty()) {
+        if (sources.isEmpty()) {
             player.sendSystemMessage(Component.translatable("bathhouse.report.no_appliances").withStyle(ChatFormatting.YELLOW));
-        } else if (level != null) {
-            for (BlockPos pos : scan.appliances().keySet()) {
-                if (level.getBlockEntity(pos) instanceof ApplianceBlockEntity appliance) {
-                    MutableComponent line = Component.literal(" • ").withStyle(ChatFormatting.DARK_GRAY)
-                            .append(Component.translatable(appliance.type().translationKey()).withStyle(ChatFormatting.GOLD));
-                    double core = appliance.coreTemperature();
-                    line.append(Component.literal(" — ").withStyle(ChatFormatting.DARK_GRAY));
-                    line.append(Component.translatable("bathhouse.appliance.core", Double.isNaN(core) ? "?" : BathClassifier.fmt(core))
-                            .withStyle(ChatFormatting.GRAY));
-                    if (appliance.running()) {
-                        line.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
-                        line.append(Component.translatable("bathhouse.report.running").withStyle(ChatFormatting.GREEN));
-                    }
-                    if (smokyAppliances.contains(pos)) {
-                        line.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
-                        line.append(Component.translatable("bathhouse.report.smoky").withStyle(ChatFormatting.DARK_GRAY));
-                    }
-                    player.sendSystemMessage(line);
-                }
-            }
+        }
+        for (Map.Entry<BlockPos, SourceInfo> entry : sources.entrySet()) {
+            player.sendSystemMessage(Component.literal(" • ").withStyle(ChatFormatting.DARK_GRAY).append(describe(entry.getKey(), entry.getValue())));
         }
 
         player.sendSystemMessage(Component.translatable("bathhouse.report.variant",
@@ -325,11 +312,21 @@ public class BathGaugeBlockEntity extends BlockEntity {
         if (type != null) {
             player.sendSystemMessage(Component.translatable("bathhouse.report.ready",
                             Component.translatable(type.translationKey()).withStyle(type.color()),
-                            Component.translatable(variant.translationKey()).withStyle(variant.color()),
-                            BathRewards.describe(type, variant))
+                            Component.translatable(variant.translationKey()).withStyle(variant.color()))
                     .withStyle(ChatFormatting.GREEN));
-            player.sendSystemMessage(Component.translatable("bathhouse.report.stay", BathConfig.SESSION_SECONDS.get())
-                    .withStyle(ChatFormatting.DARK_GREEN));
+            List<BathQuality.Criterion> criteria = bathCriteria(type);
+            player.sendSystemMessage(Component.translatable("bathhouse.report.bath_quality").withStyle(ChatFormatting.GRAY)
+                    .append(BathQuality.line(criteria, variant)));
+            player.sendSystemMessage(Component.translatable("bathhouse.report.session_hint." + type.id(),
+                    Math.round(type.idealMinTemperature()), Math.round(type.idealMaxTemperature()),
+                    Math.round(type.idealMinHumidity()), Math.round(type.idealMaxHumidity())).withStyle(ChatFormatting.DARK_GRAY));
+            BathSessionTracker.Session session = BathSessionTracker.active(player);
+            if (session != null && session.type() == type) {
+                player.sendSystemMessage(Component.translatable("bathhouse.report.session").withStyle(ChatFormatting.GRAY)
+                        .append(BathQuality.line(session.criteria(), SmokeVariant.WHITE)));
+            }
+            player.sendSystemMessage(Component.translatable("bathhouse.report.stay", BathConfig.SESSION_SECONDS.get(),
+                    BathRewards.describeParts(type, variant)).withStyle(ChatFormatting.DARK_GREEN));
         } else {
             BathType closest = assessment.closest();
             player.sendSystemMessage(closest == null
@@ -340,6 +337,64 @@ public class BathGaugeBlockEntity extends BlockEntity {
                 player.sendSystemMessage(Component.literal("   ✘ ").withStyle(ChatFormatting.RED).append(problem.copy().withStyle(ChatFormatting.GRAY)));
             }
         }
+    }
+
+    private Component describe(BlockPos pos, SourceInfo info) {
+        if (info.kind() != SourceInfo.Kind.STOVE || info.firebox() == null) {
+            String key = info.kind() == SourceInfo.Kind.STEAM_GENERATOR ? "block.bathhouse.steam_generator" : "block.bathhouse.warm_lounger";
+            MutableComponent line = Component.translatable(key).withStyle(ChatFormatting.GOLD);
+            if (info.running()) {
+                line.append(Component.literal(" — ").withStyle(ChatFormatting.DARK_GRAY))
+                        .append(Component.translatable("bathhouse.report.running").withStyle(ChatFormatting.GREEN));
+            }
+            return line;
+        }
+        MutableComponent line = Component.translatable(info.firebox().translationKey()).withStyle(ChatFormatting.GOLD);
+        if (info.chamber() != ChamberType.NONE) {
+            line.append(Component.literal(" + ").withStyle(ChatFormatting.GRAY))
+                    .append(Component.translatable(info.chamber().translationKey()).withStyle(ChatFormatting.GOLD));
+        }
+        line.append(Component.literal(" — ").withStyle(ChatFormatting.DARK_GRAY));
+        MutableComponent parts = Component.empty();
+        if (info.woodFired()) {
+            parts.append(mark(info.ashPit(), "bathhouse.report.part.ash_pit")).append(" ");
+            parts.append(mark(info.chimney(), "bathhouse.report.part.chimney")).append(" ");
+        }
+        if (info.chamber().hasStones()) {
+            parts.append(Component.translatable("bathhouse.stove.stones", info.stones(), info.stoneCapacity(),
+                    Component.translatable(StoneQuality.translationKey(info.stoneQuality()))).withStyle(ChatFormatting.GRAY)).append(" ");
+        }
+        if (info.cladding() > 0) {
+            parts.append(Component.translatable("bathhouse.stove.cladding", info.cladding()).withStyle(ChatFormatting.GRAY)).append(" ");
+        }
+        if (level != null && level.getBlockEntity(pos) instanceof com.radar.bathhouse.stove.StoveBlockEntity stove) {
+            double core = stove.coreTemperature();
+            parts.append(Component.translatable("bathhouse.appliance.core", Double.isNaN(core) ? "?" : BathClassifier.fmt(core))
+                    .withStyle(ChatFormatting.GRAY));
+        }
+        if (info.running()) {
+            parts.append(Component.literal(", ").withStyle(ChatFormatting.GRAY))
+                    .append(Component.translatable("bathhouse.report.running").withStyle(ChatFormatting.GREEN));
+        }
+        if (info.smoky()) {
+            parts.append(Component.literal(", ").withStyle(ChatFormatting.GRAY))
+                    .append(Component.translatable("bathhouse.report.smoky").withStyle(ChatFormatting.DARK_GRAY));
+        }
+        return line.append(parts);
+    }
+
+    private static Component mark(boolean ok, String key) {
+        return Component.literal(ok ? "✔" : "✘").withStyle(ok ? ChatFormatting.GREEN : ChatFormatting.RED)
+                .append(Component.translatable(key).withStyle(ChatFormatting.GRAY));
+    }
+
+    /** The bath criteria of the steam level for the given type in this room right now. */
+    public List<BathQuality.Criterion> bathCriteria(BathType type) {
+        return scan == null ? List.of() : BathQuality.bathCriteria(type, scan, sources.values());
+    }
+
+    public Collection<SourceInfo> sources() {
+        return sources.values();
     }
 
     // ----------------------------------------------------------------------------------------------------------

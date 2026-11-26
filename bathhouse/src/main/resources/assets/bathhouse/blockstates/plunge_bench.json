@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "waterlogged=false": {
+      "model": "bathhouse:block/plunge_bench"
+    },
+    "waterlogged=true": {
+      "model": "bathhouse:block/plunge_bench"
+    }
+  }
+}

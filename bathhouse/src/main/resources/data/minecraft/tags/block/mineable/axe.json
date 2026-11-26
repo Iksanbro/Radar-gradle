@@ -2,8 +2,9 @@
   "values": [
     "bathhouse:bath_gauge",
     "bathhouse:smoke_vent",
-    "bathhouse:cold_plunge",
-    "bathhouse:hot_plunge",
-    "bathhouse:sawdust_plunge"
+    "bathhouse:plunge_wall_wood",
+    "bathhouse:plunge_wall_composite",
+    "bathhouse:plunge_bench",
+    "bathhouse:plunge_thermometer"
   ]
 }

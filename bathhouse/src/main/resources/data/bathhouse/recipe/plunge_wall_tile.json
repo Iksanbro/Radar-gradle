@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "TT",
+    "TT"
+  ],
+  "key": {
+    "T": {
+      "tag": "minecraft:terracotta"
+    }
+  },
+  "result": {
+    "count": 4,
+    "id": "bathhouse:plunge_wall_tile"
+  }
+}

@@ -29,6 +29,8 @@ import net.minecraft.world.phys.HitResult;
 /** Wooden ladle. Scoop water from any water source or cauldron, then throw it on hot stones for steam. */
 public class LadleItem extends Item {
     public static final int CAPACITY = 8;
+    /** Water drawn from a tank per ladle portion. */
+    public static final int MB_PER_PORTION = 125;
 
     public LadleItem(Properties properties) {
         super(properties);
@@ -40,6 +42,22 @@ public class LadleItem extends Item {
 
     public static void setWater(ItemStack stack, int portions) {
         stack.set(ModComponents.LADLE_WATER.get(), Mth.clamp(portions, 0, CAPACITY));
+        if (portions <= 0) {
+            stack.remove(ModComponents.LADLE_HOT.get());
+        }
+    }
+
+    /** Hot water drawn from the stove's tank. */
+    public static boolean isHot(ItemStack stack) {
+        return stack.getOrDefault(ModComponents.LADLE_HOT.get(), false) && water(stack) > 0;
+    }
+
+    public static void setHot(ItemStack stack, boolean hot) {
+        if (hot) {
+            stack.set(ModComponents.LADLE_HOT.get(), true);
+        } else {
+            stack.remove(ModComponents.LADLE_HOT.get());
+        }
     }
 
     public static ItemStack filled(Item ladle) {
@@ -64,6 +82,7 @@ public class LadleItem extends Item {
         }
         if (!level.isClientSide) {
             setWater(stack, CAPACITY);
+            setHot(stack, false);
             level.playSound(null, pos, SoundEvents.BUCKET_FILL, SoundSource.PLAYERS, 0.8F, 1.3F);
             level.gameEvent(player, GameEvent.FLUID_PICKUP, pos);
         }
@@ -80,6 +99,7 @@ public class LadleItem extends Item {
             if (!level.isClientSide) {
                 LayeredCauldronBlock.lowerFillLevel(state, level, pos);
                 setWater(stack, water(stack) + 3);
+                setHot(stack, false);
                 level.playSound(null, pos, SoundEvents.BUCKET_FILL, SoundSource.PLAYERS, 0.8F, 1.3F);
             }
             return InteractionResult.sidedSuccess(level.isClientSide);
@@ -99,12 +119,15 @@ public class LadleItem extends Item {
 
     @Override
     public int getBarColor(ItemStack stack) {
-        return 0x3F76E4;
+        return isHot(stack) ? 0xE0663A : 0x3F76E4;
     }
 
     @Override
     public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
         tooltip.add(Component.translatable("item.bathhouse.ladle.water", water(stack), CAPACITY).withStyle(ChatFormatting.BLUE));
+        if (isHot(stack)) {
+            tooltip.add(Component.translatable("item.bathhouse.ladle.hot").withStyle(ChatFormatting.GOLD));
+        }
         tooltip.add(Component.translatable("item.bathhouse.ladle.tooltip").withStyle(ChatFormatting.GRAY));
     }
 }

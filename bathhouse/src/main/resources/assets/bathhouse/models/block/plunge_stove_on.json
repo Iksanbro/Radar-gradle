@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "top": "bathhouse:block/plunge_stove_top",
+    "front": "bathhouse:block/plunge_stove_front_on",
+    "side": "bathhouse:block/plunge_stove_side"
+  }
+}

@@ -168,129 +168,6 @@ def grate(img, x0, y0, x1, y1, color, lit, seed, vertical=True):
                 img.putpixel((x, y), color)
 
 
-def inner_heater():
-    side = steel(11, '#34383d')
-    frame(side, 0, 0, 15, 15, hexc('#202326'))
-    for y in (3, 12):
-        for x in range(1, 15):
-            side.putpixel((x, y), hexc('#2a2d31'))
-    rivets(side, hexc('#4a4f55'), [(2, 2), (13, 2), (2, 13), (13, 13)])
-    save(side, 'block/inner_heater_side')
-    save(stones(12), 'block/inner_heater_top')
-    for lit in (False, True):
-        f = side.copy()
-        rect(f, 3, 7, 12, 14, hexc('#1f2124'))
-        grate(f, 4, 8, 11, 13, hexc('#454a50'), lit, 13)
-        rect(f, 3, 4, 12, 5, hexc('#26292c'))
-        for x in range(4, 12, 2):
-            f.putpixel((x, 4), hexc('#11120f') if not lit else hexc('#7a2c10'))
-        f.putpixel((12, 10), hexc('#8a8f96'))
-        save(f, 'block/inner_heater_front' + ('_on' if lit else ''))
-
-
-def outer_heater():
-    side = bricks(21, mortar='#c9c0b3', reds=('#b9b2a7', '#aba398', '#c2bbb0', '#a0988c'))
-    frame(side, 0, 0, 15, 15, hexc('#6d665d'))
-    save(side, 'block/outer_heater_side')
-    save(stones(22, '#3a3633'), 'block/outer_heater_top')
-    for lit in (False, True):
-        f = bricks(23)
-        rect(f, 2, 6, 13, 15, hexc('#2b2d30'))
-        frame(f, 2, 6, 13, 15, hexc('#4b4f55'))
-        grate(f, 4, 8, 11, 13, hexc('#3a3d42'), lit, 24)
-        f.putpixel((12, 11), hexc('#a7adb5'))
-        rect(f, 3, 2, 12, 3, hexc('#3b3e43'))
-        save(f, 'block/outer_heater_front' + ('_on' if lit else ''))
-
-
-def brick_stove():
-    side = bricks(31, mortar='#e6e0d4', reds=('#f2eee6', '#e9e4da', '#ddd6ca'))
-    for x in range(16):
-        side.putpixel((x, 15), hexc('#8c8273'))
-    save(side, 'block/brick_stove_side')
-    top = steel(32, '#2f2f31', vertical=False)
-    frame(top, 0, 0, 15, 15, hexc('#c9c1b4'))
-    for r, c in ((5, '#1d1d1f'), (3, '#47474b')):
-        for a in range(0, 360, 10):
-            x = int(round(8 + r * math.cos(math.radians(a)) - 0.5))
-            y = int(round(8 + r * math.sin(math.radians(a)) - 0.5))
-            top.putpixel((x, y), hexc(c))
-    save(top, 'block/brick_stove_top')
-    for lit in (False, True):
-        f = side.copy()
-        rect(f, 3, 8, 12, 14, hexc('#2a2b2e'))
-        frame(f, 3, 8, 12, 14, hexc('#55585e'))
-        grate(f, 5, 10, 10, 13, hexc('#404349'), lit, 33)
-        # arch
-        for x in range(4, 12):
-            f.putpixel((x, 7), hexc('#9d9282'))
-        rect(f, 6, 2, 9, 4, hexc('#35373b'))
-        f.putpixel((9, 3), hexc('#8a8f96'))
-        save(f, 'block/brick_stove_front' + ('_on' if lit else ''))
-
-
-def iron_stove():
-    side = steel(41, '#232325', var=0.08)
-    for y in range(2, 15, 3):
-        for x in range(1, 15):
-            side.putpixel((x, y), hexc('#353538'))
-            side.putpixel((x, y + 1), hexc('#151516'))
-    frame(side, 0, 0, 15, 15, hexc('#0f0f10'))
-    save(side, 'block/iron_stove_side')
-    top = steel(42, '#29292b', vertical=False)
-    frame(top, 0, 0, 15, 15, hexc('#0f0f10'))
-    for r, c in ((5, '#121213'), (4, '#3d3d40')):
-        for a in range(0, 360, 8):
-            x = int(round(8 + r * math.cos(math.radians(a)) - 0.5))
-            y = int(round(8 + r * math.sin(math.radians(a)) - 0.5))
-            top.putpixel((x, y), hexc(c))
-    top.putpixel((8, 8), hexc('#5a5a5f'))
-    save(top, 'block/iron_stove_top')
-    for lit in (False, True):
-        f = steel(43, '#232325', var=0.08)
-        frame(f, 0, 0, 15, 15, hexc('#0f0f10'))
-        # arched door
-        rect(f, 3, 5, 12, 14, hexc('#18181a'))
-        for x in range(4, 12):
-            f.putpixel((x, 4), hexc('#18181a'))
-        fire_glow(f, 5, 7, 10, 12, lit, 44)
-        for y in range(7, 13, 2):
-            for x in range(5, 11):
-                f.putpixel((x, y), hexc('#2a2a2d'))
-        f.putpixel((11, 10), hexc('#b9873a'))
-        rect(f, 2, 1, 13, 2, hexc('#3a3a3e'))
-        save(f, 'block/iron_stove_front' + ('_on' if lit else ''))
-
-
-def electric_heater():
-    side = steel(51, '#9aa3ab', var=0.04)
-    for y in range(4, 13, 2):
-        for x in range(3, 13):
-            side.putpixel((x, y), hexc('#4c5359'))
-    frame(side, 0, 0, 15, 15, hexc('#6c747b'))
-    save(side, 'block/electric_heater_side')
-    save(stones(52, '#4b4f53'), 'block/electric_heater_top')
-    for lit in (False, True):
-        f = steel(53, '#a3acb4', var=0.04)
-        frame(f, 0, 0, 15, 15, hexc('#6c747b'))
-        rect(f, 3, 3, 12, 8, hexc('#2c3136'))
-        frame(f, 3, 3, 12, 8, hexc('#5d656c'))
-        # display
-        rect(f, 4, 4, 9, 7, hexc('#ff6a3d') if lit else hexc('#3a2a24'))
-        if lit:
-            for x in (5, 7):
-                f.putpixel((x, 5), hexc('#ffd0b8'))
-        # knob
-        for (x, y) in ((10, 11), (11, 11), (10, 12), (11, 12)):
-            f.putpixel((x, y), hexc('#30353a'))
-        f.putpixel((10, 11), hexc('#d0d5da'))
-        f.putpixel((5, 11), hexc('#e43b2c') if lit else hexc('#5a3a37'))
-        for y in range(13, 15):
-            for x in range(3, 13, 2):
-                f.putpixel((x, y), hexc('#4c5359'))
-        save(f, 'block/electric_heater_front' + ('_on' if lit else ''))
-
-
 def steam_generator():
     side = new()
     noise(side, hexc('#e9eef0'), 0.03, 61)
@@ -445,78 +322,6 @@ def broom():
 
 # ---------------------------------------------------------------- effect icons (18x18)
 
-def effect_icons():
-    # purity: water drop
-    img = new(18)
-    for y in range(18):
-        for x in range(18):
-            cx, cy = 8.5, 11.0
-            d = math.hypot(x - cx, y - cy)
-            top = y < cy and abs(x - cx) <= (y - 2) * 0.55
-            if d <= 5.2 or (top and y >= 2):
-                c = hexc('#4fb3d9')
-                if d <= 5.2 and d > 4.3 or (top and abs(x - cx) > (y - 2) * 0.55 - 1):
-                    c = hexc('#2c7fa8')
-                img.putpixel((x, y), c)
-    for (x, y) in ((6, 10), (6, 11), (7, 9), (6, 12)):
-        img.putpixel((x, y), hexc('#d9f3ff'))
-    save(img, 'mob_effect/purity')
-
-    # fortitude: heart with a leaf of steam above
-    img = new(18)
-    for y in range(18):
-        for x in range(18):
-            X = (x - 8.5) / 6.5
-            Y = (y - 9.0) / 6.5
-            v = (X * X + Y * Y - 1) ** 3 - X * X * (-Y) ** 3
-            if v <= 0:
-                img.putpixel((x, y), hexc('#c9452f'))
-    for y in range(18):
-        for x in range(18):
-            if img.getpixel((x, y))[3] and (x == 0 or y == 0 or not img.getpixel((x - 1, y))[3] or not img.getpixel((x, y - 1))[3]
-                                             or x == 17 or not img.getpixel((min(17, x + 1), y))[3] or not img.getpixel((x, min(17, y + 1)))[3]):
-                img.putpixel((x, y), hexc('#7d2216'))
-    for (x, y) in ((5, 6), (6, 5), (5, 7)):
-        img.putpixel((x, y), hexc('#f3a08d'))
-    save(img, 'mob_effect/fortitude')
-
-    # tempering: flame
-    img = new(18)
-    for y in range(18):
-        for x in range(18):
-            t = y / 17.0
-            half = 6.0 * math.sin(math.pi * min(1.0, t * 1.15)) * (0.55 + 0.45 * t)
-            sway = 1.2 * math.sin(t * 5.0)
-            if abs(x - 8.5 - sway * (1 - t)) <= half and y >= 1:
-                inner = abs(x - 8.5 - sway * (1 - t)) <= half * 0.5 and t > 0.45
-                img.putpixel((x, y), hexc('#ffe27a') if inner else (hexc('#f08a24') if t > 0.3 else hexc('#d9481e')))
-    save(img, 'mob_effect/lightness')
-
-    # tempering (contrast): ice crystal / snowflake
-    img = new(18)
-    c1, c2 = hexc('#bfe6ff'), hexc('#3f8fd6')
-    for i in range(-7, 8):
-        for (x, y) in ((8 + i, 8), (8, 8 + i), (8 + i, 8 + i), (8 + i, 8 - i)):
-            if 0 <= x < 18 and 0 <= y < 18:
-                img.putpixel((x, y), c2 if abs(i) > 4 else c1)
-    for (dx, dy) in ((-5, -3), (-3, -5), (5, -3), (3, -5), (-5, 3), (-3, 5), (5, 3), (3, 5)):
-        img.putpixel((8 + dx, 8 + dy), c2)
-    img.putpixel((8, 8), hexc('#ffffff'))
-    save(img, 'mob_effect/tempering')
-
-    # bliss: warm pool with rising steam
-    img = new(18)
-    for y in range(11, 17):
-        for x in range(1, 17):
-            if math.hypot((x - 8.5) / 8.0, (y - 13.5) / 3.2) <= 1.0:
-                img.putpixel((x, y), hexc('#d47aa6') if y > 12 else hexc('#f2b6d2'))
-    for k, x0 in enumerate((4, 8, 12)):
-        for y in range(1, 10):
-            x = int(round(x0 + 1.2 * math.sin(y * 0.9 + k)))
-            img.putpixel((x, y), hexc('#f7e3ee') if y % 3 else hexc('#e7a9c8'))
-    save(img, 'mob_effect/bliss')
-
-
 # ---------------------------------------------------------------- plunges and lounger
 
 def staves(seed, base, seam, hoop='#6b7279'):
@@ -537,60 +342,6 @@ def staves(seed, base, seam, hoop='#6b7279'):
         for x in range(1, 16, 5):
             img.putpixel((x, hy), shade(hexc(hoop), 1.45))
     return img
-
-
-def plunges():
-    side = staves(111, '#a77446', '#5e3d22')
-    save(side, 'block/plunge_side')
-    inner = new()
-    noise(inner, hexc('#6f4b2c'), 0.06, 112)
-    for y in range(16):
-        for x in range(3, 16, 4):
-            inner.putpixel((x, y), hexc('#4a311c'))
-    save(inner, 'block/plunge_inner')
-    rim = new()
-    noise(rim, hexc('#c29563'), 0.06, 113)
-    for i in range(16):
-        rim.putpixel((i, 0), hexc('#7d5634'))
-        rim.putpixel((i, 15), hexc('#7d5634'))
-    save(rim, 'block/plunge_rim')
-    save(planks(114, '#946a40', '#5c3c22'), 'block/plunge_bottom')
-
-    cedar = staves(121, '#b5654a', '#6a3121', hoop='#3d3f43')
-    save(cedar, 'block/sawdust_plunge_side')
-    for name, base in (('hot_plunge', side), ('sawdust_plunge', cedar)):
-        for lit in (False, True):
-            f = base.copy()
-            rect(f, 5, 7, 10, 14, hexc('#2b2d30'))
-            frame(f, 5, 7, 10, 14, hexc('#55595f'))
-            fire_glow(f, 6, 9, 9, 13, lit, 122)
-            for x in (6, 8):
-                for y in range(9, 14):
-                    f.putpixel((x, y), hexc('#3d4046'))
-            f.putpixel((10, 11), hexc('#a7adb5'))
-            # flue pipe stub
-            rect(f, 7, 4, 8, 6, hexc('#4b4f55'))
-            save(f, 'block/' + name + '_front' + ('_on' if lit else ''))
-
-    saw = new()
-    rnd = random.Random(131)
-    pal = [hexc('#e2c48f'), hexc('#d4b07a'), hexc('#c99f68'), hexc('#efd9a8'), hexc('#b98c55')]
-    for y in range(16):
-        for x in range(16):
-            saw.putpixel((x, y), rnd.choice(pal))
-    for _ in range(10):
-        x, y = rnd.randrange(16), rnd.randrange(16)
-        saw.putpixel((x, y), hexc('#7aa34a'))  # bits of herbs
-    save(saw, 'block/sawdust')
-
-    item = new()
-    for y in range(6, 15):
-        for x in range(1, 16):
-            if math.hypot((x - 8) / 7.0, (y - 14) / 7.5) <= 1.0:
-                item.putpixel((x, y), rnd.choice(pal[:4]))
-    for x in range(2, 15):
-        item.putpixel((x, 14), hexc('#a77c48'))
-    save(item, 'item/sawdust')
 
 
 def lounger():
@@ -639,20 +390,500 @@ def mitt():
     save(img, 'item/scrub_mitt')
 
 
+# ---------------------------------------------------------------- stove parts
+
+def door(img, lit, seed, frame_c='#4b4f55', bar_c='#3d4046', box=(4, 7, 11, 14)):
+    x0, y0, x1, y1 = box
+    rect(img, x0 - 1, y0 - 1, x1 + 1, y1 + 1, hexc('#1f2124'))
+    frame(img, x0 - 1, y0 - 1, x1 + 1, y1 + 1, hexc(frame_c))
+    grate(img, x0, y0, x1, y1, hexc(bar_c), lit, seed)
+    img.putpixel((x1 + 1, (y0 + y1) // 2), hexc('#a7adb5'))
+
+
+def steel_side(seed):
+    side = steel(seed, '#34383d')
+    frame(side, 0, 0, 15, 15, hexc('#202326'))
+    for y in (3, 12):
+        for x in range(1, 15):
+            side.putpixel((x, y), hexc('#2a2d31'))
+    rivets(side, hexc('#4a4f55'), [(2, 2), (13, 2), (2, 13), (13, 13)])
+    return side
+
+
+def plate_top(seed, base='#2f2f31', edge='#202022'):
+    top = steel(seed, base, vertical=False)
+    frame(top, 0, 0, 15, 15, hexc(edge))
+    for r, c in ((5, '#1d1d1f'), (3, '#47474b')):
+        for a in range(0, 360, 10):
+            x = int(round(8 + r * math.cos(math.radians(a)) - 0.5))
+            y = int(round(8 + r * math.sin(math.radians(a)) - 0.5))
+            top.putpixel((x, y), hexc(c))
+    return top
+
+
+def fireboxes():
+    side = steel_side(201)
+    save(side, 'block/steel_firebox_side')
+    save(plate_top(202, '#3a3e43', '#202326'), 'block/steel_firebox_top')
+    for lit in (False, True):
+        f = side.copy()
+        door(f, lit, 203)
+        save(f, 'block/steel_firebox_front' + ('_on' if lit else ''))
+
+    side = steel(211, '#232325', var=0.08)
+    for y in range(2, 15, 3):
+        for x in range(1, 15):
+            side.putpixel((x, y), hexc('#353538'))
+            side.putpixel((x, y + 1), hexc('#151516'))
+    frame(side, 0, 0, 15, 15, hexc('#0f0f10'))
+    save(side, 'block/cast_iron_firebox_side')
+    save(plate_top(212, '#29292b', '#0f0f10'), 'block/cast_iron_firebox_top')
+    for lit in (False, True):
+        f = steel(213, '#232325', var=0.08)
+        frame(f, 0, 0, 15, 15, hexc('#0f0f10'))
+        rect(f, 3, 5, 12, 14, hexc('#18181a'))
+        for x in range(4, 12):
+            f.putpixel((x, 4), hexc('#18181a'))
+        fire_glow(f, 5, 7, 10, 12, lit, 214)
+        for y in range(7, 13, 2):
+            for x in range(5, 11):
+                f.putpixel((x, y), hexc('#2a2a2d'))
+        f.putpixel((11, 10), hexc('#b9873a'))
+        save(f, 'block/cast_iron_firebox_front' + ('_on' if lit else ''))
+
+    side = bricks(221, mortar='#e6e0d4', reds=('#f2eee6', '#e9e4da', '#ddd6ca'))
+    for x in range(16):
+        side.putpixel((x, 15), hexc('#8c8273'))
+    save(side, 'block/brick_firebox_side')
+    save(bricks(222, mortar='#cfc6b8', reds=('#e9e4da', '#ddd6ca')), 'block/brick_firebox_top')
+    for lit in (False, True):
+        f = side.copy()
+        for x in range(3, 13):
+            f.putpixel((x, 6), hexc('#9d9282'))
+        door(f, lit, 223, box=(4, 8, 11, 13))
+        save(f, 'block/brick_firebox_front' + ('_on' if lit else ''))
+
+    side = steel(231, '#9aa3ab', var=0.04)
+    for y in range(4, 13, 2):
+        for x in range(3, 13):
+            side.putpixel((x, y), hexc('#4c5359'))
+    frame(side, 0, 0, 15, 15, hexc('#6c747b'))
+    save(side, 'block/heating_element_side')
+    top = steel(232, '#8d969e', vertical=False)
+    frame(top, 0, 0, 15, 15, hexc('#6c747b'))
+    for y in (4, 8, 12):
+        for x in range(3, 13):
+            top.putpixel((x, y), hexc('#5c3a2e'))
+    save(top, 'block/heating_element_top')
+    for lit in (False, True):
+        f = steel(233, '#a3acb4', var=0.04)
+        frame(f, 0, 0, 15, 15, hexc('#6c747b'))
+        rect(f, 3, 3, 12, 8, hexc('#2c3136'))
+        frame(f, 3, 3, 12, 8, hexc('#5d656c'))
+        rect(f, 4, 4, 9, 7, hexc('#ff6a3d') if lit else hexc('#3a2a24'))
+        f.putpixel((10, 11), hexc('#d0d5da'))
+        f.putpixel((11, 12), hexc('#30353a'))
+        f.putpixel((5, 11), hexc('#e43b2c') if lit else hexc('#5a3a37'))
+        save(f, 'block/heating_element_front' + ('_on' if lit else ''))
+
+
+def ash_pit():
+    side = steel_side(241)
+    save(side, 'block/ash_pit_side')
+    top = steel(242, '#2a2c2f', vertical=False)
+    for x in range(1, 15, 2):
+        for y in range(1, 15):
+            top.putpixel((x, y), hexc('#141516'))
+    frame(top, 0, 0, 15, 15, hexc('#202326'))
+    save(top, 'block/ash_pit_top')
+    for full in (False, True):
+        f = side.copy()
+        rect(f, 3, 9, 12, 13, hexc('#1b1c1e'))
+        frame(f, 3, 9, 12, 13, hexc('#55595f'))
+        if full:
+            rnd = random.Random(243)
+            for y in range(10, 13):
+                for x in range(4, 12):
+                    f.putpixel((x, y), shade(hexc('#9a958e'), 1 + rnd.uniform(-0.15, 0.15)))
+        rect(f, 6, 7, 9, 7, hexc('#a7adb5'))
+        save(f, 'block/ash_pit_front' + ('_full' if full else ''))
+
+
+def heaters():
+    side = steel_side(251)
+    for x in range(1, 15):
+        side.putpixel((x, 7), hexc('#43474d'))
+    save(side, 'block/closed_heater_side')
+    top = plate_top(252, '#33373c', '#202326')
+    rect(top, 6, 6, 9, 9, hexc('#151617'))
+    save(top, 'block/closed_heater_top')
+    for filled in (False, True):
+        f = side.copy()
+        rect(f, 3, 3, 12, 11, hexc('#1f2124'))
+        frame(f, 3, 3, 12, 11, hexc('#55595f'))
+        if filled:
+            st = stones(253, '#2a2a2c')
+            for y in range(4, 11):
+                for x in range(4, 12):
+                    f.putpixel((x, y), st.getpixel((x, y)))
+        else:
+            rect(f, 4, 4, 11, 10, hexc('#101112'))
+        save(f, 'block/closed_heater_front' + ('_filled' if filled else ''))
+    for filled in (False, True):
+        if filled:
+            base = stones(261, '#3a3633')
+        else:
+            base = new()
+            noise(base, hexc('#1a1a1b'), 0.1, 262)
+        side = base.copy()
+        for x in range(0, 16, 3):
+            for y in range(16):
+                side.putpixel((x, y), hexc('#5a5f66'))
+        for y in (0, 5, 10, 15):
+            for x in range(16):
+                side.putpixel((x, y), hexc('#6c727a'))
+        save(side, 'block/open_heater_side' + ('' if filled else '_empty'))
+        save(base, 'block/open_heater_top' + ('' if filled else '_empty'))
+
+
+def boiler_and_tank():
+    copper = new()
+    noise(copper, hexc('#b8693d'), 0.06, 271)
+    for y in (2, 13):
+        for x in range(16):
+            copper.putpixel((x, y), hexc('#7a3f22'))
+    rivets(copper, hexc('#d48a5a'), [(2, 4), (13, 4), (2, 11), (13, 11)])
+    save(copper, 'block/boiler_side')
+    top = new()
+    noise(top, hexc('#a35c35'), 0.05, 272)
+    rect(top, 6, 6, 9, 9, hexc('#5a3a2a'))
+    rect(top, 7, 7, 8, 8, hexc('#1f1512'))
+    save(top, 'block/boiler_top')
+    f = copper.copy()
+    for y in range(3, 11):
+        for x in range(3, 11):
+            d = math.hypot(x - 6.5, y - 6.5)
+            if d <= 3.2:
+                f.putpixel((x, y), hexc('#3a2a22') if d > 2.4 else hexc('#f4efe2'))
+    f.putpixel((7, 5), hexc('#c4302b'))
+    f.putpixel((7, 6), hexc('#2b2b2b'))
+    rect(f, 11, 9, 12, 12, hexc('#55595f'))
+    f.putpixel((12, 9), hexc('#c4302b'))
+    save(f, 'block/boiler_front')
+
+    tank = steel(281, '#b9c1c7', var=0.03)
+    for y in (1, 14):
+        for x in range(16):
+            tank.putpixel((x, y), hexc('#7d868c'))
+    for x in (3, 12):
+        for y in range(16):
+            tank.putpixel((x, y), hexc('#a3abb1'))
+    save(tank, 'block/water_tank_side')
+    top = steel(282, '#aab2b8', vertical=False)
+    for a in range(0, 360, 10):
+        x = int(round(8 + 5 * math.cos(math.radians(a)) - 0.5))
+        y = int(round(8 + 5 * math.sin(math.radians(a)) - 0.5))
+        top.putpixel((x, y), hexc('#7d868c'))
+    rect(top, 6, 6, 9, 9, hexc('#4b5359'))
+    save(top, 'block/water_tank_top')
+    f = tank.copy()
+    rect(f, 6, 9, 9, 10, hexc('#4b5359'))
+    rect(f, 7, 11, 8, 12, hexc('#4b5359'))
+    f.putpixel((7, 8), hexc('#c4302b'))
+    f.putpixel((8, 8), hexc('#c4302b'))
+    save(f, 'block/water_tank_front')
+
+
+def damper_and_tunnel():
+    for open_ in (False, True):
+        img = bricks(291, mortar='#b5a998', reds=('#8f3e2c', '#7f3626', '#9a4834'), h=4, w=6)
+        rect(img, 0, 6, 15, 9, hexc('#3d4046'))
+        frame(img, 0, 6, 15, 9, hexc('#55595f'))
+        if open_:
+            rect(img, 10, 5, 15, 10, hexc('#2b2d30'))
+            rect(img, 12, 7, 15, 8, hexc('#a7adb5'))
+        else:
+            rect(img, 2, 7, 13, 8, hexc('#a7adb5'))
+        save(img, 'block/damper' + ('_open' if open_ else ''))
+    side = steel(301, '#2f3337')
+    for y in range(16):
+        side.putpixel((0, y), hexc('#1b1d20'))
+        side.putpixel((15, y), hexc('#1b1d20'))
+    for x in range(16):
+        side.putpixel((x, 0), hexc('#4a4f55'))
+        side.putpixel((x, 15), hexc('#4a4f55'))
+    save(side, 'block/fuel_tunnel_side')
+    f = side.copy()
+    door(f, False, 302, box=(4, 5, 11, 12))
+    save(f, 'block/fuel_tunnel_front')
+    clad = new()
+    rnd = random.Random(311)
+    for y in range(16):
+        for x in range(16):
+            clad.putpixel((x, y), shade(hexc('#7d8f80'), 1 + rnd.uniform(-0.08, 0.08)))
+    for y in (7, 15):
+        for x in range(16):
+            clad.putpixel((x, y), hexc('#5b6a5e'))
+    for x in (7, 15):
+        for y in range(0, 7):
+            clad.putpixel((x, y), hexc('#5b6a5e'))
+    for x in (3, 11):
+        for y in range(8, 15):
+            clad.putpixel((x, y), hexc('#5b6a5e'))
+    for _ in range(14):
+        clad.putpixel((rnd.randrange(16), rnd.randrange(16)), hexc('#a5b6a6'))
+    save(clad, 'block/stove_cladding')
+
+
+# ---------------------------------------------------------------- plunge parts
+
+def plunge_parts():
+    side = staves(321, '#a77446', '#5e3d22')
+    save(side, 'block/plunge_wall_wood')
+    rim = new()
+    noise(rim, hexc('#c29563'), 0.06, 322)
+    frame(rim, 0, 0, 15, 15, hexc('#7d5634'))
+    save(rim, 'block/plunge_wall_wood_top')
+
+    comp = new()
+    rnd = random.Random(331)
+    for y in range(16):
+        for x in range(16):
+            comp.putpixel((x, y), shade(hexc('#9b6b43'), (1.06 if (y // 3) % 2 else 0.95) * (1 + rnd.uniform(-0.04, 0.04))))
+        if y % 3 == 2:
+            for x in range(16):
+                comp.putpixel((x, y), hexc('#5c3b22'))
+    for x in range(16):
+        comp.putpixel((x, 0), hexc('#2b2e31'))
+        comp.putpixel((x, 15), hexc('#2b2e31'))
+    save(comp, 'block/plunge_wall_composite')
+    ctop = new()
+    noise(ctop, hexc('#3a3e42'), 0.05, 332)
+    frame(ctop, 0, 0, 15, 15, hexc('#9b6b43'))
+    save(ctop, 'block/plunge_wall_composite_top')
+
+    tile = new()
+    rnd = random.Random(341)
+    pal = [hexc('#e9f1f5'), hexc('#cfe3ec'), hexc('#7fb6d1'), hexc('#4d8fb3'), hexc('#f5f7f8')]
+    for ty in range(4):
+        for tx in range(4):
+            c = rnd.choice(pal)
+            for y in range(ty * 4, ty * 4 + 3):
+                for x in range(tx * 4, tx * 4 + 3):
+                    tile.putpixel((x, y), shade(c, 1 + rnd.uniform(-0.03, 0.03)))
+    for i in range(16):
+        for j in (3, 7, 11, 15):
+            tile.putpixel((i, j), hexc('#9fa8ad'))
+            tile.putpixel((j, i), hexc('#9fa8ad'))
+    save(tile, 'block/plunge_wall_tile')
+
+    save(planks(351, '#b98a58', '#7a5232'), 'block/plunge_bench')
+
+    st = steel(361, '#c3cad0', var=0.03)
+    frame(st, 0, 0, 15, 15, hexc('#8a9399'))
+    save(st, 'block/plunge_stove_side')
+    top = steel(362, '#b3bac0', vertical=False)
+    frame(top, 0, 0, 15, 15, hexc('#8a9399'))
+    rect(top, 5, 5, 10, 10, hexc('#5b6369'))
+    rect(top, 6, 6, 9, 9, hexc('#1b1d20'))
+    save(top, 'block/plunge_stove_top')
+    for lit in (False, True):
+        f = st.copy()
+        door(f, lit, 363, frame_c='#6c747b', bar_c='#5b6369', box=(5, 7, 10, 13))
+        save(f, 'block/plunge_stove_front' + ('_on' if lit else ''))
+
+    ch = steel(371, '#aec7d6', var=0.03)
+    rnd = random.Random(372)
+    for _ in range(30):
+        ch.putpixel((rnd.randrange(16), rnd.randrange(16)), hexc('#eef8ff'))
+    frame(ch, 0, 0, 15, 15, hexc('#6b8899'))
+    save(ch, 'block/plunge_chiller_side')
+    top = ch.copy()
+    for y in range(3, 13, 3):
+        for x in range(3, 13):
+            top.putpixel((x, y), hexc('#4f6f82'))
+    save(top, 'block/plunge_chiller_top')
+    for powered in (False, True):
+        f = ch.copy()
+        for y in range(4, 12, 2):
+            for x in range(3, 13):
+                f.putpixel((x, y), hexc('#4f6f82'))
+        for x in (11, 12):
+            f.putpixel((x, 13), hexc('#45c7ff') if powered else hexc('#3d4a52'))
+        save(f, 'block/plunge_chiller_front' + ('_on' if powered else ''))
+
+    for active in (False, True):
+        f = side.copy()
+        rect(f, 6, 2, 9, 13, hexc('#e9e3d2'))
+        frame(f, 6, 2, 9, 13, hexc('#7d5634'))
+        for y in range(4, 12, 2):
+            f.putpixel((9, y), hexc('#7d5634'))
+        for y in range(6 if active else 9, 13):
+            f.putpixel((7, y), hexc('#c4302b'))
+            f.putpixel((8, y), hexc('#c4302b'))
+        f.putpixel((7, 12), hexc('#8e1f1b'))
+        f.putpixel((8, 12), hexc('#8e1f1b'))
+        save(f, 'block/plunge_thermometer_front' + ('_active' if active else ''))
+
+    saw = new()
+    rnd = random.Random(381)
+    pal = [hexc('#e2c48f'), hexc('#d4b07a'), hexc('#c99f68'), hexc('#efd9a8'), hexc('#b98c55')]
+    for y in range(16):
+        for x in range(16):
+            saw.putpixel((x, y), rnd.choice(pal))
+    for _ in range(10):
+        saw.putpixel((rnd.randrange(16), rnd.randrange(16)), hexc('#7aa34a'))
+    save(saw, 'block/sawdust')
+
+
+def hot_ladle():
+    img = Image.open(os.path.join(ROOT, 'item/ladle_filled.png')).convert('RGBA')
+    for y in range(16):
+        for x in range(16):
+            p = img.getpixel((x, y))
+            if p[3] and p[2] > p[0] + 60:
+                img.putpixel((x, y), hexc('#e0663a') if (x + y) % 3 else hexc('#f2a074'))
+    for (x, y) in ((3, 7), (5, 6), (4, 5)):
+        img.putpixel((x, y), hexc('#e8e8e8'))
+    save(img, 'item/ladle_hot')
+
+
+# ---------------------------------------------------------------- effect icons (18x18 ASCII art; '#' body, 'o' highlight)
+
+ICONS = {
+    'purity': ('#4fb3d9', '#2c7fa8', '#d9f3ff', [
+        "........#.........", ".......###........", ".......###........", "......#####.......",
+        "......#####.......", ".....#######......", "....#########.....", "....##o######.....",
+        "...##oo#######....", "...##o########....", "...###########....", "...###########....",
+        "...###########....", "....#########.....", ".....#######......", "......#####.......",
+        "..................", ".................."]),
+    'clarity': ('#7fc3d9', '#2f6f86', '#ffffff', [
+        "..................", "..................", "..................", ".......#####......",
+        ".....#########....", "....###########...", "...####ooo#####...", "..####ooo######..",
+        "..####oo#######..", "..#############..", "...###########....", "....#########.....",
+        ".....#######......", "..................", "..................", "..................",
+        "..................", ".................."]),
+    'cleansing': ('#5fb9a5', '#2f7a68', '#d8fff4', [
+        "..................", "...........####...", ".........#######..", "........########..",
+        ".......#####o###..", "......#####o####..", ".....#####o#####..", "....#####o######..",
+        "...#####o######...", "...####o######....", "...###o######.....", "...##o######......",
+        "...#########......", "..##.######.......", ".##...............", "##................",
+        "..................", ".................."]),
+    'fortitude': ('#c9452f', '#7d2216', '#f3a08d', [
+        "..................", "..................", "...####....####...", "..######..######..",
+        ".##oo####.#######.", ".#oo#############.", ".#o##############.", ".################.",
+        ".################.", "..##############..", "...############...", "....##########....",
+        ".....########.....", "......######......", ".......####.......", "........##........",
+        "..................", ".................."]),
+    'prowess': ('#c9cdd2', '#5a5f66', '#ffffff', [
+        "...............##.", "..............#o#.", ".............#o#..", "............#o#...",
+        "...........#o#....", "..........#o#.....", ".........#o#......", "........#o#.......",
+        ".......#o#........", "..##..#o#.........", "...####o#.........", "....###...........",
+        "...#####..........", "..##.###..........", ".##...............", "##................",
+        "..................", ".................."]),
+    'steadfastness': ('#8c6b4a', '#4a3520', '#d8b48a', [
+        "..................", "..##############..", "..#oo###########..", "..#o############..",
+        "..#o####oo######..", "..#####o##o#####..", "..#####o##o#####..", "..######oo######..",
+        "..##############..", "...############...", "...############...", "....##########....",
+        ".....########.....", "......######......", ".......####.......", "........##........",
+        "..................", ".................."]),
+    'lightness': ('#f08a24', '#d9481e', '#ffe27a', [
+        "........#.........", "........##........", ".......###........", ".......####.......",
+        "......#####.#.....", "......######......", ".....#######......", "....####o####.....",
+        "....###ooo###.....", "...###ooooo###....", "...##ooooooo##....", "...##oooooooo#....",
+        "...##ooooooo##....", "....##ooooo##.....", ".....#######......", "......#####.......",
+        "..................", ".................."]),
+    'quick_hands': ('#f0c060', '#9a6a1e', '#fff1c4', [
+        "..................", ".....#..#..#......", ".....#..#..#..#...", ".....#..#..#..#...",
+        ".....#..#..#..#...", ".....##o##o##o#...", ".....##########...", "..#..##########...",
+        "..##.##########...", "...############...", "....##########....", ".....########.....",
+        ".....#######......", ".....#######......", "..................", "..oo..oo..oo......",
+        "..................", ".................."]),
+    'knack': ('#9aa3ab', '#4a3520', '#d0d5da', [
+        "..................", "....##########....", "...#oooooooooo#...", "..##...####...##..",
+        "..#.....##.....#..", ".........#........", "........##........", "........##........",
+        ".......##.........", ".......##.........", "......##..........", "......##..........",
+        ".....##...........", ".....##...........", "....##............", "....#.............",
+        "..................", ".................."]),
+    'tempering': ('#6fb7e8', '#2f6f9e', '#d6efff', [
+        "..................", "..####......####..", "..#####....#####..", "..######..######..",
+        "...############...", "...##o#########...", "...##o#########...", "...#o##########...",
+        "...############...", "...############...", "...############...", "...############...",
+        "...############...", "....##########....", "..................", "..................",
+        "..................", ".................."]),
+    'hardiness': ('#4c8fc0', '#1f4f73', '#c4e4ff', [
+        "..................", "........##........", ".......####.......", "......##oo##......",
+        ".....##oooo##.....", "....##oo##oo##....", "...##oo####oo##...", "..##oo######oo##..",
+        "...##oo####oo##...", "....##oo##oo##....", ".....##oooo##.....", "......##oo##......",
+        ".......####.......", "........##........", "..................", "..................",
+        "..................", ".................."]),
+    'frostproof': ('#bfe6ff', '#3f8fd6', '#ffffff', [
+        "........#.........", ".....#..#..#......", "......#.#.#.......", ".......###........",
+        "..#.....#.....#...", "...#....#....#....", "....#...#...#.....", ".....#.###.#......",
+        "#########o########", ".....#.###.#......", "....#...#...#.....", "...#....#....#....",
+        "..#.....#.....#...", ".......###........", "......#.#.#.......", ".....#..#..#......",
+        "........#.........", ".................."]),
+    'bliss': ('#d47aa6', '#a3507a', '#f7e3ee', [
+        "....o...o...o.....", "...o...o...o......", "....o...o...o.....", ".....o...o...o....",
+        "....o...o...o.....", "...o...o...o......", "..................", "..................",
+        "..##############..", ".#oooooooooooooo#.", "#oo############oo#", "##################",
+        ".################.", "..##############..", "...############...", "..................",
+        "..................", ".................."]),
+    'suppleness': ('#e3a6c6', '#a3507a', '#ffffff', [
+        "...............#..", "..............##..", ".............#o#..", "............#o##..",
+        "...........#o###..", "..........#o####..", ".........#o#####..", "........#o#####...",
+        ".......#o#####....", "......#o#####.....", ".....#o#####......", "....#o####........",
+        "...#o###..........", "..#o#.............", ".#................", "#.................",
+        "..................", ".................."]),
+    'featherlight': ('#f4d3e3', '#b07a96', '#ffffff', [
+        "..................", "..................", "......####........", "....##oooo##......",
+        "...#oooooooo#.##..", "..#oooooooooo#oo#.", ".#oooooooooooooo#.", ".#oooooooooooooo#.",
+        "..##############..", "..................", "......#....#......", ".....#....#.......",
+        "......#....#......", ".....#....#.......", "..................", "..................",
+        "..................", ".................."]),
+}
+
+
+def effect_icons():
+    for name, (body, edge, light, rows) in ICONS.items():
+        img = new(18)
+        for y, row in enumerate(rows):
+            for x, ch in enumerate(row[:18]):
+                if ch == '#':
+                    img.putpixel((x, y), hexc(body))
+                elif ch == 'o':
+                    img.putpixel((x, y), hexc(light))
+        out = img.copy()
+        for y in range(18):
+            for x in range(18):
+                p = img.getpixel((x, y))
+                if p[3] == 0 or p[:3] != hexc(body)[:3]:
+                    continue
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if not (0 <= nx < 18 and 0 <= ny < 18) or img.getpixel((nx, ny))[3] == 0:
+                        out.putpixel((x, y), hexc(edge))
+                        break
+        save(out, 'mob_effect/' + name)
+
+
 if __name__ == '__main__':
-    inner_heater()
-    outer_heater()
-    brick_stove()
-    iron_stove()
-    electric_heater()
+    import shutil
+    shutil.rmtree(ROOT, ignore_errors=True)
     steam_generator()
     gauge()
     chimney()
     smoke_vent()
     ladle()
+    hot_ladle()
     broom()
-    effect_icons()
-    plunges()
-    lounger()
     mitt()
+    lounger()
+    fireboxes()
+    ash_pit()
+    heaters()
+    boiler_and_tank()
+    damper_and_tunnel()
+    plunge_parts()
+    effect_icons()
     print('textures written to', os.path.normpath(ROOT))

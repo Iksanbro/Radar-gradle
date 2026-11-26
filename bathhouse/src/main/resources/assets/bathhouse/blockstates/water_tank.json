@@ -1,0 +1,34 @@
+{
+  "variants": {
+    "facing=north,active=false": {
+      "model": "bathhouse:block/water_tank"
+    },
+    "facing=north,active=true": {
+      "model": "bathhouse:block/water_tank"
+    },
+    "facing=east,active=false": {
+      "model": "bathhouse:block/water_tank",
+      "y": 90
+    },
+    "facing=east,active=true": {
+      "model": "bathhouse:block/water_tank",
+      "y": 90
+    },
+    "facing=south,active=false": {
+      "model": "bathhouse:block/water_tank",
+      "y": 180
+    },
+    "facing=south,active=true": {
+      "model": "bathhouse:block/water_tank",
+      "y": 180
+    },
+    "facing=west,active=false": {
+      "model": "bathhouse:block/water_tank",
+      "y": 270
+    },
+    "facing=west,active=true": {
+      "model": "bathhouse:block/water_tank",
+      "y": 270
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/orientable",
+  "textures": {
+    "top": "bathhouse:block/boiler_top",
+    "front": "bathhouse:block/boiler_front",
+    "side": "bathhouse:block/boiler_side"
+  }
+}

@@ -1,9 +1,8 @@
 package com.radar.bathhouse.climate;
 
-import com.radar.bathhouse.block.ApplianceType;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
 
@@ -22,10 +21,10 @@ public final class BathClassifier {
      * @param humidity    relative humidity, %
      * @param smoke       smoke concentration, %
      * @param variant     white / gray / black
-     * @param present     appliance types bordering the room
+     * @param sources     heat sources bordering the room
      */
     public static BathAssessment assess(@Nullable RoomScan scan, boolean leaky, double temperature, double humidity,
-                                        double smoke, SmokeVariant variant, Set<ApplianceType> present,
+                                        double smoke, SmokeVariant variant, Collection<SourceInfo> sources,
                                         int minVolume, int maxVolume) {
         if (scan == null) {
             return BathAssessment.NONE;
@@ -49,7 +48,7 @@ public final class BathClassifier {
         List<Component> closestProblems = null;
         for (BathType type : BathType.values()) {
             List<Component> problems = new ArrayList<>(general);
-            problems.addAll(typeProblems(type, scan, temperature, humidity, smoke, variant, present));
+            problems.addAll(typeProblems(type, scan, temperature, humidity, smoke, variant, sources));
             if (problems.isEmpty()) {
                 return new BathAssessment(type, variant, type, List.of());
             }
@@ -62,9 +61,9 @@ public final class BathClassifier {
     }
 
     private static List<Component> typeProblems(BathType type, RoomScan scan, double temperature, double humidity,
-                                                double smoke, SmokeVariant variant, Set<ApplianceType> present) {
+                                                double smoke, SmokeVariant variant, Collection<SourceInfo> sources) {
         List<Component> problems = new ArrayList<>();
-        if (!present.stream().anyMatch(type.equipment()::matches)) {
+        if (sources.stream().noneMatch(type.equipment()::matches)) {
             problems.add(Component.translatable("bathhouse.problem.equipment",
                     Component.translatable(type.equipment().translationKey())));
         }

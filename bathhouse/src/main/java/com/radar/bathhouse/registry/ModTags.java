@@ -10,6 +10,8 @@ public final class ModTags {
     public static final TagKey<Block> BATH_WOOD = TagKey.create(Registries.BLOCK, Bathhouse.id("bath_wood"));
     /** Stone, marble-like and tiled surfaces: required for mist baths. */
     public static final TagKey<Block> BATH_STONE = TagKey.create(Registries.BLOCK, Bathhouse.id("bath_stone"));
+    /** Marble-like surfaces (calcite, quartz, white concrete…) for a proper mist hall. */
+    public static final TagKey<Block> BATH_MARBLE = TagKey.create(Registries.BLOCK, Bathhouse.id("bath_marble"));
     /** Glass leaks heat quickly. */
     public static final TagKey<Block> BATH_GLASS = TagKey.create(Registries.BLOCK, Bathhouse.id("bath_glass"));
     /** Wool and similar insulation keeps heat in. */

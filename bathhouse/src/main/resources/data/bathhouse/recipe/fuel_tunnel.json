@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "B B",
+    "B B",
+    "B B"
+  ],
+  "key": {
+    "B": {
+      "item": "minecraft:bricks"
+    }
+  },
+  "result": {
+    "count": 1,
+    "id": "bathhouse:fuel_tunnel"
+  }
+}

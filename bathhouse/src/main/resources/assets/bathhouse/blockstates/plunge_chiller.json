@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "powered=false": {
+      "model": "bathhouse:block/plunge_chiller"
+    },
+    "powered=true": {
+      "model": "bathhouse:block/plunge_chiller_on"
+    }
+  }
+}

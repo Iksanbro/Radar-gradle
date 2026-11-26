@@ -1,0 +1,28 @@
+{
+  "values": [
+    {
+      "id": "minecraft:deepslate",
+      "required": false
+    },
+    {
+      "id": "minecraft:cobbled_deepslate",
+      "required": false
+    },
+    {
+      "id": "minecraft:tuff",
+      "required": false
+    },
+    {
+      "id": "minecraft:andesite",
+      "required": false
+    },
+    {
+      "id": "minecraft:polished_andesite",
+      "required": false
+    },
+    {
+      "id": "minecraft:stone",
+      "required": false
+    }
+  ]
+}

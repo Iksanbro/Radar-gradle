@@ -1,12 +1,22 @@
 {
   "values": [
-    "bathhouse:inner_heater",
-    "bathhouse:outer_heater",
-    "bathhouse:brick_stove",
-    "bathhouse:iron_stove",
-    "bathhouse:electric_heater",
+    "bathhouse:steel_firebox",
+    "bathhouse:cast_iron_firebox",
+    "bathhouse:brick_firebox",
+    "bathhouse:heating_element",
+    "bathhouse:ash_pit",
+    "bathhouse:closed_heater",
+    "bathhouse:open_heater",
+    "bathhouse:boiler",
+    "bathhouse:water_tank",
+    "bathhouse:damper",
+    "bathhouse:fuel_tunnel",
+    "bathhouse:stove_cladding",
+    "bathhouse:chimney",
     "bathhouse:steam_generator",
     "bathhouse:warm_lounger",
-    "bathhouse:chimney"
+    "bathhouse:plunge_stove",
+    "bathhouse:plunge_chiller",
+    "bathhouse:plunge_wall_tile"
   ]
 }
