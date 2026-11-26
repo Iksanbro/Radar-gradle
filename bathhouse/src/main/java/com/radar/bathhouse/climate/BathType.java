@@ -18,15 +18,16 @@ import net.minecraft.world.effect.MobEffect;
  *     <li>EMBER ("Калильня", sauna-like) — wooden dry-heat room: 80–110 °C, 5–15 %, stove with an open (outer) heater.</li>
  * </ul>
  * Lodges and ember rooms can be heated white, gray or black. Each type's buff is split into three parts that the
- * steam level (1–3) grants cumulatively.
+ * steam level (1–3) grants cumulatively; steaming too long in a hot but wrong bath gives the parts inverted
+ * at half strength and half duration.
  */
 public enum BathType {
     MIST("mist", 35, 50, 90, 100, WallMaterial.STONE, Equipment.STEAM_SOURCE,
-            EnumSet.of(SmokeVariant.WHITE), ModEffects.MIST_PARTS, ChatFormatting.AQUA),
+            EnumSet.of(SmokeVariant.WHITE), ModEffects.MIST_PARTS, ModEffects.MIST_PENALTIES, ChatFormatting.AQUA),
     STEAM("steam", 60, 80, 40, 70, WallMaterial.WOOD, Equipment.CLOSED_HEATER_STOVE,
-            EnumSet.allOf(SmokeVariant.class), ModEffects.STEAM_PARTS, ChatFormatting.GOLD),
+            EnumSet.allOf(SmokeVariant.class), ModEffects.STEAM_PARTS, ModEffects.STEAM_PENALTIES, ChatFormatting.GOLD),
     EMBER("ember", 80, 110, 5, 15, WallMaterial.WOOD, Equipment.OPEN_HEATER_STOVE,
-            EnumSet.allOf(SmokeVariant.class), ModEffects.EMBER_PARTS, ChatFormatting.RED);
+            EnumSet.allOf(SmokeVariant.class), ModEffects.EMBER_PARTS, ModEffects.EMBER_PENALTIES, ChatFormatting.RED);
 
     /** Minimum share of the required wall material. */
     public static final double REQUIRED_WALL_FRACTION = 0.5;
@@ -42,10 +43,12 @@ public enum BathType {
     private final Equipment equipment;
     private final Set<SmokeVariant> variants;
     private final List<Holder<MobEffect>> effects;
+    private final List<Holder<MobEffect>> penalties;
     private final ChatFormatting color;
 
     BathType(String id, int minTemperature, int maxTemperature, int minHumidity, int maxHumidity, WallMaterial walls,
-             Equipment equipment, Set<SmokeVariant> variants, List<Holder<MobEffect>> effects, ChatFormatting color) {
+             Equipment equipment, Set<SmokeVariant> variants, List<Holder<MobEffect>> effects,
+             List<Holder<MobEffect>> penalties, ChatFormatting color) {
         this.id = id;
         this.minTemperature = minTemperature;
         this.maxTemperature = maxTemperature;
@@ -55,6 +58,7 @@ public enum BathType {
         this.equipment = equipment;
         this.variants = variants;
         this.effects = effects;
+        this.penalties = penalties;
         this.color = color;
     }
 
@@ -101,6 +105,11 @@ public enum BathType {
     /** The three parts of this bath's buff, in the order the steam levels grant them. */
     public List<Holder<MobEffect>> effects() {
         return effects;
+    }
+
+    /** The three parts inverted at half strength: what a failed steaming attempt in this kind of bath gives. */
+    public List<Holder<MobEffect>> penalties() {
+        return penalties;
     }
 
     public ChatFormatting color() {

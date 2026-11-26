@@ -12,6 +12,8 @@ public final class BathConfig {
     public static final ModConfigSpec.IntValue BLACK_BONUS_POINTS;
     public static final ModConfigSpec.IntValue LEVEL_2_POINTS;
     public static final ModConfigSpec.IntValue LEVEL_3_POINTS;
+    public static final ModConfigSpec.BooleanValue FAILED_STEAM_DEBUFFS;
+    public static final ModConfigSpec.IntValue FAILED_STEAM_SECONDS;
     public static final ModConfigSpec.IntValue MAX_ROOM_VOLUME;
     public static final ModConfigSpec.IntValue MIN_ROOM_VOLUME;
     public static final ModConfigSpec.DoubleValue SIMULATION_SPEED;
@@ -40,6 +42,11 @@ public final class BathConfig {
                 .defineInRange("level2Points", 3, 1, 10);
         LEVEL_3_POINTS = b.comment("Quality points needed for steam level 3.")
                 .defineInRange("level3Points", 5, 1, 10);
+        FAILED_STEAM_DEBUFFS = b.comment("Steaming in a hot but wrong bath gives the bath's buff parts inverted, at half strength",
+                        "and half duration: one part per problem with the bath, up to three.")
+                .define("failedSteamDebuffs", true);
+        FAILED_STEAM_SECONDS = b.comment("Seconds in a hot but wrong bath before the debuffs are given.")
+                .defineInRange("failedSteamSeconds", 30, 5, 600);
         b.pop();
 
         b.push("room");

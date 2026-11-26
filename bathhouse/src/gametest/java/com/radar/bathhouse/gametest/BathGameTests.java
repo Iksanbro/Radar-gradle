@@ -358,6 +358,117 @@ public class BathGameTests {
         helper.succeed();
     }
 
+    // ------------------------------------------------------------------------------------------------ failed steaming
+
+    private static void failFor(ServerPlayer player, BathGaugeBlockEntity gauge, int seconds) {
+        for (int i = 0; i < seconds; i++) {
+            BathSessionTracker.visit(player, gauge);
+        }
+    }
+
+    @GameTest(template = EMPTY)
+    public static void failedSteamGivesHalfInverseDebuff(GameTestHelper helper) {
+        shell(helper, Blocks.OAK_PLANKS);
+        stove(helper, ModBlocks.STEEL_FIREBOX.get(), true, ModBlocks.CLOSED_HEATER.get(), true);
+        BathGaugeBlockEntity gauge = gauge(helper);
+        BathAssessment a = assess(gauge, 70, 20, 0); // hot enough for a lodge, but far too dry
+        expect(helper, a.type() == null && a.closest() == BathType.STEAM && a.problems().size() == 1, "one problem: " + describe(a));
+        expect(helper, BathSessionTracker.isFailedAttempt(a, gauge), "a hot but wrong bath is a failed attempt");
+
+        ServerPlayer player = player(helper, new BlockPos(2, 2, 4), 0.0);
+        failFor(player, gauge, BathConfig.FAILED_STEAM_SECONDS.get() - 1);
+        expect(helper, !player.hasEffect(ModEffects.FRAILTY), "nothing before the time is up");
+        failFor(player, gauge, 1);
+        expect(helper, player.hasEffect(ModEffects.FRAILTY) && !player.hasEffect(ModEffects.LIMPNESS),
+                "one problem: the first part inverted");
+        int duration = player.getEffect(ModEffects.FRAILTY).getDuration();
+        expect(helper, duration <= BathConfig.BUFF_DURATION_TICKS.get() / 2 && duration > BathConfig.BUFF_DURATION_TICKS.get() / 2 - 10,
+                "half as long as the buff, got " + duration);
+        expect(helper, Math.abs(player.getMaxHealth() - 18.0F) < 0.01F, "half of +4 health, inverted: 18, got " + player.getMaxHealth());
+
+        // A proper steam afterwards washes the debuff away.
+        assess(gauge, 70, 55, 0);
+        session(player, gauge, 0);
+        expect(helper, player.hasEffect(ModEffects.FORTITUDE) && !player.hasEffect(ModEffects.FRAILTY),
+                "a good steam replaces the debuff");
+        remove(helper, player);
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY)
+    public static void moreProblemsMoreDebuffs(GameTestHelper helper) {
+        shell(helper, Blocks.OAK_PLANKS);
+        stove(helper, ModBlocks.STEEL_FIREBOX.get(), true, ModBlocks.CLOSED_HEATER.get(), false); // black
+        BathGaugeBlockEntity gauge = gauge(helper);
+        BathAssessment a = assess(gauge, 70, 20, 50); // too dry and still smoky
+        expect(helper, a.closest() == BathType.STEAM && a.problems().size() == 2, "two problems: " + describe(a));
+        ServerPlayer player = player(helper, new BlockPos(2, 2, 4), 0.0);
+        failFor(player, gauge, BathConfig.FAILED_STEAM_SECONDS.get());
+        expect(helper, player.hasEffect(ModEffects.FRAILTY) && player.hasEffect(ModEffects.LIMPNESS)
+                && !player.hasEffect(ModEffects.UNSTEADINESS), "two problems: two inverted parts");
+        remove(helper, player);
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY)
+    public static void noDebuffWhileHeatingUp(GameTestHelper helper) {
+        shell(helper, Blocks.OAK_PLANKS);
+        stove(helper, ModBlocks.STEEL_FIREBOX.get(), true, ModBlocks.CLOSED_HEATER.get(), true);
+        BathGaugeBlockEntity gauge = gauge(helper);
+        BathAssessment a = assess(gauge, 45, 10, 0); // still heating
+        expect(helper, !BathSessionTracker.isFailedAttempt(a, gauge), "a room still heating up is not a failed attempt: " + describe(a));
+        ServerPlayer player = player(helper, new BlockPos(2, 2, 4), 0.0);
+        failFor(player, gauge, BathConfig.FAILED_STEAM_SECONDS.get() * 2);
+        expect(helper, !player.hasEffect(ModEffects.FRAILTY) && !player.hasEffect(ModEffects.HEAVINESS)
+                && !player.hasEffect(ModEffects.CLOGGED_PORES), "no debuffs while waiting for the heat");
+        remove(helper, player);
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY)
+    public static void failedEmberRoomSlowsHalfAsMuch(GameTestHelper helper) {
+        shell(helper, Blocks.SPRUCE_PLANKS);
+        stove(helper, ModBlocks.HEATING_ELEMENT.get(), false, ModBlocks.OPEN_HEATER.get(), false);
+        BathGaugeBlockEntity gauge = gauge(helper);
+        BathAssessment a = assess(gauge, 95, 30, 0); // too humid for dry heat
+        expect(helper, a.closest() == BathType.EMBER && a.problems().size() == 1, "one problem: " + describe(a));
+        ServerPlayer player = player(helper, new BlockPos(2, 2, 4), 0.0);
+        double base = player.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED);
+        failFor(player, gauge, BathConfig.FAILED_STEAM_SECONDS.get());
+        double slowed = player.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED);
+        expect(helper, player.hasEffect(ModEffects.HEAVINESS), "failed ember room: Heaviness");
+        expect(helper, Math.abs(slowed / base - 0.95) < 1e-6, "Lightness gives +10 %, Heaviness takes 5 %: " + base + " -> " + slowed);
+        remove(helper, player);
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY)
+    public static void toxinsAndUnsteadinessWork(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var poison = new net.minecraft.world.damagesource.DamageSource(level.registryAccess()
+                .registryOrThrow(Registries.DAMAGE_TYPE).getHolderOrThrow(net.neoforged.neoforge.common.NeoForgeMod.POISON_DAMAGE));
+        var clean = helper.spawn(net.minecraft.world.entity.EntityType.PIG, new BlockPos(2, 2, 2));
+        var toxic = helper.spawn(net.minecraft.world.entity.EntityType.PIG, new BlockPos(6, 2, 2));
+        toxic.addEffect(new net.minecraft.world.effect.MobEffectInstance(ModEffects.TOXINS, 200));
+        float before = clean.getHealth();
+        clean.hurt(poison, 2.0F);
+        toxic.invulnerableTime = 0;
+        toxic.hurt(poison, 2.0F);
+        expect(helper, Math.abs((before - clean.getHealth()) - 2.0F) < 0.01F, "plain poison hurts 2");
+        expect(helper, Math.abs((before - toxic.getHealth()) - 3.0F) < 0.01F, "with Toxins poison hurts 50 % more, lost " + (before - toxic.getHealth()));
+
+        var steady = helper.spawn(net.minecraft.world.entity.EntityType.PIG, new BlockPos(2, 2, 6));
+        var shaky = helper.spawn(net.minecraft.world.entity.EntityType.PIG, new BlockPos(6, 2, 6));
+        shaky.addEffect(new net.minecraft.world.effect.MobEffectInstance(ModEffects.UNSTEADINESS, 200));
+        steady.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
+        shaky.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
+        steady.knockback(0.4, 1.0, 0.0);
+        shaky.knockback(0.4, 1.0, 0.0);
+        double ratio = shaky.getDeltaMovement().horizontalDistance() / steady.getDeltaMovement().horizontalDistance();
+        expect(helper, Math.abs(ratio - 1.1) < 1e-3, "Unsteadiness: knockback +10 %, ratio " + ratio);
+        helper.succeed();
+    }
+
     // ------------------------------------------------------------------------------------------------ room
 
     @GameTest(template = EMPTY)

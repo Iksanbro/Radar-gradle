@@ -336,6 +336,12 @@ public class BathGaugeBlockEntity extends BlockEntity {
             for (Component problem : assessment.problems()) {
                 player.sendSystemMessage(Component.literal("   ✘ ").withStyle(ChatFormatting.RED).append(problem.copy().withStyle(ChatFormatting.GRAY)));
             }
+            if (closest != null && BathConfig.FAILED_STEAM_DEBUFFS.get() && BathSessionTracker.isFailedAttempt(assessment, this)) {
+                int parts = Math.max(1, Math.min(3, assessment.problems().size()));
+                player.sendSystemMessage(Component.translatable("bathhouse.report.fail_warning",
+                        BathConfig.FAILED_STEAM_SECONDS.get(), Component.translatable(closest.translationKey()), parts)
+                        .withStyle(ChatFormatting.RED));
+            }
         }
     }
 

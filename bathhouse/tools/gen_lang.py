@@ -95,6 +95,21 @@ L = {
     "effect.bathhouse.suppleness": ("Гибкость", "Suppleness"),
     "effect.bathhouse.featherlight": ("Невесомость", "Featherlight"),
 
+    # ---- failed steaming: inverted parts at half strength
+    "effect.bathhouse.clogged_pores": ("Закупоренные поры", "Clogged Pores"),
+    "effect.bathhouse.stuffiness": ("Духота", "Stuffiness"),
+    "effect.bathhouse.toxins": ("Шлаки", "Toxins"),
+    "effect.bathhouse.frailty": ("Хилость", "Frailty"),
+    "effect.bathhouse.limpness": ("Вялость", "Limpness"),
+    "effect.bathhouse.unsteadiness": ("Шаткость", "Unsteadiness"),
+    "effect.bathhouse.heaviness": ("Тяжесть", "Heaviness"),
+    "effect.bathhouse.clumsiness": ("Неуклюжесть", "Clumsiness"),
+    "effect.bathhouse.fumbling": ("Нерасторопность", "Fumbling"),
+    "bathhouse.penalty": ("Неудачное парение — %s не задалась. Получено: %s", "Failed steaming: the %s went wrong. Received: %s"),
+    "bathhouse.actionbar.failing": ("неудачное парение %s/%s с", "failed steaming %s/%s s"),
+    "bathhouse.report.fail_warning": ("⚠ Парная горячая, но баня неправильная: через %s с здесь — ослабления «%s» (%s шт.), вдвое слабее и короче её эффекта",
+                                      "⚠ The room is hot but the bath is wrong: after %s s here you get the %s weaknesses (%s), half as strong and as long as its buff"),
+
     # ---- bath types and variants
     "bathhouse.type.mist": ("Туманница", "Mist Hall"),
     "bathhouse.type.steam": ("Парильня", "Steam Lodge"),

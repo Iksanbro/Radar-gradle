@@ -67,8 +67,14 @@ public final class BathSessionTracker {
         private int steamThrows;
         private int loungerSeconds;
         private boolean interrupted;
+        /** Seconds spent in a hot but wrong bath, and which bath it was trying to be. */
+        private int failSeconds;
+        @Nullable
+        private BathType failType;
 
         private void reset() {
+            failSeconds = 0;
+            failType = null;
             progress = 0;
             seconds = 0;
             idealSeconds = 0;
@@ -93,6 +99,10 @@ public final class BathSessionTracker {
 
         public boolean ready() {
             return ready;
+        }
+
+        public int failSeconds() {
+            return failSeconds;
         }
 
         /** Session criteria: steady ideal climate, ritual, no breaks. */
@@ -135,6 +145,7 @@ public final class BathSessionTracker {
 
         int required = BathConfig.SESSION_SECONDS.get();
         if (assessment.ready()) {
+            session.failSeconds = 0;
             BathType type = assessment.type();
             session.seconds++;
             if (type.ideal(gauge.temperature(), gauge.humidity())) {
@@ -160,12 +171,41 @@ public final class BathSessionTracker {
             if (session.progress > 0) {
                 session.interrupted = true;
             }
+            trackFailure(player, session, assessment, gauge);
             if (gauge.scan() != null && !gauge.scan().sources().isEmpty()) {
                 // Only nag in rooms that are actually set up as a bath.
-                player.displayClientMessage(notReadyLine(assessment, gauge), true);
+                player.displayClientMessage(notReadyLine(assessment, gauge, session.failSeconds), true);
             }
         }
         applyHazards(player, gauge);
+    }
+
+    /**
+     * A failed steaming attempt: the room is closed, heated by something, and at least as hot as the bath it is
+     * closest to — but something is wrong with it. Heating up (still too cold) and airing out (door open) don't count.
+     */
+    public static boolean isFailedAttempt(BathAssessment assessment, BathGaugeBlockEntity gauge) {
+        BathType closest = assessment.closest();
+        return !assessment.ready() && closest != null && !gauge.leaky() && gauge.scan() != null
+                && !gauge.scan().duplicateGauge() && !gauge.scan().sources().isEmpty()
+                && gauge.temperature() >= closest.minTemperature();
+    }
+
+    private static void trackFailure(ServerPlayer player, Session session, BathAssessment assessment, BathGaugeBlockEntity gauge) {
+        if (!BathConfig.FAILED_STEAM_DEBUFFS.get() || !isFailedAttempt(assessment, gauge)) {
+            session.failSeconds = 0;
+            return;
+        }
+        BathType closest = assessment.closest();
+        if (session.failType != closest) {
+            session.failType = closest;
+            session.failSeconds = 0;
+        }
+        session.failSeconds++;
+        if (session.failSeconds >= BathConfig.FAILED_STEAM_SECONDS.get()) {
+            session.failSeconds = 0;
+            BathRewards.penalize(player, closest, assessment.problems());
+        }
     }
 
     private static List<BathQuality.Criterion> allCriteria(Session session, BathGaugeBlockEntity gauge, BathType type) {
@@ -217,10 +257,15 @@ public final class BathSessionTracker {
                 .append(BathQuality.levelName(level).copy().withStyle(ChatFormatting.GOLD));
     }
 
-    private static Component notReadyLine(BathAssessment assessment, BathGaugeBlockEntity gauge) {
+    private static Component notReadyLine(BathAssessment assessment, BathGaugeBlockEntity gauge, int failSeconds) {
         MutableComponent line = Component.translatable("bathhouse.actionbar.not_ready").withStyle(ChatFormatting.GRAY)
                 .append(Component.literal(" · ").withStyle(ChatFormatting.DARK_GRAY))
                 .append(climate(gauge));
+        if (failSeconds > 0) {
+            line.append(Component.literal(" · ").withStyle(ChatFormatting.DARK_GRAY))
+                    .append(Component.translatable("bathhouse.actionbar.failing", failSeconds, BathConfig.FAILED_STEAM_SECONDS.get())
+                            .withStyle(ChatFormatting.RED));
+        }
         if (!assessment.problems().isEmpty()) {
             line.append(Component.literal(" · ").withStyle(ChatFormatting.DARK_GRAY))
                     .append(assessment.problems().getFirst().copy().withStyle(ChatFormatting.YELLOW));

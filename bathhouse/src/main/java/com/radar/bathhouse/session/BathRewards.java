@@ -58,6 +58,9 @@ public final class BathRewards {
     public static void grantBath(ServerPlayer player, BathType type, SmokeVariant variant, int level,
                                  List<BathQuality.Criterion> criteria) {
         int duration = duration(variant);
+        for (Holder<MobEffect> penalty : type.penalties()) {
+            player.removeEffect(penalty); // a good steam undoes a bad one
+        }
         apply(player, type.effects(), level, duration);
         player.displayClientMessage(Component.translatable("bathhouse.reward",
                         Component.translatable(type.translationKey()).withStyle(type.color()),
@@ -68,6 +71,34 @@ public final class BathRewards {
         player.displayClientMessage(BathQuality.line(criteria, variant), false);
         player.level().playSound(null, player.blockPosition(), SoundEvents.PLAYER_LEVELUP, SoundSource.PLAYERS, 0.6F,
                 1.0F + 0.15F * level);
+    }
+
+    /** Failed steaming lasts half as long as a successful one. */
+    public static int penaltyDuration() {
+        return BathConfig.BUFF_DURATION_TICKS.get() / 2;
+    }
+
+    /**
+     * Failed steaming: the bath's buff parts inverted at half strength and half duration, one part per problem
+     * with the bath (up to three).
+     */
+    public static void penalize(ServerPlayer player, BathType type, List<Component> problems) {
+        int parts = Math.max(1, Math.min(3, problems.size()));
+        int duration = penaltyDuration();
+        apply(player, type.penalties(), parts, duration);
+        MutableComponent reasons = Component.empty();
+        for (int i = 0; i < problems.size(); i++) {
+            if (i > 0) {
+                reasons.append(Component.literal("; ").withStyle(ChatFormatting.DARK_GRAY));
+            }
+            reasons.append(problems.get(i).copy().withStyle(ChatFormatting.GRAY));
+        }
+        player.displayClientMessage(Component.translatable("bathhouse.penalty",
+                        Component.translatable(type.translationKey()).withStyle(type.color()),
+                        parts(type.penalties(), parts, duration, ", "))
+                .withStyle(ChatFormatting.RED), false);
+        player.displayClientMessage(reasons, false);
+        player.level().playSound(null, player.blockPosition(), SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.7F, 0.6F);
     }
 
     public static void grantPlunge(ServerPlayer player, List<Holder<MobEffect>> effects, int level, double multiplier,

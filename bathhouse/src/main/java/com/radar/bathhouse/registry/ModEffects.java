@@ -2,6 +2,8 @@ package com.radar.bathhouse.registry;
 
 import com.radar.bathhouse.Bathhouse;
 import com.radar.bathhouse.effect.BathEffect;
+import com.radar.bathhouse.effect.CloggedPoresEffect;
+import com.radar.bathhouse.effect.StuffinessEffect;
 import com.radar.bathhouse.effect.FrostproofEffect;
 import com.radar.bathhouse.effect.ImmunityEffect;
 import com.radar.bathhouse.effect.PurityEffect;
@@ -72,11 +74,49 @@ public final class ModEffects {
             () -> new BathEffect(0xF4D3E3).addAttributeModifier(Attributes.FALL_DAMAGE_MULTIPLIER, Bathhouse.id("effect.featherlight"),
                     -0.25, AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
 
+    // ------------------------------------------------------------------------------------------------------------
+    // Failed steaming: each bath buff part inverted, at half strength (and half duration, see BathRewards).
+
+    // Mist hall: inverse of Purity / Clarity / Cleansing
+    public static final DeferredHolder<MobEffect, MobEffect> CLOGGED_PORES = EFFECTS.register("clogged_pores",
+            () -> new CloggedPoresEffect(0x6E7F86));
+    public static final DeferredHolder<MobEffect, MobEffect> STUFFINESS = EFFECTS.register("stuffiness",
+            () -> new StuffinessEffect(0x8C8F6A));
+    /** Poison and wither hurt 50 % more (see {@code GameEvents}). */
+    public static final DeferredHolder<MobEffect, MobEffect> TOXINS = EFFECTS.register("toxins",
+            () -> BathEffect.penalty(0x5E7A3A));
+
+    // Steam lodge: inverse of Fortitude / Prowess / Steadfastness
+    public static final DeferredHolder<MobEffect, MobEffect> FRAILTY = EFFECTS.register("frailty",
+            () -> BathEffect.penalty(0x7A5A52).addAttributeModifier(Attributes.MAX_HEALTH, Bathhouse.id("effect.frailty"),
+                    -2.0, AttributeModifier.Operation.ADD_VALUE));
+    public static final DeferredHolder<MobEffect, MobEffect> LIMPNESS = EFFECTS.register("limpness",
+            () -> BathEffect.penalty(0x6B5A50).addAttributeModifier(Attributes.ATTACK_DAMAGE, Bathhouse.id("effect.limpness"),
+                    -0.5, AttributeModifier.Operation.ADD_VALUE));
+    /** Knockback taken +10 % (see {@code GameEvents}); knockback resistance cannot go below zero. */
+    public static final DeferredHolder<MobEffect, MobEffect> UNSTEADINESS = EFFECTS.register("unsteadiness",
+            () -> BathEffect.penalty(0x5C4E3E));
+
+    // Ember room: inverse of Lightness / Quick Hands / Knack
+    public static final DeferredHolder<MobEffect, MobEffect> HEAVINESS = EFFECTS.register("heaviness",
+            () -> BathEffect.penalty(0x7A6A55).addAttributeModifier(Attributes.MOVEMENT_SPEED, Bathhouse.id("effect.heaviness"),
+                    -0.05, AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
+    public static final DeferredHolder<MobEffect, MobEffect> CLUMSINESS = EFFECTS.register("clumsiness",
+            () -> BathEffect.penalty(0x8A7A55).addAttributeModifier(Attributes.ATTACK_SPEED, Bathhouse.id("effect.clumsiness"),
+                    -0.05, AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
+    public static final DeferredHolder<MobEffect, MobEffect> FUMBLING = EFFECTS.register("fumbling",
+            () -> BathEffect.penalty(0x6F6458).addAttributeModifier(Attributes.BLOCK_BREAK_SPEED, Bathhouse.id("effect.fumbling"),
+                    -0.05, AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
+
     public static final List<Holder<MobEffect>> MIST_PARTS = List.of(PURITY, CLARITY, CLEANSING);
     public static final List<Holder<MobEffect>> STEAM_PARTS = List.of(FORTITUDE, PROWESS, STEADFASTNESS);
     public static final List<Holder<MobEffect>> EMBER_PARTS = List.of(LIGHTNESS, QUICK_HANDS, KNACK);
     public static final List<Holder<MobEffect>> COLD_PARTS = List.of(TEMPERING, HARDINESS, FROSTPROOF);
     public static final List<Holder<MobEffect>> HOT_PARTS = List.of(BLISS, SUPPLENESS, FEATHERLIGHT);
+
+    public static final List<Holder<MobEffect>> MIST_PENALTIES = List.of(CLOGGED_PORES, STUFFINESS, TOXINS);
+    public static final List<Holder<MobEffect>> STEAM_PENALTIES = List.of(FRAILTY, LIMPNESS, UNSTEADINESS);
+    public static final List<Holder<MobEffect>> EMBER_PENALTIES = List.of(HEAVINESS, CLUMSINESS, FUMBLING);
 
     private ModEffects() {
     }

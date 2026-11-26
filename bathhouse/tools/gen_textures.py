@@ -867,6 +867,53 @@ def effect_icons():
         save(out, 'mob_effect/' + name)
 
 
+# Failed steaming: the buff icons, muted, with a red arrow pointing down.
+PENALTY_ICONS = {
+    'clogged_pores': ('purity', '#6e7f86', '#3d4a50', '#9aa6ab'),
+    'stuffiness': ('clarity', '#8c8f6a', '#4f5236', '#b5b88f'),
+    'toxins': ('cleansing', '#5e7a3a', '#33461c', '#8fae5c'),
+    'frailty': ('fortitude', '#7a5a52', '#3f2a25', '#a3847b'),
+    'limpness': ('prowess', '#7d7a74', '#45423c', '#a39f97'),
+    'unsteadiness': ('steadfastness', '#5c4e3e', '#2f271d', '#857360'),
+    'heaviness': ('lightness', '#7a6a55', '#463a2b', '#a8977c'),
+    'clumsiness': ('quick_hands', '#8a7a55', '#4d4227', '#b3a37c'),
+    'fumbling': ('knack', '#6f6458', '#3b342c', '#988b7c'),
+}
+ARROW = ["..#..", "..#..", "..#..", "#####", ".###.", "..#.."]
+
+
+def penalty_icons():
+    for name, (base, body, edge, light) in PENALTY_ICONS.items():
+        rows = ICONS[base][3]
+        img = new(18)
+        for y, row in enumerate(rows):
+            for x, ch in enumerate(row[:18]):
+                if ch == '#':
+                    img.putpixel((x, y), hexc(body))
+                elif ch == 'o':
+                    img.putpixel((x, y), hexc(light))
+        out = img.copy()
+        for y in range(18):
+            for x in range(18):
+                p = img.getpixel((x, y))
+                if p[3] == 0 or p[:3] != hexc(body)[:3]:
+                    continue
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if not (0 <= nx < 18 and 0 <= ny < 18) or img.getpixel((nx, ny))[3] == 0:
+                        out.putpixel((x, y), hexc(edge))
+                        break
+        arrow = {(12 + x, 11 + y) for y, row in enumerate(ARROW) for x, ch in enumerate(row) if ch == '#'}
+        for (x, y) in arrow:
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                n = (x + dx, y + dy)
+                if n not in arrow and 0 <= n[0] < 18 and 0 <= n[1] < 18:
+                    out.putpixel(n, hexc('#4a0c0c'))
+        for (x, y) in arrow:
+            out.putpixel((x, y), hexc('#e0322f'))
+        save(out, 'mob_effect/' + name)
+
+
 if __name__ == '__main__':
     import shutil
     shutil.rmtree(ROOT, ignore_errors=True)
@@ -886,4 +933,5 @@ if __name__ == '__main__':
     damper_and_tunnel()
     plunge_parts()
     effect_icons()
+    penalty_icons()
     print('textures written to', os.path.normpath(ROOT))
