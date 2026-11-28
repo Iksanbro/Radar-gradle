@@ -20,6 +20,8 @@ import net.minecraft.world.level.Level;
  *   <li>время между пусками - не чаще, чем раз в столько, любыми носами сети; у очереди - пауза перед новой очередью
  *   (от последнего пуска сети), внутри очереди - задержка между ракетами.</li>
  * </ul>
+ * Прерванная очередь не продолжается: ракеты кончились или цель пропала (по ней {@link #STALE_TICKS} никто не
+ * спрашивал пуск) - очередь закрыта, следующая по этой цели - снова полностью (когда ракеты прерванной долетят).
  * Пуск по редстоуну этим не ограничивается. Вычислителя в сети нет - настройки по умолчанию (одиночные, 1 с).
  */
 public final class RocketSalvo {
@@ -31,6 +33,10 @@ public final class RocketSalvo {
     private static final class Queue {
         int launched;
         long lastTick;
+        /** Когда носы сети последний раз спрашивали пуск по этой цели. */
+        long lastCheck;
+        /** Очередь прервана (ракеты кончились, цель пропадала) - не продолжается. */
+        boolean closed;
     }
 
     private static final class Net {
@@ -38,8 +44,11 @@ public final class RocketSalvo {
         final Map<String, Queue> queues = new HashMap<>();
     }
 
-    /** Очередь по цели забывается, если по ней столько тиков не пускали. */
-    static final long FORGET_TICKS = 1200;
+    /**
+     * Очередь по цели сбрасывается, если по ней столько тиков никто не спрашивал пуск: ракеты кончились (носов на
+     * автопуске больше нет) или цель пропала. Следующая очередь - снова полностью (носы спрашивают раз в 5 тиков).
+     */
+    static final long STALE_TICKS = 40;
     private static final EngageSettings DEFAULTS = new EngageSettings();
     private static final Map<Key, Net> NETS = new HashMap<>();
 
@@ -53,7 +62,13 @@ public final class RocketSalvo {
     public static Verdict check(ServerLevel level, UUID network, String target, long now) {
         EngageSettings s = settings(level, network);
         Net n = NETS.get(new Key(level.dimension(), network));
-        if (n != null) n.queues.values().removeIf(q -> now - q.lastTick > FORGET_TICKS);
+        if (n != null) n.queues.entrySet().removeIf(e -> {
+            Queue q = e.getValue();
+            if (now - q.lastCheck <= STALE_TICKS) return false;
+            if (inFlight(level, network, e.getKey()) == 0) return true;            // забыта: новая - полностью
+            q.closed = true;                                                       // её ракеты ещё летят
+            return false;
+        });
         long sinceLast = n == null ? Long.MAX_VALUE : now - n.last;
         int flying = inFlight(level, network, target);
         if (s.rocketMode == EngageSettings.RocketMode.SINGLE) {
@@ -61,13 +76,17 @@ public final class RocketSalvo {
             return flying == 0 ? Verdict.GO : Verdict.IN_FLIGHT;
         }
         Queue q = n == null ? null : n.queues.get(target);
-        if (q != null && q.launched > 0 && q.launched < s.rocketQueue) {     // очередь идёт - задержка между ракетами
+        if (q != null) q.lastCheck = now;
+        if (q != null && !q.closed && q.launched > 0 && q.launched < s.rocketQueue) {   // очередь идёт - задержка между ракетами
             return now - q.lastTick < s.rocketQueueDelayTicks ? Verdict.INTERVAL : Verdict.GO;
         }
-        if (q != null && q.launched >= s.rocketQueue && flying > 0) return Verdict.QUEUE_DONE;
+        if (q != null && (q.closed || q.launched >= s.rocketQueue) && flying > 0) return Verdict.QUEUE_DONE;
         // новая очередь (по этой цели впервые или прошлая долетела, а цель жива) - после паузы между очередями
         if (sinceLast < s.rocketIntervalTicks) return Verdict.INTERVAL;
-        if (q != null) q.launched = 0;
+        if (q != null) {
+            q.launched = 0;
+            q.closed = false;
+        }
         return Verdict.GO;
     }
 
@@ -78,6 +97,7 @@ public final class RocketSalvo {
         Queue q = n.queues.computeIfAbsent(target, k -> new Queue());
         q.launched++;
         q.lastTick = now;
+        q.lastCheck = now;
     }
 
     /** Ракеты сети, летящие сейчас к цели. */

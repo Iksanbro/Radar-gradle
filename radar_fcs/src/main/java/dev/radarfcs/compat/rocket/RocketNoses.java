@@ -3,6 +3,8 @@ package dev.radarfcs.compat.rocket;
 import dev.radarfcs.registry.FcsRegistry;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.crafting.RecipeSerializer;
+import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -22,6 +24,8 @@ public final class RocketNoses {
     public static DeferredBlock<NetNoseBlock> NET;
     public static DeferredItem<NetNoseItem> NET_ITEM;
     public static DeferredHolder<BlockEntityType<?>, BlockEntityType<NetNoseBlockEntity>> NET_BE;
+    /** Копирование настроек носа крафтом. */
+    public static DeferredHolder<RecipeSerializer<?>, SimpleCraftingRecipeSerializer<NoseCopyRecipe>> COPY;
 
     private RocketNoses() {}
 
@@ -39,5 +43,6 @@ public final class RocketNoses {
         NET_ITEM = FcsRegistry.ITEMS.register("network_nose", () -> new NetNoseItem(NET.get(), new Item.Properties()));
         NET_BE = FcsRegistry.BLOCK_ENTITIES.register("network_nose",
                 () -> BlockEntityType.Builder.of((pos, state) -> new NetNoseBlockEntity(NET_BE.get(), pos, state), NET.get()).build(null));
+        COPY = FcsRegistry.RECIPE_SERIALIZERS.register("rocket_nose_copy", () -> new SimpleCraftingRecipeSerializer<>(NoseCopyRecipe::new));
     }
 }

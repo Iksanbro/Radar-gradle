@@ -27,7 +27,8 @@ import org.jetbrains.annotations.Nullable;
  * со всей аппаратурой той же сети, на любом расстоянии. Полный сигнал редстоуна отключает линк.
  * Старые парные линки (версии 0.6-0.7, без сети) продолжают связывать оба своих конца.
  */
-public class RadarLinkBlockEntity extends BlockEntity implements IHaveGoggleInformation {
+public class RadarLinkBlockEntity extends BlockEntity implements IHaveGoggleInformation,
+        com.simibubi.create.api.schematic.nbt.PartialSafeNBT {
     @Nullable private UUID network;
     /** Только у старых парных линков: второй конец относительно блока, на котором стоит линк. */
     private BlockPos legacyOffset = BlockPos.ZERO;
@@ -183,6 +184,12 @@ public class RadarLinkBlockEntity extends BlockEntity implements IHaveGoggleInfo
         tag.putBoolean("Disabled", disabled);
         tag.putIntArray("Usage", usage);
         tag.putBoolean("Overflow", overflow);
+    }
+
+    /** Схематика Create: сеть передатчика сохраняется и ставится пушкой схематик вместе с блоком. */
+    @Override
+    public void writeSafe(CompoundTag tag, HolderLookup.Provider registries) {
+        if (network != null) tag.putUUID("Network", network);
     }
 
     @Override

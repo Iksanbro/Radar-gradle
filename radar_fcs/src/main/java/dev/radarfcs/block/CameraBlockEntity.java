@@ -40,7 +40,8 @@ import org.jetbrains.annotations.Nullable;
  * пушки на точку, куда она смотрит (блок или сущность на луче), и стреляют, пока зажат огонь; автоприцеливание
  * в это время приостановлено. Управление держится, пока клиент присылает команды (не реже раза в TIMEOUT тиков).
  */
-public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInformation {
+public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInformation,
+        com.simibubi.create.api.schematic.nbt.PartialSafeNBT {
     /** Дальность луча взгляда, блоков (по загруженным чанкам). */
     public static final double RANGE = 384;
     /** Без команд игрока дольше - управление снято, автоприцеливание возвращается. */
@@ -465,6 +466,13 @@ public class CameraBlockEntity extends BlockEntity implements IHaveGoggleInforma
             tag.putFloat("ViewYaw", viewYaw);
             tag.putFloat("ViewPitch", viewPitch);
         }
+    }
+
+    /** Схематика Create: имя и радарная сеть камеры сохраняются и ставятся пушкой схематик вместе с блоком. */
+    @Override
+    public void writeSafe(CompoundTag tag, HolderLookup.Provider registries) {
+        if (!name.isEmpty()) tag.putString("Name", name);
+        if (network != null) tag.putUUID("Network", network);
     }
 
     @Override

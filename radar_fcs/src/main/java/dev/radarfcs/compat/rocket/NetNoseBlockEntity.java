@@ -34,7 +34,8 @@ import org.jetbrains.annotations.Nullable;
  * отметке или лазерным целеуказателем), и пуск по сигналу редстоуна (на нос; сигнал на стартовую площадку тоже
  * пускает - штатно).
  */
-public class NetNoseBlockEntity extends BlockEntity implements IHaveGoggleInformation {
+public class NetNoseBlockEntity extends BlockEntity implements IHaveGoggleInformation,
+        com.simibubi.create.api.schematic.nbt.PartialSafeNBT {
     /** Автопуск по цели сети; автопуск только по цели, назначенной вручную (монитор, целеуказатель); по редстоуну. */
     public enum Mode {
         AUTO, AUTO_DESIGNATED, REDSTONE;
@@ -216,6 +217,12 @@ public class NetNoseBlockEntity extends BlockEntity implements IHaveGoggleInform
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
+        write(tag);
+    }
+
+    /** Схематика Create: сеть, режим и допустимая цель сохраняются и ставятся пушкой схематик вместе с блоком. */
+    @Override
+    public void writeSafe(CompoundTag tag, HolderLookup.Provider registries) {
         write(tag);
     }
 

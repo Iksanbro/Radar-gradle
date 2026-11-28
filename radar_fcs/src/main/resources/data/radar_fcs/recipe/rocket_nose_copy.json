@@ -1,0 +1,10 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "cbc_enhanced_shells"
+    }
+  ],
+  "type": "radar_fcs:rocket_nose_copy",
+  "category": "misc"
+}

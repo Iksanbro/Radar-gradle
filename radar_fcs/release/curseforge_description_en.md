@@ -21,7 +21,7 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 - **Rotation limits** for each direction (left/right, up/down, 1–360°) — set with a Create slider, just like the Torsion Spring. Cannons never swing through a forbidden arc.
 
 ### 📡 Radar Network & Radar Monitor
-- **Radar Links** work like Create's Stock Links: everything on one network is connected — at any distance.
+- **Radar Links** work like Create's Stock Links: everything on one network is connected — at any distance. Create schematics keep the network of links, cameras and rocket noses.
 - Multiblock **Radar Monitor**: a live **map** with radar beams synced to the radar's rotation, target icons, names, friendly/hostile colors, player pins, range scale and a full GUI (designate a target, exclude a target, filters, zoom up to 1,000,000 blocks).
 - Pick a target on your monitor (or on a Create: Radars monitor) — the guns engage it out of turn.
 - **Laser Target Designator**: bind it to a monitor, aim like a spyglass (zoom, laser beam, target name and range) and designate a mob, projectile or ship block from afar; a mouse wheel click excludes the target from fire.
@@ -60,6 +60,7 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 - **Programmable rocket nose**: joins a radar network like a camera (right-click a network link with it) and sends the rocket to the network's selected target — designated on a monitor or chosen by the fire control computer, even beyond gun range. The target is locked at launch and never changes, even if the network drops it.
 - Modes: **automatic launch** when the network has a target of the allowed type (any or one type), **automatic launch only on a target designated by hand** (monitor or Laser Designator), or **launch by redstone**.
 - The computer's **Rockets** tab sets automatic launches: **single** (one rocket per target, time between launches) or **queue** (rockets per queue, delay between rockets, pause between queues).
+- The Create Wrench picks a nose up with its settings, and crafting copies a configured nose's settings onto unconfigured ones. Out of fuel, a rocket falls.
 
 ### 💥 Shell & rocket interception (requires CBC Interception)
 - Shoots down incoming **big cannon shells** and **rockets** (CBC, CBC Advanced Technologies and other addons): threat filter, types and priorities, "first to arrive first".

@@ -21,7 +21,8 @@ import net.minecraft.world.level.block.state.BlockState;
  * Тепловая головка самонаведения (нос ракеты CBC Enchanced Shells): какие типы целей она ищет после пуска - из списка
  * типов целей вычислителя. Ищет и захватывает цель сама (без сети); захваченную цель не меняет.
  */
-public class HeatNoseBlockEntity extends BlockEntity implements IHaveGoggleInformation {
+public class HeatNoseBlockEntity extends BlockEntity implements IHaveGoggleInformation,
+        com.simibubi.create.api.schematic.nbt.PartialSafeNBT {
     /** По умолчанию - корабли и мобы. */
     public static final int DEFAULT = bit(Category.SHIPS) | bit(Category.MOBS);
     public static final int ALL = (1 << Category.values().length) - 1;
@@ -61,6 +62,12 @@ public class HeatNoseBlockEntity extends BlockEntity implements IHaveGoggleInfor
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
+        tag.putInt("Targets", categories);
+    }
+
+    /** Схематика Create: типы целей сохраняются и ставятся пушкой схематик вместе с блоком. */
+    @Override
+    public void writeSafe(CompoundTag tag, HolderLookup.Provider registries) {
         tag.putInt("Targets", categories);
     }
 

@@ -58,6 +58,10 @@ public class RocketGameTests {
     @AfterBatch(batch = "rocket_salvo_queue") public static void a7(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "rocket_net_des") public static void b5(ServerLevel l) { FcsGameTests.direct(l, 200); }
     @AfterBatch(batch = "rocket_net_des") public static void a5(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "rocket_burnout") public static void b8(ServerLevel l) { FcsGameTests.direct(l); }
+    @AfterBatch(batch = "rocket_burnout") public static void a8(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "rocket_salvo_reset") public static void b9(ServerLevel l) { FcsGameTests.direct(l, 200); }
+    @AfterBatch(batch = "rocket_salvo_reset") public static void a9(ServerLevel l) { FcsGameTests.cleanup(l); }
 
     private static Block block(String id) {
         return BuiltInRegistries.BLOCK.get(ResourceLocation.parse(id));
@@ -65,10 +69,15 @@ public class RocketGameTests {
 
     /** Ракета на стартовой площадке: площадка в base, 2 заряда, ядро, нос - вдоль dir. Возвращает позицию носа. */
     static BlockPos rocket(GameTestHelper h, BlockPos base, Direction dir, Block nose) {
+        return rocket(h, base, dir, nose, 2);
+    }
+
+    /** То же с charges зарядами (заряд - 30 тиков тяги). */
+    static BlockPos rocket(GameTestHelper h, BlockPos base, Direction dir, Block nose, int charges) {
         for (int y = 1; y < base.getY(); y++) h.setBlock(new BlockPos(base.getX(), y, base.getZ()), Blocks.STONE.defaultBlockState());
         h.setBlock(base, block("cbc_enhanced_shells:rocket_base").defaultBlockState().setValue(BlockStateProperties.FACING, dir));
         BlockPos p = base;
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < charges; i++) {
             p = p.relative(dir);
             h.setBlock(p, block("createbigcannons:powder_charge").defaultBlockState().trySetValue(BlockStateProperties.AXIS, dir.getAxis()));
         }
@@ -537,6 +546,121 @@ public class RocketGameTests {
                 h.succeed();
             } else if (t > 460) {
                 h.fail("expected a queue of two and then a third rocket:" + l + ", husk alive " + husk.isAlive());
+            }
+        });
+    }
+
+    /**
+     * Топливо кончилось - ракета падает: тепловая головка с одним зарядом (30 тиков тяги) захватывает моба в ~95 блоках
+     * в стороне от оси, но выгорает раньше. После выгорания ракета сразу выходит из наведения, курс больше не меняется
+     * (ракета не доворачивает и не наматывает дуги), она снижается по баллистике.
+     */
+    @GameTest(template = ARENA, batch = "rocket_burnout", timeoutTicks = 300)
+    public static void rocketWithoutFuelFalls(GameTestHelper h) {
+        if (!Mods.ENHANCED_SHELLS) {
+            h.succeed();
+            return;
+        }
+        FcsGameTests.floor(h);
+        FcsGameTests.forceArea(h, new BlockPos(0, 0, -40), new BlockPos(160, 0, 70));
+        FcsGameTests.removeBarriers(h, new BlockPos(-4, 1, -40), new BlockPos(160, 60, 70));
+        rocket(h, new BlockPos(6, 40, 20), Direction.EAST, RocketNoses.HEAT.get(), 1);       // высоко: без тяги ракета проседает
+        Mob husk = SettingsGameTests.tough(FcsGameTests.movingTarget(h, EntityType.HUSK, new Vec3(100.5, 30, 34.5), 0, 0));
+        com.example.cbcenhancedshells.rocket.RocketEntity[] rocket = {null};
+        int[] burnAt = {-1};
+        double[] heading = {Double.NaN};
+        boolean[] fell = {false}, locked = {false};
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            ServerLevel level = h.getLevel();
+            if (t == 10) h.setBlock(new BlockPos(6, 40, 19), Blocks.REDSTONE_BLOCK.defaultBlockState());
+            if (rocket[0] == null) for (RocketGuidance.Guided g : RocketGuidance.guided(level)) {
+                if (g.rocket() instanceof com.example.cbcenhancedshells.rocket.RocketEntity re) rocket[0] = re;
+            }
+            if (rocket[0] == null) {
+                if (t > 14) h.fail("rocket did not launch");
+                return;
+            }
+            var e = rocket[0];
+            for (RocketGuidance.Guided g : RocketGuidance.guided(level)) if (g.rocket() == e && g.lock() != null) locked[0] = true;
+            boolean guided = RocketGuidance.guided(level).stream().anyMatch(g -> g.rocket() == e);
+            if (burnAt[0] < 0) {
+                if (e.isRemoved()) h.fail("rocket ended before it burned out (closest to the husk " + f(e.position().distanceTo(husk.position())) + ")");
+                if (e.getThrustRemaining() <= 0) burnAt[0] = t;
+                return;
+            }
+            int k = t - burnAt[0];
+            if (k == 0 && !locked[0]) h.fail("heat seeker locked nothing before burnout");
+            if (k >= 2 && guided) h.fail("burned-out rocket is still guided");
+            Vec3 v = e.getDeltaMovement();
+            double hd = Math.toDegrees(Math.atan2(v.z, v.x));
+            if (k == 3) heading[0] = hd;
+            if (k > 3 && !e.isRemoved() && Math.abs(hd - heading[0]) > 0.5) {
+                h.fail("burned-out rocket still turns: heading " + f(heading[0]) + " -> " + f(hd) + " after " + k + " ticks");
+            }
+            if (k > 3 && v.y < -0.05) fell[0] = true;
+            if (k % 10 == 0) FcsMod.LOG.info("[radar_fcs test] rocket_burnout k {} pos {} vel {} guided {}", k, e.position(), v, guided);
+            if (e.isRemoved() || k >= 40) {
+                if (k < 4) h.fail("rocket ended right after burnout, nothing checked");
+                if (!fell[0] && !e.isRemoved()) h.fail("burned-out rocket is not falling: vel " + v);
+                FcsMod.LOG.info("[radar_fcs test] rocket_burnout: falls after burnout at tick {}, course kept {} ticks", burnAt[0], k);
+                h.succeed();
+            }
+        });
+    }
+
+    /**
+     * Сброс очереди: очередь из 3, а ракета на площадке одна - ушла одна, ракеты кончились. Площадки перезарядили (3
+     * ракеты), когда первая долетела: новая очередь - снова полная, все 3 подряд (а не 2 «оставшиеся» прошлой очереди и
+     * третья только после них).
+     */
+    @GameTest(template = ARENA, batch = "rocket_salvo_reset", timeoutTicks = 600)
+    public static void rocketSalvoQueueResetsAfterRunningOut(GameTestHelper h) {
+        if (!Mods.ENHANCED_SHELLS) {
+            h.succeed();
+            return;
+        }
+        List<NetNoseBlockEntity> noses = salvoSetup(h, st -> {
+            st.rocketMode = dev.radarfcs.core.EngageSettings.RocketMode.QUEUE;
+            st.rocketQueue = 3;
+            st.rocketQueueDelayTicks = 10;
+            st.rocketIntervalTicks = 10;
+        }, new BlockPos(6, 16, 20));
+        Mob husk = SettingsGameTests.tough(FcsGameTests.movingTarget(h, EntityType.HUSK, new Vec3(100.5, 14, 30.5), 0, 0));
+        if (noses.size() != 1 || noses.get(0).network() == null) {
+            h.fail("nose not set up");
+            return;
+        }
+        UUID net = noses.get(0).network();
+        BlockPos[] pads = {new BlockPos(6, 16, 20), new BlockPos(6, 16, 14), new BlockPos(6, 16, 26)};
+        Launches l = new Launches();
+        int[] reloadAt = {-1};
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            l.tick(h.getLevel(), t);
+            List<int[]> r = l.list();
+            if (t % 40 == 0) FcsMod.LOG.info("[radar_fcs test] rocket_reset t {} rockets{} husk alive {}", t, l, husk.isAlive());
+            if (reloadAt[0] < 0 && r.size() > 1) h.fail("more than one rocket before the reload:" + l);
+            // ракеты кончились; первая долетела - перезарядка: 3 ракеты на площадках
+            if (reloadAt[0] < 0 && r.size() == 1 && r.get(0)[1] >= 0 && t >= r.get(0)[0] + 50) {
+                reloadAt[0] = t;
+                for (BlockPos pad : pads) {
+                    BlockPos nose = rocket(h, pad, Direction.EAST, RocketNoses.NET.get());
+                    if (h.getLevel().getBlockEntity(h.absolutePos(nose)) instanceof NetNoseBlockEntity be) {
+                        be.setNetwork(net);
+                        be.apply(NetNoseBlockEntity.Mode.AUTO, -1);
+                    }
+                }
+            }
+            if (r.size() >= 4) {
+                int[] a = r.get(1), c = r.get(3);
+                if (c[0] - a[0] > 40 || (a[1] >= 0 && c[0] >= a[1])) {
+                    h.fail("queue after the reload is not a full one (third rocket waited for the first ones):" + l);
+                }
+                FcsMod.LOG.info("[radar_fcs test] rocket_reset: one rocket, reload, then a full queue of three:{}", l);
+                h.succeed();
+            } else if (t > 560) {
+                h.fail("expected one rocket and then a full queue of three:" + l + ", reload at " + reloadAt[0]);
             }
         });
     }

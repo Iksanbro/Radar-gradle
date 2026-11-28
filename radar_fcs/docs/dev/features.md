@@ -1122,3 +1122,34 @@
    состояние `HOLD`; пуск по редстоуну не ограничивается. Сцена Ponder - 6-й текст. Тесты
    `rocketSalvoSingleOnePerTarget` (второй нос `HOLD`, уходит после первой ракеты), `rocketSalvoQueueOfTwo` (очередь из 2
    с задержкой 1 с - пуски на 5 и 26 тике, третья ракета новой очередью после того, как обе долетели).
+76. (1.2-Test; «сделай, чтобы наши носы ракет сохраняли настройки при подборе ключом, а также чтобы не настроенные
+   могли через крафт заимствовать настройки у уже настроенного»; «когда у ракеты с нашим носом кончается топливо, она
+   должна падать, а не вечно дугу наматывать»; «сделай настройку на радарную сеть сохраняемой через схематику»; «сделай
+   сброс очереди: ракеты заканчиваются, цель пропадает, появляется новая - ракеты продолжают очередь (2, а не 3)»).
+   - Ключ: носы - в теге `create:wrench_pickup` (`data/create/tags/block/wrench_pickup.json`, `required: false` - без
+     ES блоков нет). Ключ Create на блоке не `IWrenchable` с Shift и тегом - `Block.getDrops` с BE в инвентарь: таблица
+     добычи носа уже копирует `minecraft:custom_data` (настройки из `collectImplicitComponents`).
+   - Крафт: `compat/rocket/NoseCopyRecipe` (`CustomRecipe`, как копирование книги) - один нос с непустым
+     `CUSTOM_DATA` и 1+ без него того же предмета: результат - столько копий с его `CUSTOM_DATA`, оригинал остаётся
+     (`getRemainingItems`); два настроенных, разные носы, один нос - не крафт. Сериализатор `radar_fcs:rocket_nose_copy`
+     в `FcsRegistry.RECIPE_SERIALIZERS`, регистрируется в `RocketNoses.register()` (только с ES); рецепт
+     `recipe/rocket_nose_copy.json` с условием `mod_loaded`.
+   - Топливо: в `RocketGuidance.onTick` - `getThrustRemaining() <= 0` (после `SEEK_FROM` тиков) -
+     `setGuidanceTarget(null)` и ракета выходит из `ACTIVE`. Штатное наведение ES (тик после 20-го:
+     скорость поворачивается к ориентиру с сохранением модуля) без тяги гасило гравитацию - промахнувшаяся ракета вечно
+     кружила; теперь - баллистика. Выгоревшая ракета не «в полёте» для `RocketSalvo` (промах - следующая).
+   - Схематика: `PartialSafeNBT.writeSafe` (Create `BlockHelper.prepareBlockEntityData` берёт его, если блока нет в
+     `create:safe_nbt`) у `RadarLinkBlockEntity` (Network), `GunLinkBlockEntity` (Network, Gun), `CameraBlockEntity` (Name,
+     Network), `NetNoseBlockEntity` (RadarNetwork, Mode, Trigger), `HeatNoseBlockEntity` (Targets). Печать -
+     `loadWithComponents`, недостающие ключи - по умолчанию. Копия встаёт в ту же сеть.
+   - Очередь: у `RocketSalvo.Queue` - `lastCheck` (последний вопрос носа сети о пуске по этой цели) и `closed`. Не
+     спрашивали > `STALE_TICKS` (40; носы спрашивают раз в 5 тиков) - ракеты кончились или цель пропала: ракет очереди в
+     полёте нет - очередь забыта, есть - закрыта (не продолжается; `QUEUE_DONE`, пока летят), следующая - полная. Было:
+     забывалась через 1200 тиков без пуска.
+   - Тесты: `CopyGameTests.noseSettingsKeptByWrenchAndCopiedByCrafting` (ключ игроком в выживании, рецепт через
+     `RecipeManager`, копия поставлена игроком - та же сеть и режим), `CopyGameTests.schematicKeepsNetworks`
+     (`prepareBlockEntityData` + `placeSchematicBlock`: передатчики, камера, носы; служебного в данных нет),
+     `RocketGameTests.rocketWithoutFuelFalls` (1 заряд, захват есть, после выгорания через 2 тика не наводится, курс не
+     меняется 40 тиков, снижается; без исправления - «still guided»), `rocketSalvoQueueResetsAfterRunningOut` (очередь 3,
+     ракета одна - ушла; перезарядка 3 ракетами - все 3 подряд, на 13 и 24 тике после первой; старый код - 2 и третья
+     после них).

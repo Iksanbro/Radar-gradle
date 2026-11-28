@@ -8,6 +8,12 @@
 - **Rockets tab** in the fire control computer (only with CBC Enchanced Shells): how the network's programmable noses launch automatically — **single** (one rocket per target in flight, time between launches) or **queue** (rockets per queue, delay between rockets, pause between queues).
 - Rockets with these noses steer to the predicted intercept point up to ~6° per tick (the stock guidance of the mod turns too slowly and overshoots fast rockets).
 - Ponder scene for the rocket noses.
+- The **Create Wrench** picks rocket noses up with their settings; **crafting** a configured nose with unconfigured noses of the same kind copies its settings (the configured one stays in the grid).
+- Radar and gun network links, cameras and rocket noses keep their **network in Create schematics**.
+
+**Fixed**
+- A rocket with our nose that runs out of fuel now falls instead of circling around the target forever.
+- An interrupted rocket queue (out of rockets or the target was lost) is no longer continued: the next queue is a full one.
 
 **Note**
 - CBC: Firepower Components 0.4.4 does not load with CBC Enchanced Shells newer than 1.3.0 (its own restriction).
@@ -20,6 +26,12 @@
 - **Вкладка «Ракеты»** в вычислителе (только с CBC Enchanced Shells): как программируемые носы его сети пускают ракеты автопуском — **одиночными** (одна ракета на цель в полёте, время между пусками) или **очередью** (ракет в очереди, задержка между ракетами, пауза между очередями).
 - Ракеты с этими носами доворачивают на упреждённую точку встречи до ~6° за тик (штатное наведение мода поворачивает медленно и проскакивает быструю цель).
 - Сцена Ponder для носов ракет.
+- **Ключ Create** снимает носы ракет с настройками; **крафт** настроенного носа с ненастроенными того же вида копирует его настройки (настроенный остаётся в сетке).
+- Передатчики радарной и орудийной сети, камеры и носы ракет сохраняют **сеть в схематиках Create**.
+
+**Исправлено**
+- Ракета с нашим носом, у которой кончилось топливо, теперь падает, а не кружит вокруг цели бесконечно.
+- Прерванная очередь ракет (ракеты кончились или цель пропала) больше не продолжается: следующая очередь — полная.
 
 **Важно**
 - CBC: Firepower Components 0.4.4 сам не грузится с CBC Enchanced Shells новее 1.3.0.

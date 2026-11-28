@@ -43,6 +43,9 @@ public final class FcsRegistry {
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, FcsMod.MODID);
     public static final DeferredRegister<DisplaySource> DISPLAY_SOURCES =
             DeferredRegister.create(CreateRegistries.DISPLAY_SOURCE, FcsMod.MODID);
+    /** Особые рецепты (копирование настроек носов ракет - только с CBC Enchanced Shells). */
+    public static final DeferredRegister<net.minecraft.world.item.crafting.RecipeSerializer<?>> RECIPE_SERIALIZERS =
+            DeferredRegister.create(Registries.RECIPE_SERIALIZER, FcsMod.MODID);
 
     public static final DeferredBlock<FireControlBlock> FIRE_CONTROL = BLOCKS.register("fire_control_computer",
             () -> new FireControlBlock(BlockBehaviour.Properties.of().mapColor(MapColor.TERRACOTTA_BROWN)
@@ -190,6 +193,7 @@ public final class FcsRegistry {
         BLOCK_ENTITIES.register(bus);
         TABS.register(bus);
         DISPLAY_SOURCES.register(bus);
+        RECIPE_SERIALIZERS.register(bus);
     }
 
     /** Приём электричества (FE) блоками мода. */

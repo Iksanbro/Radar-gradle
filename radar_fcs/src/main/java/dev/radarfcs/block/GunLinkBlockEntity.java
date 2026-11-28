@@ -20,7 +20,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 /** Орудийный линк - участник орудийной сети: часть орудия, на которой он стоит, входит в орудие этой сети. */
-public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInformation {
+public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInformation,
+        com.simibubi.create.api.schematic.nbt.PartialSafeNBT {
     @Nullable private UUID network;
     private boolean registered, disabled;
     /** Для очков инженера: прицелы, станки CBC в сети. */
@@ -162,6 +163,13 @@ public class GunLinkBlockEntity extends BlockEntity implements IHaveGoggleInform
         if (network != null) tag.putUUID("Network", network);
         tag.putIntArray("Counts", counts);
         tag.putBoolean("Disabled", disabled);
+        tag.put("Gun", settings.write());
+    }
+
+    /** Схематика Create: орудийная сеть и настройки орудия сохраняются и ставятся пушкой схематик вместе с блоком. */
+    @Override
+    public void writeSafe(CompoundTag tag, HolderLookup.Provider registries) {
+        if (network != null) tag.putUUID("Network", network);
         tag.put("Gun", settings.write());
     }
 

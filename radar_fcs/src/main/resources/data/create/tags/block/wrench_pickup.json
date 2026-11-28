@@ -1,0 +1,13 @@
+{
+  "replace": false,
+  "values": [
+    {
+      "id": "radar_fcs:heat_seeker_nose",
+      "required": false
+    },
+    {
+      "id": "radar_fcs:network_nose",
+      "required": false
+    }
+  ]
+}
