@@ -40,6 +40,15 @@ public final class NetworkTargets {
      */
     @Nullable
     public static Target of(ServerLevel level, @Nullable UUID network, @Nullable Vec from) {
+        return of(level, network, from, false);
+    }
+
+    /**
+     * @param manualOnly только цель, назначенная вручную на мониторе сети (кликом по отметке или лазерным
+     *                   целеуказателем; свой монитор или Create Radars), без целей вычислителя
+     */
+    @Nullable
+    public static Target of(ServerLevel level, @Nullable UUID network, @Nullable Vec from, boolean manualOnly) {
         if (network == null) return null;
         long now = level.getGameTime();
         List<FireControlBlockEntity> computers = new ArrayList<>();
@@ -69,6 +78,7 @@ public final class NetworkTargets {
             id = RadarLink.monitorSelection(be);
             if (id != null) break;
         }
+        if (id == null && manualOnly) return null;
         if (id == null) for (FireControlBlockEntity f : computers) {
             id = f.currentDesignation();
             if (id != null) break;

@@ -30,15 +30,27 @@ import org.jetbrains.annotations.Nullable;
  * Программируемый нос ракеты (CBC Enchanced Shells): в радарной сети, как камера (сеть - из предмета, настроенного ПКМ
  * по передатчику); ракета летит на выбранную цель сети (назначенную на мониторе, иначе цель вычислителя), захваченную
  * в момент пуска, и не меняет её, даже если сеть её больше не ведёт. Режимы: автопуск (когда у сети есть цель
- * допустимого типа - любая или один тип) и пуск по сигналу редстоуна (на нос; сигнал на стартовую площадку тоже
+ * допустимого типа - любая или один тип), автопуск только по цели, назначенной вручную (на мониторе сети - кликом по
+ * отметке или лазерным целеуказателем), и пуск по сигналу редстоуна (на нос; сигнал на стартовую площадку тоже
  * пускает - штатно).
  */
 public class NetNoseBlockEntity extends BlockEntity implements IHaveGoggleInformation {
-    public enum Mode { AUTO, REDSTONE }
+    /** Автопуск по цели сети; автопуск только по цели, назначенной вручную (монитор, целеуказатель); по редстоуну. */
+    public enum Mode {
+        AUTO, AUTO_DESIGNATED, REDSTONE;
+
+        public boolean auto() {
+            return this != REDSTONE;
+        }
+
+        public String key() {
+            return "radar_fcs.rocket_nose.mode_" + name().toLowerCase(Locale.ROOT);
+        }
+    }
 
     /** Сводка для очков инженера. */
     public enum State {
-        NO_NETWORK, NO_LAUNCHER, NO_TARGET, WRONG_TYPE, READY, LAUNCH_FAILED;
+        NO_NETWORK, NO_LAUNCHER, NO_TARGET, NO_DESIGNATION, WRONG_TYPE, READY, LAUNCH_FAILED;
 
         public String key() {
             return "radar_fcs.rocket_nose.state." + name().toLowerCase(Locale.ROOT);
@@ -120,9 +132,11 @@ public class NetNoseBlockEntity extends BlockEntity implements IHaveGoggleInform
             setState(State.NO_LAUNCHER, "");
             return;
         }
-        NetworkTargets.Target t = NetworkTargets.of(sl, network, launchPoint(sl));
+        // автопуск по назначенной цели - только цель, назначенная вручную на мониторе сети (или целеуказателем)
+        boolean manual = mode == Mode.AUTO_DESIGNATED;
+        NetworkTargets.Target t = NetworkTargets.of(sl, network, launchPoint(sl), manual);
         if (t == null) {
-            setState(State.NO_TARGET, "");
+            setState(manual ? State.NO_DESIGNATION : State.NO_TARGET, "");
             return;
         }
         if (!accepts(t.category())) {
@@ -130,7 +144,7 @@ public class NetNoseBlockEntity extends BlockEntity implements IHaveGoggleInform
             return;
         }
         setState(State.READY, t.name());
-        if (mode == Mode.AUTO && sl.getGameTime() >= nextTry) launch(sl, t.id());
+        if (mode.auto() && sl.getGameTime() >= nextTry) launch(sl, t.id());
     }
 
     /** Сигнал редстоуна на носе: в режиме «по редстоуну» - пуск по фронту сигнала с целью сети в этот момент. */
@@ -242,8 +256,8 @@ public class NetNoseBlockEntity extends BlockEntity implements IHaveGoggleInform
                 : Component.translatable("radar_fcs.rocket_nose.network", RadarLinkBlockEntity.shortName(network))).withStyle(ChatFormatting.AQUA));
         Component trig = trigger < 0 ? Component.translatable("radar_fcs.rocket_nose.trigger_any")
                 : Component.translatable("radar_fcs.gui.type_short." + Category.values()[trigger].name().toLowerCase(Locale.ROOT));
-        tooltip.add(Component.literal("    ").append(mode == Mode.AUTO ? Component.translatable("radar_fcs.rocket_nose.mode_auto_with", trig)
-                : Component.translatable("radar_fcs.rocket_nose.mode_redstone")).withStyle(ChatFormatting.AQUA));
+        tooltip.add(Component.literal("    ").append(mode.auto() ? Component.translatable(mode.key() + "_with", trig)
+                : Component.translatable(mode.key())).withStyle(ChatFormatting.AQUA));
         ChatFormatting color = state == State.READY ? ChatFormatting.GREEN : state == State.NO_TARGET ? ChatFormatting.GRAY : ChatFormatting.GOLD;
         tooltip.add(Component.literal("    ").append(Component.translatable(state.key(), targetName)).withStyle(color));
         return true;

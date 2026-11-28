@@ -1,6 +1,7 @@
 package dev.radarfcs.client;
 
 import dev.radarfcs.core.EngageSettings.Category;
+import dev.radarfcs.compat.rocket.NetNoseBlockEntity;
 import dev.radarfcs.net.RocketNosePayloads;
 import java.util.Locale;
 import net.minecraft.ChatFormatting;
@@ -64,7 +65,7 @@ public final class RocketNoseScreen extends Screen {
             }
         } else {
             addRenderableWidget(Button.builder(modeLabel(), b -> {
-                mode = 1 - mode;
+                mode = (mode + 1) % NetNoseBlockEntity.Mode.values().length;
                 b.setMessage(modeLabel());
             }).bounds(left + 8, top + 50, W - 16, 20).build());
             addRenderableWidget(Button.builder(triggerLabel(), b -> {
@@ -87,7 +88,12 @@ public final class RocketNoseScreen extends Screen {
     }
 
     private Component modeLabel() {
-        return Component.translatable(mode == 0 ? "radar_fcs.rocket_nose.mode_auto" : "radar_fcs.rocket_nose.mode_redstone");
+        return Component.translatable(modeOf().key());
+    }
+
+    private NetNoseBlockEntity.Mode modeOf() {
+        NetNoseBlockEntity.Mode[] m = NetNoseBlockEntity.Mode.values();
+        return m[Math.floorMod(mode, m.length)];
     }
 
     private Component triggerLabel() {
@@ -111,7 +117,11 @@ public final class RocketNoseScreen extends Screen {
         } else {
             g.drawString(font, network.isEmpty() ? Component.translatable("radar_fcs.rocket_nose.no_network")
                     : Component.translatable("radar_fcs.rocket_nose.network", network), left + 8, top + 24, network.isEmpty() ? 0xFF8060 : 0x80D0FF, false);
-            g.drawWordWrap(font, Component.translatable(mode == 0 ? "radar_fcs.rocket_nose.auto_hint" : "radar_fcs.rocket_nose.redstone_hint"),
+            g.drawWordWrap(font, Component.translatable(switch (modeOf()) {
+                        case AUTO -> "radar_fcs.rocket_nose.auto_hint";
+                        case AUTO_DESIGNATED -> "radar_fcs.rocket_nose.auto_designated_hint";
+                        case REDSTONE -> "radar_fcs.rocket_nose.redstone_hint";
+                    }),
                     left + 8, top + 102, W - 16, 0x8A9098);
         }
     }

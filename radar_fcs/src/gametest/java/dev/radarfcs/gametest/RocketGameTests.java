@@ -52,6 +52,8 @@ public class RocketGameTests {
     @AfterBatch(batch = "rocket_net") public static void a2(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "rocket_net_rs") public static void b3(ServerLevel l) { FcsGameTests.direct(l, 200); }
     @AfterBatch(batch = "rocket_net_rs") public static void a3(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "rocket_net_des") public static void b5(ServerLevel l) { FcsGameTests.direct(l, 200); }
+    @AfterBatch(batch = "rocket_net_des") public static void a5(ServerLevel l) { FcsGameTests.cleanup(l); }
 
     private static Block block(String id) {
         return BuiltInRegistries.BLOCK.get(ResourceLocation.parse(id));
@@ -318,6 +320,80 @@ public class RocketGameTests {
                 h.succeed();
             } else if (t - signalAt[0] > 200) {
                 h.fail("redstone-launched rocket missed: closest " + f(w.min));
+            }
+        });
+    }
+
+    /**
+     * Программируемый нос, автопуск только по назначенной цели: вычислитель ведёт ближнего моба, но без ручного
+     * назначения нос не пускает («нет цели, назначенной вручную»); на мониторе сети назначают дальнего моба (как ПКМ по
+     * отметке или целеуказателем) - ракета уходит сама и попадает именно в него.
+     */
+    @GameTest(template = ARENA, batch = "rocket_net_des", timeoutTicks = 400)
+    public static void networkNoseAutoLaunchOnDesignationOnly(GameTestHelper h) {
+        if (!Mods.ENHANCED_SHELLS) {
+            h.succeed();
+            return;
+        }
+        FcsGameTests.floor(h);
+        FcsGameTests.forceArea(h, new BlockPos(0, 0, -40), new BlockPos(160, 0, 70));
+        FcsGameTests.removeBarriers(h, new BlockPos(-4, 1, -40), new BlockPos(160, 60, 70));
+        BlockPos fcsPos = new BlockPos(6, 1, 50), mount = new BlockPos(10, 1, 50);
+        FcsGameTests.autocannon(h, mount, Direction.EAST, 4, 64);
+        FireControlBlockEntity fcs = FcsGameTests.fcs(h, fcsPos);
+        SettingsGameTests.configure(fcs, st -> st.dropStatic = false);
+        UUID net = FcsGameTests.networkAt(h, fcsPos);
+        // монитор радара (стена 2x2) в той же сети
+        BlockState mon = dev.radarfcs.registry.FcsRegistry.RADAR_MONITOR.get().defaultBlockState()
+                .setValue(dev.radarfcs.block.RadarMonitorBlock.FACING, Direction.SOUTH);
+        for (int x = 2; x <= 3; x++) for (int y = 2; y <= 3; y++) {
+            h.setBlock(new BlockPos(x, y, 44), mon);
+            FcsGameTests.CREATED.add(h.absolutePos(new BlockPos(x, y, 44)));
+        }
+        FcsGameTests.link(h, new BlockPos(3, 3, 44), Direction.UP, fcsPos);
+        Mob near = SettingsGameTests.tough(FcsGameTests.movingTarget(h, EntityType.HUSK, new Vec3(100.5, 14, 30.5), 0, 0));
+        Mob far = SettingsGameTests.tough(FcsGameTests.movingTarget(h, EntityType.HUSK, new Vec3(104.5, 14, 10.5), 0, 0));
+        BlockPos nose = rocket(h, new BlockPos(6, 16, 20), Direction.EAST, RocketNoses.NET.get());
+        if (!(h.getLevel().getBlockEntity(h.absolutePos(nose)) instanceof NetNoseBlockEntity be) || net == null) {
+            h.fail("no network nose or network");
+            return;
+        }
+        be.setNetwork(net);
+        be.apply(NetNoseBlockEntity.Mode.AUTO_DESIGNATED, -1);
+        Watch w = new Watch();
+        int[] designatedAt = {-1};
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            ServerLevel level = h.getLevel();
+            w.tick(level, far, t);
+            if (designatedAt[0] < 0) {
+                if (w.rocketId >= 0) h.fail("nose launched without a target designated by hand: " + w.lock);
+                if (t < 80) return;
+                var computer = dev.radarfcs.fcs.NetworkTargets.of(level, net);
+                if (computer == null) {
+                    if (t > 250) h.fail("the computer has no target - test setup");
+                    return;
+                }
+                if (be.state() != NetNoseBlockEntity.State.NO_DESIGNATION) h.fail("expected NO_DESIGNATION, got " + be.state());
+                if (!(level.getBlockEntity(h.absolutePos(new BlockPos(2, 2, 44))) instanceof dev.radarfcs.block.RadarMonitorBlockEntity m)) {
+                    h.fail("no radar monitor");
+                    return;
+                }
+                FcsMod.LOG.info("[radar_fcs test] rocket_net_des: computer target {}, nose {} - designating the far husk", computer.name(), be.state());
+                if (!m.master().designateTracked(far.getUUID(), null)) {
+                    if (t > 250) h.fail("monitor does not see the far husk");
+                    return;
+                }
+                designatedAt[0] = t;
+                return;
+            }
+            if (t - designatedAt[0] == 30 && w.rocketId < 0) h.fail("nose did not launch on the designated target: " + be.state());
+            if (w.lock != null && !w.lock.equals(far.getUUID().toString())) h.fail("rocket target is not the designated one: " + w.lock);
+            if (w.min < HIT) {
+                FcsMod.LOG.info("[radar_fcs test] rocket_net_des: hit the designated target, closest {}", f(w.min));
+                h.succeed();
+            } else if (t - designatedAt[0] > 220) {
+                h.fail("rocket missed the designated target: closest " + f(w.min));
             }
         });
     }

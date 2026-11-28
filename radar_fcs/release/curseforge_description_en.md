@@ -58,7 +58,7 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 ### 🚀 Rocket noses (requires CBC Enchanced Shells)
 - **Heat-seeking rocket nose**: after launch it finds a target of the chosen types ahead (Sable ships, players, hostile mobs, other entities, shells, rockets — the computer's target types) and steers the rocket to it; the locked target never changes.
 - **Programmable rocket nose**: joins a radar network like a camera (right-click a network link with it) and sends the rocket to the network's selected target — designated on a monitor or chosen by the fire control computer, even beyond gun range. The target is locked at launch and never changes, even if the network drops it.
-- Modes: **automatic launch** when the network has a target of the allowed type (any or one type), or **launch by redstone**.
+- Modes: **automatic launch** when the network has a target of the allowed type (any or one type), **automatic launch only on a target designated by hand** (monitor or Laser Designator), or **launch by redstone**.
 
 ### 💥 Shell & rocket interception (requires CBC Interception)
 - Shoots down incoming **big cannon shells** and **rockets** (CBC, CBC Advanced Technologies and other addons): threat filter, types and priorities, "first to arrive first".

@@ -509,9 +509,11 @@ SCENES['rocket_noses'] = (('Носы ракет', 'Rocket Noses'), [
      'The rocket flies to the network\'s selected target: designated on a monitor, otherwise the computer\'s target (by its '
      'settings, even beyond gun range). The target is locked at launch and never changes, even if the network drops it'),
     ('ПКМ по носу — режим: автопуск (ракета уходит сама, как только у сети есть цель допустимого типа — любая или '
-     'один тип) или пуск по сигналу редстоуна на нос',
+     'один тип), автопуск только по цели, назначенной вручную (на мониторе или целеуказателем), или пуск по сигналу '
+     'редстоуна на нос',
      'Right-click the nose for the mode: automatic launch (the rocket leaves by itself once the network has a target of '
-     'the allowed type — any or one type) or launch by a redstone signal on the nose'),
+     'the allowed type — any or one type), automatic launch only on a target designated by hand (on a monitor or with '
+     'the Laser Designator), or launch by a redstone signal on the nose'),
 ])
 
 SCENES['designator'] = (('Лазерный целеуказатель', 'Laser Designator'), [
