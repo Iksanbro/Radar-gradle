@@ -89,6 +89,13 @@ public class RocketGameTests {
         return p;
     }
 
+    /** Доступ к ракете ES - отдельным классом: грузится только с установленным модом. */
+    private static final class Es {
+        static int thrust(net.minecraft.world.entity.Entity rocket) {
+            return ((com.example.cbcenhancedshells.rocket.RocketEntity) rocket).getThrustRemaining();
+        }
+    }
+
     /** Ближайший подход ракет к мобу и захваченные ими цели. */
     static final class Watch {
         double min = Double.POSITIVE_INFINITY;
@@ -566,7 +573,7 @@ public class RocketGameTests {
         FcsGameTests.removeBarriers(h, new BlockPos(-4, 1, -40), new BlockPos(160, 60, 70));
         rocket(h, new BlockPos(6, 40, 20), Direction.EAST, RocketNoses.HEAT.get(), 1);       // высоко: без тяги ракета проседает
         Mob husk = SettingsGameTests.tough(FcsGameTests.movingTarget(h, EntityType.HUSK, new Vec3(100.5, 30, 34.5), 0, 0));
-        com.example.cbcenhancedshells.rocket.RocketEntity[] rocket = {null};
+        net.minecraft.world.entity.Entity[] rocket = {null};                  // тип ES - не в сигнатурах (без ES тесты сканируются)
         int[] burnAt = {-1};
         double[] heading = {Double.NaN};
         boolean[] fell = {false}, locked = {false};
@@ -574,9 +581,7 @@ public class RocketGameTests {
             int t = (int) h.getTick();
             ServerLevel level = h.getLevel();
             if (t == 10) h.setBlock(new BlockPos(6, 40, 19), Blocks.REDSTONE_BLOCK.defaultBlockState());
-            if (rocket[0] == null) for (RocketGuidance.Guided g : RocketGuidance.guided(level)) {
-                if (g.rocket() instanceof com.example.cbcenhancedshells.rocket.RocketEntity re) rocket[0] = re;
-            }
+            if (rocket[0] == null) for (RocketGuidance.Guided g : RocketGuidance.guided(level)) rocket[0] = g.rocket();
             if (rocket[0] == null) {
                 if (t > 14) h.fail("rocket did not launch");
                 return;
@@ -586,7 +591,7 @@ public class RocketGameTests {
             boolean guided = RocketGuidance.guided(level).stream().anyMatch(g -> g.rocket() == e);
             if (burnAt[0] < 0) {
                 if (e.isRemoved()) h.fail("rocket ended before it burned out (closest to the husk " + f(e.position().distanceTo(husk.position())) + ")");
-                if (e.getThrustRemaining() <= 0) burnAt[0] = t;
+                if (Es.thrust(e) <= 0) burnAt[0] = t;
                 return;
             }
             int k = t - burnAt[0];
