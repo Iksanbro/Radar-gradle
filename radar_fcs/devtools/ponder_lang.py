@@ -514,6 +514,10 @@ SCENES['rocket_noses'] = (('Носы ракет', 'Rocket Noses'), [
      'Right-click the nose for the mode: automatic launch (the rocket leaves by itself once the network has a target of '
      'the allowed type — any or one type), automatic launch only on a target designated by hand (on a monitor or with '
      'the Laser Designator), or launch by a redstone signal on the nose'),
+    ('Вкладка «Ракеты» вычислителя сети — как пускать автопуском: одиночными (одна ракета на цель, время между '
+     'пусками) или очередью (ракет в очереди, задержка между ракетами, пауза между очередями)',
+     'The Rockets tab of the network\'s computer sets automatic launches: single (one rocket per target, time between '
+     'launches) or queue (rockets per queue, delay between rockets, pause between queues)'),
 ])
 
 SCENES['designator'] = (('Лазерный целеуказатель', 'Laser Designator'), [

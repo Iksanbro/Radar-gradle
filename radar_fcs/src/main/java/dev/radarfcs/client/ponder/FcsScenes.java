@@ -509,6 +509,8 @@ final class FcsScenes {
         sayAt(s, 120, u.vector().topOf(4, 5, 3), true);                                            // 4 цель сети, захват при пуске
         s.overlay().showControls(face(u, 4, 5, 3, Direction.NORTH), Pointing.DOWN, 50).rightClick();
         sayAt(s, 120, face(u, 4, 5, 3, Direction.NORTH), true);                                    // 5 автопуск / редстоун
+        s.overlay().showControls(u.vector().topOf(5, 1, 5), Pointing.DOWN, 50).rightClick();
+        sayAt(s, 130, u.vector().topOf(5, 1, 5), true);                                            // 6 вкладка «Ракеты»
         // пуск: ракета уходит вверх
         ElementLink<WorldSectionElement> body = s.world().showIndependentSection(u.select().fromTo(4, 1, 3, 4, 4, 3), Direction.UP);
         s.world().hideSection(u.select().fromTo(4, 1, 3, 4, 4, 3), Direction.UP);

@@ -52,6 +52,10 @@ public class RocketGameTests {
     @AfterBatch(batch = "rocket_net") public static void a2(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "rocket_net_rs") public static void b3(ServerLevel l) { FcsGameTests.direct(l, 200); }
     @AfterBatch(batch = "rocket_net_rs") public static void a3(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "rocket_salvo_single") public static void b6(ServerLevel l) { FcsGameTests.direct(l, 200); }
+    @AfterBatch(batch = "rocket_salvo_single") public static void a6(ServerLevel l) { FcsGameTests.cleanup(l); }
+    @BeforeBatch(batch = "rocket_salvo_queue") public static void b7(ServerLevel l) { FcsGameTests.direct(l, 200); }
+    @AfterBatch(batch = "rocket_salvo_queue") public static void a7(ServerLevel l) { FcsGameTests.cleanup(l); }
     @BeforeBatch(batch = "rocket_net_des") public static void b5(ServerLevel l) { FcsGameTests.direct(l, 200); }
     @AfterBatch(batch = "rocket_net_des") public static void a5(ServerLevel l) { FcsGameTests.cleanup(l); }
 
@@ -394,6 +398,145 @@ public class RocketGameTests {
                 h.succeed();
             } else if (t - designatedAt[0] > 220) {
                 h.fail("rocket missed the designated target: closest " + f(w.min));
+            }
+        });
+    }
+
+    /** Ракеты сети: когда каждая появилась и когда пропала (тики теста). */
+    static final class Launches {
+        final java.util.Map<Integer, int[]> seen = new java.util.LinkedHashMap<>();
+
+        void tick(ServerLevel level, int t) {
+            java.util.Set<Integer> alive = new java.util.HashSet<>();
+            for (RocketGuidance.Guided g : RocketGuidance.guided(level)) {
+                if (g.rocket().isRemoved()) continue;
+                alive.add(g.rocket().getId());
+                seen.computeIfAbsent(g.rocket().getId(), k -> new int[]{t, -1});
+            }
+            for (var e : seen.entrySet()) if (e.getValue()[1] < 0 && !alive.contains(e.getKey())) e.getValue()[1] = t;
+        }
+
+        List<int[]> list() {
+            return new java.util.ArrayList<>(seen.values());
+        }
+
+        @Override
+        public String toString() {
+            StringBuilder sb = new StringBuilder();
+            for (int[] v : seen.values()) sb.append(" [").append(v[0]).append("..").append(v[1]).append(']');
+            return sb.toString();
+        }
+    }
+
+    /** Сеть с вычислителем (автопушка) и программируемыми носами на автопуске на площадках pads; цель - один моб. */
+    private static List<NetNoseBlockEntity> salvoSetup(GameTestHelper h, java.util.function.Consumer<dev.radarfcs.core.EngageSettings> cfg,
+                                                       BlockPos... pads) {
+        FcsGameTests.floor(h);
+        FcsGameTests.forceArea(h, new BlockPos(0, 0, -40), new BlockPos(160, 0, 70));
+        FcsGameTests.removeBarriers(h, new BlockPos(-4, 1, -40), new BlockPos(160, 60, 70));
+        BlockPos fcsPos = new BlockPos(6, 1, 50), mount = new BlockPos(10, 1, 50);
+        FcsGameTests.autocannon(h, mount, Direction.EAST, 4, 64);
+        FireControlBlockEntity fcs = FcsGameTests.fcs(h, fcsPos);
+        SettingsGameTests.configure(fcs, st -> {
+            st.dropStatic = false;
+            cfg.accept(st);
+        });
+        UUID net = FcsGameTests.networkAt(h, fcsPos);
+        List<NetNoseBlockEntity> out = new java.util.ArrayList<>();
+        for (BlockPos pad : pads) {
+            BlockPos nose = rocket(h, pad, Direction.EAST, RocketNoses.NET.get());
+            if (h.getLevel().getBlockEntity(h.absolutePos(nose)) instanceof NetNoseBlockEntity be) {
+                be.setNetwork(net);
+                be.apply(NetNoseBlockEntity.Mode.AUTO, -1);
+                out.add(be);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Ракеты вычислителя «одиночные»: два носа на автопуске, одна цель (живучий моб) - второй ждёт («ждёт»), пока
+     * первая ракета летит, и уходит только после неё.
+     */
+    @GameTest(template = ARENA, batch = "rocket_salvo_single", timeoutTicks = 500)
+    public static void rocketSalvoSingleOnePerTarget(GameTestHelper h) {
+        if (!Mods.ENHANCED_SHELLS) {
+            h.succeed();
+            return;
+        }
+        List<NetNoseBlockEntity> noses = salvoSetup(h, st -> {
+            st.rocketMode = dev.radarfcs.core.EngageSettings.RocketMode.SINGLE;
+            st.rocketIntervalTicks = 10;
+        }, new BlockPos(6, 16, 20), new BlockPos(6, 16, 14));
+        Mob husk = SettingsGameTests.tough(FcsGameTests.movingTarget(h, EntityType.HUSK, new Vec3(100.5, 14, 30.5), 0, 0));
+        if (noses.size() != 2) {
+            h.fail("noses not set up");
+            return;
+        }
+        Launches l = new Launches();
+        boolean[] held = {false};
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            l.tick(h.getLevel(), t);
+            List<int[]> r = l.list();
+            if (r.size() == 1 && r.get(0)[1] < 0) {
+                for (NetNoseBlockEntity n : noses) if (!n.isRemoved() && n.state() == NetNoseBlockEntity.State.HOLD) held[0] = true;
+            }
+            if (t % 40 == 0) FcsMod.LOG.info("[radar_fcs test] rocket_single t {} rockets{} husk alive {}", t, l, husk.isAlive());
+            if (r.size() >= 2) {
+                int[] a = r.get(0), b = r.get(1);
+                if (a[1] < 0 || b[0] < a[1]) h.fail("second rocket launched while the first was still flying:" + l);
+                if (!held[0]) h.fail("second nose was not in HOLD while the first rocket flew");
+                FcsMod.LOG.info("[radar_fcs test] rocket_single: one rocket at a time:{}", l);
+                h.succeed();
+            } else if (t > 460) {
+                h.fail("expected two rockets one after another:" + l + ", husk alive " + husk.isAlive());
+            }
+        });
+    }
+
+    /**
+     * Ракеты вычислителя «очередь» из 2, задержка между ракетами 1 с, пауза между очередями 0.5 с: три носа - два
+     * уходят подряд (через 20-30 тиков один после другого), третий ждёт, пока они летят, и уходит новой очередью, когда
+     * они долетели.
+     */
+    @GameTest(template = ARENA, batch = "rocket_salvo_queue", timeoutTicks = 500)
+    public static void rocketSalvoQueueOfTwo(GameTestHelper h) {
+        if (!Mods.ENHANCED_SHELLS) {
+            h.succeed();
+            return;
+        }
+        List<NetNoseBlockEntity> noses = salvoSetup(h, st -> {
+            st.rocketMode = dev.radarfcs.core.EngageSettings.RocketMode.QUEUE;
+            st.rocketQueue = 2;
+            st.rocketQueueDelayTicks = 20;
+            st.rocketIntervalTicks = 10;
+        }, new BlockPos(6, 16, 20), new BlockPos(6, 16, 14), new BlockPos(6, 16, 26));
+        Mob husk = SettingsGameTests.tough(FcsGameTests.movingTarget(h, EntityType.HUSK, new Vec3(100.5, 14, 30.5), 0, 0));
+        if (noses.size() != 3) {
+            h.fail("noses not set up");
+            return;
+        }
+        Launches l = new Launches();
+        h.onEachTick(() -> {
+            int t = (int) h.getTick();
+            l.tick(h.getLevel(), t);
+            List<int[]> r = l.list();
+            if (t % 40 == 0) FcsMod.LOG.info("[radar_fcs test] rocket_queue t {} rockets{} husk alive {}", t, l, husk.isAlive());
+            if (r.size() >= 2) {
+                int gap = r.get(1)[0] - r.get(0)[0];
+                if (gap < 20) h.fail("delay between rockets of the queue below 1 s:" + l);
+                if (gap > 35) h.fail("second rocket of the queue came too late:" + l);
+            }
+            if (r.size() >= 3) {
+                int[] third = r.get(2);
+                if (r.get(0)[1] < 0 || r.get(1)[1] < 0 || third[0] < Math.max(r.get(0)[1], r.get(1)[1])) {
+                    h.fail("third rocket launched before the queue of two was done:" + l);
+                }
+                FcsMod.LOG.info("[radar_fcs test] rocket_queue: queue of two, then a new queue:{}", l);
+                h.succeed();
+            } else if (t > 460) {
+                h.fail("expected a queue of two and then a third rocket:" + l + ", husk alive " + husk.isAlive());
             }
         });
     }

@@ -21,7 +21,7 @@ CBC Enchanced Shells (тепловая головка и программиру�
 - `docs/dev/features.md` — все требования пользователя и история функций по версиям (≈560 строк);
 - `docs/dev/dependencies.md` — проверенные особенности API CBC, CBC-AT, Neo Warfare, Create Radars, Sable;
 - `docs/dev/test-status.md` — что покрыто игровыми тестами и какие комбинации модов проверены;
-- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test/1.2-Test, вошло в 1.1, итог — `features.md` п. 43-72; носы ракет - п. 73).
+- `docs/dev/task-docking.md` — задача стыковочного контроллера (сделано в 1.1-Test/1.2-Test, вошло в 1.1, итог — `features.md` п. 43-72; носы ракет - п. 73-75).
 
 Эти файлы и `README.md` большие: **не выводи их целиком** (`cat`), ищи нужное через `grep -n` и читай куски.
 
@@ -153,7 +153,8 @@ CBC-AT 0.1.4c на CBC 5.11.7 без cbcatfix роняет сервер (выс�
 - Носы ракет (только с CBC Enchanced Shells, ассеты/код мода - All Rights Reserved, только API): `compat/rocket/`
   (`RocketNoses` - регистрация, `HeatNoseBlock(Entity)`, `NetNoseBlock(Entity)` + `NetNoseItem` (сеть как у камеры),
   `RocketGuidance` - наведение ракет: цель одна на полёт, упреждение, ориентир `steerPoint` под смесь 0.9/0.1 мода,
-  `RocketLaunch` - пуск площадки рефлексией `tryLaunch`), `fcs/NetworkTargets` - выбранная цель сети (монитор ->
+  `RocketLaunch` - пуск площадки рефлексией `tryLaunch`, `RocketSalvo` - автопуск сети по вкладке «Ракеты» вычислителя:
+  одиночные / очередь, задержка, пауза), `fcs/NetworkTargets` - выбранная цель сети (монитор ->
   вычислитель -> пушки -> лучшая по настройкам), `client/RocketNoseScreen`, `net/RocketNosePayloads`; тесты
   `RocketGameTests`. Dev: ES 1.2.2 (с FPC 0.4.4), свежий - `-Pes_runtime_version=1.5.1 -PfcsNoFpc`.
 - `block/`, `registry/`, `client/FcsClient` (цвет транспондера).

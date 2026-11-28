@@ -30,7 +30,13 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * (сборка и разборка пушек). Настройки уходят на сервер кнопкой «Сохранить», команды сборки - сразу.
  */
 public final class FcsSettingsScreen extends Screen {
-    private enum Tab { FIRE, TARGETS, LISTS, IFF, INTERCEPT, MOUNTS, DROP, PICK, STATUS }
+    /** ROCKETS - только с CBC Enchanced Shells (автопуск ракет программируемыми носами сети). */
+    private enum Tab { FIRE, TARGETS, LISTS, IFF, INTERCEPT, MOUNTS, DROP, PICK, STATUS, ROCKETS }
+
+    private static Tab[] visibleTabs() {
+        return java.util.Arrays.stream(Tab.values()).filter(t -> t != Tab.ROCKETS || dev.radarfcs.compat.Mods.ENHANCED_SHELLS)
+                .toArray(Tab[]::new);
+    }
 
     private static final int W = 480, H = 240, ROW = 22, LIST_ROW = 14, CODE_COLS = 4, LIST_ROWS = 9, IFF_ROWS = 6;
 
@@ -57,14 +63,15 @@ public final class FcsSettingsScreen extends Screen {
         left = (width - W) / 2;
         top = (height - H) / 2;
         // ширина вкладки - по длине подписи (длинные подписи не обрезаются)
-        Tab[] tabs = Tab.values();
+        Tab[] tabs = visibleTabs();
         int[] tw = new int[tabs.length];
         int sum = 0;
-        for (Tab t : tabs) sum += tw[t.ordinal()] = font.width(Component.translatable("radar_fcs.gui.tab." + t.name().toLowerCase(Locale.ROOT))) + 10;
+        for (int i = 0; i < tabs.length; i++) sum += tw[i] = font.width(Component.translatable("radar_fcs.gui.tab." + tabs[i].name().toLowerCase(Locale.ROOT))) + 10;
         double k = (W - 8.0 - 2 * tabs.length) / sum;
         int x0 = left + 4;
-        for (Tab t : tabs) {
-            int w = t.ordinal() == tabs.length - 1 ? left + W - 4 - x0 - 2 : (int) Math.floor(tw[t.ordinal()] * k);
+        for (int i = 0; i < tabs.length; i++) {
+            Tab t = tabs[i];
+            int w = i == tabs.length - 1 ? left + W - 4 - x0 - 2 : (int) Math.floor(tw[i] * k);
             MutableComponent tabName = Component.translatable("radar_fcs.gui.tab." + t.name().toLowerCase(Locale.ROOT));
             if (t == Tab.INTERCEPT && !interceptAvailable()) tabName = tabName.withStyle(ChatFormatting.DARK_GRAY);
             Button b = addRenderableWidget(Button.builder(tabName,
@@ -91,6 +98,7 @@ public final class FcsSettingsScreen extends Screen {
             case DROP -> dropTab(y);
             case PICK -> pickTab(y);
             case STATUS -> statusTab(y);
+            case ROCKETS -> rocketsTab(y);
         }
         addRenderableWidget(Button.builder(Component.translatable("radar_fcs.gui.save"), b -> save())
                 .bounds(left + W - 168, top + H - 24, 80, 20).build());
@@ -111,6 +119,20 @@ public final class FcsSettingsScreen extends Screen {
         if (s.fireMode != EngageSettings.FireMode.AUTO) {
             seconds(left + 190, y, () -> s.pauseTicks, v -> s.pauseTicks = v, 60, true, "radar_fcs.gui.off");
         }
+    }
+
+    /** Автопуск ракет программируемыми носами сети: одиночные / очередь, ракет в очереди, время между пусками. */
+    private void rocketsTab(int y) {
+        cycle(left + 190, y, 160, () -> Component.translatable("radar_fcs.gui.rocket." + s.rocketMode.name().toLowerCase(Locale.ROOT)),
+                () -> s.rocketMode = next(s.rocketMode, EngageSettings.RocketMode.values()));
+        y += ROW;
+        if (s.rocketMode == EngageSettings.RocketMode.QUEUE) {
+            intNumber(left + 190, y, () -> s.rocketQueue, v -> s.rocketQueue = v, 2, 16, v -> Component.literal(Integer.toString(v)));
+            y += ROW;
+            seconds(left + 190, y, () -> s.rocketQueueDelayTicks, v -> s.rocketQueueDelayTicks = v, 60, true, "radar_fcs.gui.off");
+            y += ROW;
+        }
+        seconds(left + 190, y, () -> s.rocketIntervalTicks, v -> s.rocketIntervalTicks = v, 60, true, "radar_fcs.gui.off");
     }
 
     /** Столбцы строки типа цели: переключатель, уровень, скорость от, скорость до. */
@@ -416,6 +438,20 @@ public final class FcsSettingsScreen extends Screen {
         super.render(g, mouseX, mouseY, partialTick);
         int y = top + 36;
         switch (tab) {
+            case ROCKETS -> {
+                label(g, "radar_fcs.gui.rocket_mode", y);
+                y += ROW;
+                boolean queue = s.rocketMode == EngageSettings.RocketMode.QUEUE;
+                if (queue) {
+                    label(g, "radar_fcs.gui.rocket_queue", y);
+                    y += ROW;
+                    label(g, "radar_fcs.gui.rocket_queue_delay", y);
+                    y += ROW;
+                }
+                label(g, queue ? "radar_fcs.gui.rocket_queue_pause" : "radar_fcs.gui.rocket_interval", y);
+                y += ROW;
+                hint(g, "radar_fcs.gui.rocket_hint." + s.rocketMode.name().toLowerCase(Locale.ROOT), y + 6);
+            }
             case FIRE -> {
                 label(g, "radar_fcs.gui.fire_mode", y);
                 y += ROW;
@@ -629,7 +665,8 @@ public final class FcsSettingsScreen extends Screen {
 
     /** Открыть вкладку по номеру (скриншоты для документации). */
     public void showTab(int index) {
-        tab = Tab.values()[Math.floorMod(index, Tab.values().length)];
+        Tab[] tabs = visibleTabs();
+        tab = tabs[Math.floorMod(index, tabs.length)];
         rebuildWidgets();
     }
 

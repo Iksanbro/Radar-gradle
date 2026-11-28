@@ -50,7 +50,7 @@ public class NetNoseBlockEntity extends BlockEntity implements IHaveGoggleInform
 
     /** Сводка для очков инженера. */
     public enum State {
-        NO_NETWORK, NO_LAUNCHER, NO_TARGET, NO_DESIGNATION, WRONG_TYPE, READY, LAUNCH_FAILED;
+        NO_NETWORK, NO_LAUNCHER, NO_TARGET, NO_DESIGNATION, WRONG_TYPE, READY, HOLD, LAUNCH_FAILED;
 
         public String key() {
             return "radar_fcs.rocket_nose.state." + name().toLowerCase(Locale.ROOT);
@@ -143,8 +143,18 @@ public class NetNoseBlockEntity extends BlockEntity implements IHaveGoggleInform
             setState(State.WRONG_TYPE, t.name());
             return;
         }
+        if (!mode.auto()) {
+            setState(State.READY, t.name());
+            return;
+        }
+        // автопуск - по настройке ракет вычислителя сети: одиночные / очередь, время между пусками
+        long now = sl.getGameTime();
+        if (RocketSalvo.check(sl, network, t.id(), now) != RocketSalvo.Verdict.GO) {
+            setState(State.HOLD, t.name());
+            return;
+        }
         setState(State.READY, t.name());
-        if (mode.auto() && sl.getGameTime() >= nextTry) launch(sl, t.id());
+        if (now >= nextTry && launch(sl, t.id())) RocketSalvo.launched(sl, network, t.id(), now);
     }
 
     /** Сигнал редстоуна на носе: в режиме «по редстоуну» - пуск по фронту сигнала с целью сети в этот момент. */
@@ -162,13 +172,16 @@ public class NetNoseBlockEntity extends BlockEntity implements IHaveGoggleInform
         return new dev.radarfcs.core.Vec(w.x, w.y, w.z);
     }
 
-    private void launch(ServerLevel sl, @Nullable String lock) {
+    /** @return ракета ушла */
+    private boolean launch(ServerLevel sl, @Nullable String lock) {
         pendingLock = lock;
         nextTry = sl.getGameTime() + RETRY_TICKS;
         if (!RocketLaunch.launch(sl, worldPosition, facing())) {
             pendingLock = null;
             setState(State.LAUNCH_FAILED, "");
+            return false;
         }
+        return true;
     }
 
     private void setState(State s, String name) {

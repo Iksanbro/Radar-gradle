@@ -112,6 +112,7 @@ public final class RocketGuidance {
         NeoForge.EVENT_BUS.addListener(ServerStoppedEvent.class, e -> {
             PENDING.clear();
             ACTIVE.clear();
+            RocketSalvo.clear();
         });
     }
 

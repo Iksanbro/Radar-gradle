@@ -12,6 +12,10 @@ public final class SettingsNbt {
         t.putString("Fire", s.fireMode.name());
         t.putInt("Burst", s.burstLength);
         t.putInt("Pause", s.pauseTicks);
+        t.putString("RocketMode", s.rocketMode.name());
+        t.putInt("RocketQueue", s.rocketQueue);
+        t.putInt("RocketInterval", s.rocketIntervalTicks);
+        t.putInt("RocketQueueDelay", s.rocketQueueDelayTicks);
         byte[] en = new byte[EngageSettings.CATEGORIES];
         for (int i = 0; i < en.length; i++) en[i] = (byte) (s.enabled[i] ? 1 : 0);
         t.putByteArray("Types", en);
@@ -55,6 +59,10 @@ public final class SettingsNbt {
         s.fireMode = enumOr(EngageSettings.FireMode.class, t.getString("Fire"), s.fireMode);
         if (t.contains("Burst")) s.burstLength = t.getInt("Burst");
         if (t.contains("Pause")) s.pauseTicks = t.getInt("Pause");
+        s.rocketMode = enumOr(EngageSettings.RocketMode.class, t.getString("RocketMode"), s.rocketMode);
+        if (t.contains("RocketQueue")) s.rocketQueue = t.getInt("RocketQueue");
+        if (t.contains("RocketInterval")) s.rocketIntervalTicks = t.getInt("RocketInterval");
+        if (t.contains("RocketQueueDelay")) s.rocketQueueDelayTicks = t.getInt("RocketQueueDelay");
         byte[] en = t.getByteArray("Types");
         for (int i = 0; i < Math.min(en.length, EngageSettings.CATEGORIES); i++) s.enabled[i] = en[i] != 0;
         int[] lv = t.getIntArray("Levels");

@@ -16,6 +16,20 @@ public final class EngageSettings {
         BURST
     }
 
+    /**
+     * Автопуск ракет программируемыми носами сети (CBC Enchanced Shells). Одиночные - время между пусками; очередь -
+     * задержка между ракетами внутри очереди и пауза между очередями (то же время между пусками).
+     */
+    public enum RocketMode {
+        /** По цели одна ракета: пока ракета сети к ней в полёте, новые по ней не пускаются (промах - следующая). */
+        SINGLE,
+        /**
+         * Очередь: по цели подряд заданное число ракет с задержкой между ними; новая очередь - когда ракеты прошлой
+         * долетели, а цель жива, и прошла пауза между очередями.
+         */
+        QUEUE
+    }
+
     /** Типы целей. */
     public enum Category {
         /** Корабли Sable / Create Aeronautics (сублевелы). */
@@ -75,6 +89,14 @@ public final class EngageSettings {
     public static final int MAX_LEVEL = 5;
 
     public FireMode fireMode = FireMode.AUTO;
+    /**
+     * Автопуск ракет для носов сети: режим, ракет в очереди, задержка между ракетами очереди (тики), время между пусками
+     * (тики; у очереди - пауза между очередями).
+     */
+    public RocketMode rocketMode = RocketMode.SINGLE;
+    public int rocketQueue = 3;
+    public int rocketQueueDelayTicks = 10;
+    public int rocketIntervalTicks = 20;
     /** Выстрелов в очереди (BURST). */
     public int burstLength = 5;
     /** Пауза после одиночного выстрела или очереди, тиков. */
@@ -196,6 +218,10 @@ public final class EngageSettings {
     public EngageSettings sanitize() {
         burstLength = clamp(burstLength, 2, 100);
         pauseTicks = clamp(pauseTicks, 0, 1200);
+        rocketQueue = clamp(rocketQueue, 2, 16);
+        rocketIntervalTicks = clamp(rocketIntervalTicks, 0, 1200);
+        rocketQueueDelayTicks = clamp(rocketQueueDelayTicks, 0, 1200);
+        if (rocketMode == null) rocketMode = RocketMode.SINGLE;
         for (int i = 0; i < CATEGORIES; i++) level[i] = clamp(level[i], 1, MAX_LEVEL);
         for (int i = 0; i < CATEGORIES; i++) {
             speedMin[i] = cleanSpeed(speedMin[i]);
@@ -224,6 +250,10 @@ public final class EngageSettings {
         s.fireMode = fireMode;
         s.burstLength = burstLength;
         s.pauseTicks = pauseTicks;
+        s.rocketMode = rocketMode;
+        s.rocketQueue = rocketQueue;
+        s.rocketIntervalTicks = rocketIntervalTicks;
+        s.rocketQueueDelayTicks = rocketQueueDelayTicks;
         System.arraycopy(enabled, 0, s.enabled, 0, CATEGORIES);
         System.arraycopy(level, 0, s.level, 0, CATEGORIES);
         System.arraycopy(speedMin, 0, s.speedMin, 0, CATEGORIES);
