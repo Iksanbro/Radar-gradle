@@ -54,4 +54,12 @@ public final class FcsClientHooks {
     public static void openBeacon(dev.radarfcs.net.BeaconPayloads.Open p) {
         net.minecraft.client.Minecraft.getInstance().setScreen(new OrbitBeaconScreen(p));
     }
+
+    public static void openHeatNose(dev.radarfcs.net.RocketNosePayloads.OpenHeat p) {
+        net.minecraft.client.Minecraft.getInstance().setScreen(new RocketNoseScreen(p));
+    }
+
+    public static void openNetNose(dev.radarfcs.net.RocketNosePayloads.OpenNet p) {
+        net.minecraft.client.Minecraft.getInstance().setScreen(new RocketNoseScreen(p));
+    }
 }

@@ -62,6 +62,11 @@ public final class FcsPonderPlugin implements PonderPlugin {
         }
         helper.forComponents(id(FcsRegistry.LASER_DESIGNATOR.get()))
                 .addStoryBoard("designator", FcsScenes::designator, TAG);
+        // носы ракет - только с CBC Enchanced Shells
+        if (dev.radarfcs.compat.Mods.ENHANCED_SHELLS) {
+            helper.forComponents(id(dev.radarfcs.compat.rocket.RocketNoses.HEAT_ITEM.get()), id(dev.radarfcs.compat.rocket.RocketNoses.NET_ITEM.get()))
+                    .addStoryBoard("rocket_noses", FcsScenes::rocketNoses, TAG);
+        }
         // мост автопилота, стыковочный контроллер и маяк орбиты - только с Create: Flight Control
         if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) {
             helper.forComponents(id(dev.radarfcs.compat.flight.FlightBridge.ITEM.get()))
@@ -98,6 +103,10 @@ public final class FcsPonderPlugin implements PonderPlugin {
                 .add(id(FcsRegistry.GUN_DRIVE.get()));
         helper.addToTag(TAG).add(id(FcsRegistry.LASER_DESIGNATOR.get()));
         if (dev.radarfcs.compat.Mods.SIMULATED) helper.addToTag(TAG).add(id(dev.radarfcs.block.GunBearings.ITEM.get()));
+        if (dev.radarfcs.compat.Mods.ENHANCED_SHELLS) {
+            helper.addToTag(TAG).add(id(dev.radarfcs.compat.rocket.RocketNoses.HEAT_ITEM.get()))
+                    .add(id(dev.radarfcs.compat.rocket.RocketNoses.NET_ITEM.get()));
+        }
         if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) {
             helper.addToTag(TAG).add(id(dev.radarfcs.compat.flight.FlightBridge.ITEM.get()))
                     .add(id(dev.radarfcs.block.DockingBlocks.ITEM.get()))

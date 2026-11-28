@@ -486,6 +486,41 @@ final class FcsScenes {
         s.markAsFinished();
     }
 
+    // ------------------------------------------------------------------ носы ракет (CBC Enchanced Shells)
+    static void rocketNoses(SceneBuilder builder, SceneBuildingUtil u) {
+        CreateSceneBuilder s = new CreateSceneBuilder(builder);
+        s.title("rocket_noses", "");
+        s.configureBasePlate(0, 0, 7);
+        s.showBasePlate();
+        s.idle(10);
+        show(s, u.select().fromTo(2, 1, 3, 2, 4, 3), Direction.DOWN, 5);
+        show(s, u.select().position(2, 5, 3), Direction.DOWN, 10);
+        sayAt(s, 110, u.vector().topOf(2, 5, 3), true);                                            // 1 нос на ракете
+        Vec3 heat = face(u, 2, 5, 3, Direction.NORTH);
+        s.overlay().showControls(heat, Pointing.DOWN, 50).rightClick();
+        sayAt(s, 120, heat, true);                                                                 // 2 тепловая головка
+        show(s, u.select().fromTo(5, 1, 5, 5, 2, 5), Direction.DOWN, 5);
+        show(s, u.select().fromTo(4, 1, 3, 4, 4, 3), Direction.DOWN, 5);
+        ElementLink<WorldSectionElement> net = s.world().showIndependentSection(u.select().position(4, 5, 3), Direction.DOWN);
+        s.idle(10);
+        s.overlay().showControls(u.vector().topOf(5, 2, 5), Pointing.DOWN, 50).rightClick()
+                .withItem(stack(dev.radarfcs.compat.rocket.RocketNoses.NET_ITEM.get()));
+        sayAt(s, 110, u.vector().topOf(5, 2, 5), true);                                            // 3 в сети, как камера
+        sayAt(s, 120, u.vector().topOf(4, 5, 3), true);                                            // 4 цель сети, захват при пуске
+        s.overlay().showControls(face(u, 4, 5, 3, Direction.NORTH), Pointing.DOWN, 50).rightClick();
+        sayAt(s, 120, face(u, 4, 5, 3, Direction.NORTH), true);                                    // 5 автопуск / редстоун
+        // пуск: ракета уходит вверх
+        ElementLink<WorldSectionElement> body = s.world().showIndependentSection(u.select().fromTo(4, 1, 3, 4, 4, 3), Direction.UP);
+        s.world().hideSection(u.select().fromTo(4, 1, 3, 4, 4, 3), Direction.UP);
+        s.world().moveSection(body, new Vec3(0, 6, 0), 20);
+        s.world().moveSection(net, new Vec3(0, 6, 0), 20);
+        s.idle(25);
+        s.world().hideIndependentSection(body, Direction.UP);
+        s.world().hideIndependentSection(net, Direction.UP);
+        s.idle(10);
+        s.markAsFinished();
+    }
+
     // ------------------------------------------------------------------ лазерный целеуказатель
     static void designator(SceneBuilder builder, SceneBuildingUtil u) {
         CreateSceneBuilder s = new CreateSceneBuilder(builder);

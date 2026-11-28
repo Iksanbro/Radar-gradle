@@ -168,6 +168,10 @@ public final class FcsRegistry {
                             out.accept(dev.radarfcs.block.DockingBlocks.ITEM.get());
                             out.accept(dev.radarfcs.block.DockingBlocks.BEACON_ITEM.get());
                         }
+                        if (dev.radarfcs.compat.Mods.ENHANCED_SHELLS) {
+                            out.accept(dev.radarfcs.compat.rocket.RocketNoses.HEAT_ITEM.get());
+                            out.accept(dev.radarfcs.compat.rocket.RocketNoses.NET_ITEM.get());
+                        }
                     })
                     .build());
 
@@ -179,6 +183,8 @@ public final class FcsRegistry {
         }
         // подшипник орудия - только с Create Aeronautics (Simulated)
         if (dev.radarfcs.compat.Mods.SIMULATED) dev.radarfcs.block.GunBearings.register();
+        // носы ракет - только с CBC Enchanced Shells
+        if (dev.radarfcs.compat.Mods.ENHANCED_SHELLS) dev.radarfcs.compat.rocket.RocketNoses.register();
         BLOCKS.register(bus);
         ITEMS.register(bus);
         BLOCK_ENTITIES.register(bus);

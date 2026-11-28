@@ -310,8 +310,23 @@ def flight_bridge():
     s.save('flight_bridge')
 
 
+def rocket_noses():
+    """Две ракеты CBC Enchanced Shells на стартовых площадках (площадка, 2 заряда, ядро, нос): с тепловой головкой
+    и с программируемым носом; вычислитель с передатчиком радарной сети рядом."""
+    s = Schematic(7, 7, 7).plate()
+    for x, nose in ((2, 'heat_seeker_nose'), (4, 'network_nose')):
+        s.set(x, 1, 3, 'cbc_enhanced_shells:rocket_base', facing='up')
+        s.set(x, 2, 3, 'createbigcannons:powder_charge', axis='y', damp='false')
+        s.set(x, 3, 3, 'createbigcannons:powder_charge', axis='y', damp='false')
+        s.set(x, 4, 3, 'createbigcannons:solid_shot', facing='up', waterlogged='false')
+        s.set(x, 5, 3, FCS + nose, facing='up')
+    s.set(5, 1, 5, FCS + 'fire_control_computer', facing='north')
+    link(s, 5, 2, 5, 'up')
+    s.save('rocket_noses')
+
+
 if __name__ == '__main__':
     for f in (battery, computer, aim_controllers, network, radar_monitor, transponder, camera, swivel_turret, gun_drive,
-              flight_bridge, gun_bearing, docking, orbit_beacon, designator):
+              flight_bridge, gun_bearing, docking, orbit_beacon, designator, rocket_noses):
         f()
     sys.exit(0)

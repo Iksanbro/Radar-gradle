@@ -34,6 +34,7 @@ public final class FcsMod {
         modBus.addListener(dev.radarfcs.net.DockingPayloads::register);
         modBus.addListener(dev.radarfcs.net.BeaconPayloads::register);
         modBus.addListener(dev.radarfcs.net.DesignatorPayloads::register);
+        modBus.addListener(dev.radarfcs.net.RocketNosePayloads::register);
         // обучающие сцены Ponder (как в Create) - только на клиенте
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) dev.radarfcs.client.ponder.FcsPonderPlugin.init();
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) dev.radarfcs.client.GunBearingRenderer.init();
@@ -91,6 +92,8 @@ public final class FcsMod {
         });
         NeoForge.EVENT_BUS.addListener(dev.radarfcs.compat.DockingPorts::onLevelTick);
         NeoForge.EVENT_BUS.addListener(dev.radarfcs.compat.DockingPorts::onLevelTickEnd);
+        // носы ракет CBC Enchanced Shells: наведение ракет в полёте
+        if (dev.radarfcs.compat.Mods.ENHANCED_SHELLS) dev.radarfcs.compat.rocket.RocketGuidance.init();
         // стыковочный контроллер: связь с портом Simulated инструментальным пистолетом Flight Control
         if (dev.radarfcs.compat.Mods.FLIGHT_CONTROL) {
             dev.radarfcs.compat.flight.DockingToolLink.init();

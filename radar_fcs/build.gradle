@@ -63,6 +63,8 @@ dependencies {
     modCompile "maven.modrinth:cbc-firepower-components:${fpc_version}"
     // Create: Flight Control - мост автопилота (код с его API грузится только при установленном FC)
     modCompile "maven.modrinth:create-flight-control:${flight_control_version}"
+    // CBC Enchanced Shells - носы ракет (код с его классами грузится только при установленном моде)
+    modCompile "maven.modrinth:cbc-enchanced-shells-create-big-cannons:${es_version}"
     // Sable: вращатели орудий (под-уровни, шарниры); код с API Sable загружается только при установленном Sable
     modCompile "maven.modrinth:sable:${sable_version}"
     embeddedSources "maven.modrinth:sable:${sable_version}"
@@ -87,6 +89,8 @@ dependencies {
         if (!project.hasProperty('fcsNoCbcAt')) devMods "maven.modrinth:create-big-cannons-advanced-technologies:${cbcat_version}"
         devMods "maven.modrinth:createaddition:${createaddition_version}"
         if (!project.hasProperty('fcsNoFpc')) devMods "maven.modrinth:cbc-firepower-components:${fpc_version}"
+        // -PfcsNoEs: без CBC Enchanced Shells (носов ракет нет)
+        if (!project.hasProperty('fcsNoEs')) devMods "maven.modrinth:cbc-enchanced-shells-create-big-cannons:${es_runtime_version}"
         // -PfcsNoFlight: без Create: Flight Control (мост автопилота не регистрируется)
         if (!project.hasProperty('fcsNoFlight')) {
             devMods "maven.modrinth:create-flight-control:${flight_control_version}"

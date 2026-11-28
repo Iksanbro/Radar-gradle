@@ -709,6 +709,12 @@ public class RadarMonitorBlockEntity extends BlockEntity {
         return true;
     }
 
+    /** Сенсор экрана (у ведущего блока стены): цели радаров сети монитора. */
+    public TargetSensor sensor() {
+        RadarMonitorBlockEntity m = masterBe();
+        return m == null ? sensor : m.sensor;
+    }
+
     /** Сторона карты с экрана монитора (блоков). */
     public void setSide(int side) {
         RadarMonitorBlockEntity m = masterBe();

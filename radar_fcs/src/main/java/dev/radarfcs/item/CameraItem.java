@@ -37,6 +37,7 @@ public class CameraItem extends BlockItem {
         Block b = level.getBlockState(pos).getBlock();
         if (b instanceof RadarLinkBlock && !(b instanceof GunLinkBlock) && level.getBlockEntity(pos) instanceof RadarLinkBlockEntity l) return l.network();
         if (level.getBlockEntity(pos) instanceof CameraBlockEntity c) return c.network();
+        if (level.getBlockEntity(pos) instanceof dev.radarfcs.compat.rocket.NetNoseBlockEntity n) return n.network();
         return null;
     }
 

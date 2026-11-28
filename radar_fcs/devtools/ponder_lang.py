@@ -491,6 +491,29 @@ SCENES['orbit_beacon'] = (('Маяк орбиты (Create: Flight Control)', 'Or
      'Orbit radius, height, direction and where the nose points are set in the bridge'),
 ])
 
+SCENES['rocket_noses'] = (('Носы ракет', 'Rocket Noses'), [
+    ('Носы ракет есть только с CBC Enchanced Shells: нос ставится последним в стек стартовой площадки — площадка, '
+     'заряды, снаряд, нос. Сигнал на площадку — пуск, как обычно',
+     'Rocket noses exist only with CBC Enchanced Shells: the nose goes last on a launchpad stack — launchpad, charges, '
+     'shell, nose. A signal on the launchpad launches it as usual'),
+    ('Тепловая головка: после пуска сама ищет впереди цель выбранных типов и ведёт ракету к ней; захваченную цель не '
+     'меняет. ПКМ — типы целей: корабли Sable, игроки, мобы (враждебные), другое, снаряды, ракеты',
+     'Heat seeker: after launch it finds a target of the chosen types ahead and steers the rocket to it, never switching '
+     'the locked target. Right-click to choose target types: Sable ships, players, (hostile) mobs, other, shells, rockets'),
+    ('Программируемый нос — в радарной сети, как камера: ПКМ предметом носа по передатчику сети (или камере, носу этой '
+     'сети), потом поставить на ракету — свой передатчик не нужен',
+     'The programmable nose joins a radar network like a camera: right-click a network link (or a camera or nose of that '
+     'network) with the nose item, then place it on the rocket — no link of its own is needed'),
+    ('Ракета летит на выбранную цель сети: назначенную на мониторе, иначе цель вычислителя (по его настройкам, даже вне '
+     'досягаемости пушек). Цель захватывается при пуске и потом не меняется, даже если сеть её больше не ведёт',
+     'The rocket flies to the network\'s selected target: designated on a monitor, otherwise the computer\'s target (by its '
+     'settings, even beyond gun range). The target is locked at launch and never changes, even if the network drops it'),
+    ('ПКМ по носу — режим: автопуск (ракета уходит сама, как только у сети есть цель допустимого типа — любая или '
+     'один тип) или пуск по сигналу редстоуна на нос',
+     'Right-click the nose for the mode: automatic launch (the rocket leaves by itself once the network has a target of '
+     'the allowed type — any or one type) or launch by a redstone signal on the nose'),
+])
+
 SCENES['designator'] = (('Лазерный целеуказатель', 'Laser Designator'), [
     ('Лазерный целеуказатель назначает цель издалека. Shift+ПКМ по монитору радара — привязать к нему',
      'The Laser Designator designates a target from afar. Shift+right-click a Radar Monitor to bind it'),

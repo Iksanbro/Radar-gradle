@@ -55,6 +55,11 @@ From anti-aircraft autocannon batteries to big guns firing at airships — and e
 - Redstone on a port controller locks it: a docked ship cannot undock, a free port cannot be docked to.
 - Docking on "no target" with an orbit set: while all ports are busy or locked, the ship flies the orbit.
 
+### 🚀 Rocket noses (requires CBC Enchanced Shells)
+- **Heat-seeking rocket nose**: after launch it finds a target of the chosen types ahead (Sable ships, players, hostile mobs, other entities, shells, rockets — the computer's target types) and steers the rocket to it; the locked target never changes.
+- **Programmable rocket nose**: joins a radar network like a camera (right-click a network link with it) and sends the rocket to the network's selected target — designated on a monitor or chosen by the fire control computer, even beyond gun range. The target is locked at launch and never changes, even if the network drops it.
+- Modes: **automatic launch** when the network has a target of the allowed type (any or one type), or **launch by redstone**.
+
 ### 💥 Shell & rocket interception (requires CBC Interception)
 - Shoots down incoming **big cannon shells** and **rockets** (CBC, CBC Advanced Technologies and other addons): threat filter, types and priorities, "first to arrive first".
 - **Requires the additional mod CBC Interception.** Without it CBC projectiles pass through each other, so interception is disabled and its settings tab is greyed out.
@@ -85,6 +90,7 @@ Done — the battery will engage hostile mobs and other targets you allow. Hold 
 - **Create Aeronautics / Sable** — ships as targets, transponders on ships, custom turrets on Swivel Bearings and Gun Bearings
 - **CBC Interception** — shooting down shells and rockets
 - **Create: Flight Control** — the Autopilot Bridge, Docking Controller and Orbit Beacon (0.8.3+; docking also needs Create Aeronautics)
+- **CBC Enchanced Shells** — heat-seeking and programmable rocket noses (tested 1.2.2 and 1.5.1)
 - **CBC Advanced Technologies** — rifled barrels, heavy/twin autocannons, rockets (its reworked cannon physics is taken into account)
 - **CBC Neo Warfare** — rotary and medium cannons
 - **CBC: Firepower Components** — compact mounts

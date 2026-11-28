@@ -1,0 +1,33 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "cbc_enhanced_shells"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "combat",
+  "pattern": [
+    " B ",
+    "RNR",
+    " M "
+  ],
+  "key": {
+    "B": {
+      "item": "minecraft:blaze_rod"
+    },
+    "R": {
+      "item": "minecraft:redstone"
+    },
+    "N": {
+      "item": "cbc_enhanced_shells:nose_cone_steel"
+    },
+    "M": {
+      "item": "create:precision_mechanism"
+    }
+  },
+  "result": {
+    "id": "radar_fcs:heat_seeker_nose",
+    "count": 1
+  }
+}

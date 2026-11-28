@@ -32,6 +32,14 @@
     {
       "id": "radar_fcs:gun_bearing_plate",
       "required": false
+    },
+    {
+      "id": "radar_fcs:heat_seeker_nose",
+      "required": false
+    },
+    {
+      "id": "radar_fcs:network_nose",
+      "required": false
     }
   ]
 }

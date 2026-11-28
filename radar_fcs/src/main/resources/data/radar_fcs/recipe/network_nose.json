@@ -1,0 +1,33 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "cbc_enhanced_shells"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "combat",
+  "pattern": [
+    " L ",
+    "ENE",
+    " M "
+  ],
+  "key": {
+    "L": {
+      "item": "radar_fcs:radar_link"
+    },
+    "E": {
+      "item": "create:electron_tube"
+    },
+    "N": {
+      "item": "cbc_enhanced_shells:guided_nose_cone"
+    },
+    "M": {
+      "item": "create:precision_mechanism"
+    }
+  },
+  "result": {
+    "id": "radar_fcs:network_nose",
+    "count": 1
+  }
+}
